@@ -1,0 +1,16 @@
+node_modules
+.vercel
+.git
+screenshots
+artifacts
+attachments
+.grok/skills
+.grok/references
+.grok/*.png
+.grok/*.jpg
+.grok/*.log
+.grok/*.pid
+AGENTS.md
+*.tsbuildinfo
+public/zhishi-loom-source.zip
+workers/telethon/__pycache__

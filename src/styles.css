@@ -1,0 +1,142 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0b0c0e;
+  --color-surface: #141518;
+  --color-raised: #1b1d21;
+  --color-fg: #eceef1;
+  --color-muted: #8b909a;
+  --color-faint: #6a707a;
+  --color-accent: #c9ced6;
+  --color-accent-fg: #0b0c0e;
+  --color-border: #2a2d33;
+  --color-live: #7f9d90;
+  --color-warn: #c4a882;
+  --color-danger: #c07a70;
+  --font-sans: "Figtree", "PingFang SC", "Noto Sans SC", "Hiragino Sans", system-ui, sans-serif;
+  --font-display: "Newsreader", "Songti SC", "Noto Serif SC", Georgia, serif;
+  --font-mono: "IBM Plex Mono", "SF Mono", ui-monospace, monospace;
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+  --shadow-border: 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --shadow-border-hover: 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+@layer base {
+  html {
+    background: var(--color-bg);
+    color: var(--color-fg);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    background: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    min-height: 100dvh;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+    font-family: var(--font-display);
+  }
+  p {
+    text-wrap: pretty;
+  }
+  img {
+    outline: 1px solid rgba(255, 255, 255, 0.1);
+    outline-offset: -1px;
+  }
+  video {
+    outline: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes loom-fade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes loom-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.loom-enter {
+  animation: loom-fade 400ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.loom-enter-2 {
+  animation: loom-fade 400ms cubic-bezier(0.22, 1, 0.36, 1) 80ms both;
+}
+.loom-enter-3 {
+  animation: loom-fade 400ms cubic-bezier(0.22, 1, 0.36, 1) 140ms both;
+}
+
+.live-dot {
+  animation: loom-pulse 2.4s ease-in-out infinite;
+}
+
+.hero-veil {
+  background:
+    linear-gradient(180deg, rgba(11, 12, 14, 0.18) 0%, rgba(11, 12, 14, 0.22) 42%, rgba(11, 12, 14, 0.88) 100%),
+    linear-gradient(90deg, rgba(11, 12, 14, 0.45) 0%, transparent 28%, transparent 72%, rgba(11, 12, 14, 0.28) 100%);
+}
+
+.wire-room,
+.wire-room-inner {
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  animation: wire-shift 14s cubic-bezier(0.22, 1, 0.36, 1) infinite alternate;
+}
+
+.wire-room-inner {
+  border-color: rgba(255, 255, 255, 0.12);
+  animation-duration: 18s;
+  animation-direction: alternate-reverse;
+}
+
+@keyframes wire-shift {
+  from {
+    transform: scale(1) translate3d(0, 0, 0);
+    opacity: 0.55;
+  }
+  to {
+    transform: scale(1.035) translate3d(1.2%, -1.4%, 0);
+    opacity: 0.95;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wire-room,
+  .wire-room-inner {
+    animation: none;
+  }
+}

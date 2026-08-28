@@ -1,0 +1,161 @@
+import type { AdapterId, MediaType, PlatformId } from "./platforms";
+
+export type SourceRow = {
+  id: string;
+  platform: PlatformId;
+  name: string;
+  handle: string;
+  url: string;
+  feed_url: string;
+  interval_minutes: number;
+  enabled: boolean;
+  last_external_id: string;
+  last_published_at: string | null;
+  last_scanned_at: string | null;
+  last_error: string;
+  status: "idle" | "running" | "ok" | "error";
+  adapter: AdapterId;
+  notes: string;
+  created_at: string;
+  item_count?: number;
+};
+
+export type KeywordRow = {
+  id: string;
+  phrase: string;
+  platforms: PlatformId[];
+  interval_minutes: number;
+  enabled: boolean;
+  last_scanned_at: string | null;
+  last_error: string;
+  status: "idle" | "running" | "ok" | "error";
+  hits: number;
+  notes: string;
+  created_at: string;
+};
+
+export type JsonScalar = string | number | boolean | null;
+
+export type ItemRow = {
+  id: string;
+  source_id: string;
+  platform: PlatformId;
+  external_id: string;
+  title: string;
+  body: string;
+  author: string;
+  url: string;
+  media_type: MediaType;
+  media_urls: string[];
+  thumbnail_url: string;
+  views: number | null;
+  likes: number | null;
+  published_at: string | null;
+  collected_at: string;
+  pipeline_status: "ingested" | "extracted" | "analyzed" | "failed";
+  extra: Record<string, JsonScalar>;
+  matched_keywords: string[];
+  source_name?: string;
+};
+
+export type JobRow = {
+  id: string;
+  source_id: string;
+  platform: PlatformId;
+  started_at: string;
+  finished_at: string | null;
+  status: "running" | "ok" | "error" | "skipped";
+  items_found: number;
+  items_new: number;
+  error: string;
+  kind: string;
+  keyword_id?: string;
+  source_name?: string;
+};
+
+export type AnalysisRow = {
+  id: string;
+  item_id: string;
+  summary: string;
+  topics: string[];
+  entities: string[];
+  insights: string;
+  tags: string[];
+  model: string;
+  created_at: string;
+};
+
+export type MediaObjectRow = {
+  id: string;
+  source_url: string;
+  object_key: string;
+  public_url: string;
+  content_type: string;
+  bytes: number | null;
+  kind: string;
+  status: string;
+  error: string;
+};
+
+export type ExtractJobView = {
+  id: string;
+  kind: string;
+  status: string;
+  result_text: string;
+  model: string;
+  error: string;
+  created_at: string;
+};
+
+export type KnowledgeNote = {
+  id: string;
+  title: string;
+  content: string;
+  kind: "briefing" | "answer" | "note";
+  item_ids: string[];
+  created_at: string;
+};
+
+export type PlatformStat = {
+  platform: PlatformId;
+  sources: number;
+  enabled: number;
+  items: number;
+  last_scanned_at: string | null;
+  status: string;
+};
+
+export type Overview = {
+  seeded: boolean;
+  source_count: number;
+  enabled_count: number;
+  item_count: number;
+  job_count: number;
+  analysis_count: number;
+  note_count: number;
+  new_24h: number;
+  platforms: PlatformStat[];
+  recent_items: ItemRow[];
+  recent_jobs: JobRow[];
+  due_count: number;
+  keyword_count: number;
+  keyword_enabled: number;
+  keyword_due: number;
+  keyword_hits: number;
+  recent_keywords: KeywordRow[];
+};
+
+export type TickResult = {
+  ran: number;
+  items_new: number;
+  errors: number;
+  jobs: { source_id: string; name: string; items_new: number; error: string; kind?: string }[];
+};
+
+export type AskResult = {
+  ok: boolean;
+  error?: string;
+  answer?: string;
+  note_id?: string;
+  citations?: { id: string; title: string; platform: PlatformId }[];
+};

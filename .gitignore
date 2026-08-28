@@ -1,0 +1,25 @@
+# >>> Comet managed project state >>>
+!/.comet/
+/.comet/*
+!/.comet/config.yaml
+# <<< Comet managed project state <<<
+
+# Local dependencies, builds, runtime state, and isolated worktrees
+/node_modules/
+/.repo/
+/.worktrees/
+/.vercel/
+/.grok/preview.log
+/.grok/status
+/.node_modules.lock
+/screenshots/*.png
+/screenshots/*.json
+/artifacts/
+/attachments/
+**/__pycache__/
+*.pyc
+
+# Local secrets
+.env
+.env.*
+!.env.example

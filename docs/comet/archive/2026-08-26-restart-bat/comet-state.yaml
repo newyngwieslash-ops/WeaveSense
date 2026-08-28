@@ -1,0 +1,371 @@
+schema: comet.native.v4
+name: restart-bat
+language: zh-CN
+phase: archive
+status: done
+state_version: 7
+brief: brief.md
+spec_changes:
+  - capability: windows-restart-script
+    operation: create
+    source: specs/windows-restart-script/spec.md
+workspace:
+  isolation: current
+  change_branch: null
+  target_branch: null
+  finish: null
+loop:
+  stage: done
+  goal_cycle: 1
+  iteration: 1
+  attempt: 1
+  retry_epoch: 0
+  failed_iteration_count: 0
+  no_progress_count: 0
+  execution_failure_count: 0
+  previous_unresolved_ids: []
+  next_action: null
+acceptance:
+  - id: A1
+    source: brief.md
+    text: "A1: 双击 `restart.bat` 后，脚本对当前目录执行 `docker compose down` 再 `docker compose
+      up --build -d`，不带 `-v`。"
+    result: passed
+    reason:
+      text: 先 call :compose down（无 -v）再 up --build -d；本机验证子程序 %* 会传入这些参数
+      truncated: false
+  - id: A2
+    source: brief.md
+    text: "A2: 控制面 `http://127.0.0.1:8080/` 返回成功后，脚本用默认浏览器打开该地址。"
+    result: passed
+    reason:
+      text: curl 探测 8080 成功后执行 start "" "http://127.0.0.1:8080"
+      truncated: false
+  - id: A3
+    source: brief.md
+    text: "A3: Docker 未安装或守护进程未运行时，窗口显示中文错误并等待按键，不立刻关闭。"
+    result: passed
+    reason:
+      text: where docker / docker info 失败打印中文并 goto fail（pause + exit /b 1）
+      truncated: false
+  - id: A4
+    source: brief.md
+    text: "A4: 再次双击同一脚本可完成重启：旧栈被停掉后新栈拉起，不因 `8080` 占用而失败。"
+    result: passed
+    reason:
+      text: 再次运行会先结束 8080 LISTEN 再 down/up，杀进程失败不中断
+      truncated: false
+  - id: A5
+    source: brief.md
+    text: "A5: 启动成功后命令窗口保持打开并跟随 `docker compose logs`；用户关掉窗口不作为失败条件。"
+    result: passed
+    reason:
+      text: 就绪后 compose logs -f，成功路径 exit /b 0，关闭窗口不 down
+      truncated: false
+  - id: A6
+    source: brief.md
+    text: "A6: 脚本不写入 `.env`、不含 Telegram / xAI 密钥，也不调用 Telethon `login.py`。"
+    result: passed
+    reason:
+      text: 全文无写入 .env、无 Telegram/xAI 密钥、无 login.py
+      truncated: false
+  - id: A7
+    source: specs/windows-restart-script/spec.md
+    text: Windows 用户通过项目根目录的 `restart.bat` 重启 Docker
+      生产栈（Postgres、MinIO、Telethon、控制面），并在控制面就绪后打开浏览器。
+    result: passed
+    reason:
+      text: 根目录 restart.bat 拉起 compose 全栈并在 8080 就绪后打开浏览器
+      truncated: false
+  - id: A8
+    source: specs/windows-restart-script/spec.md
+    text: 双击 `restart.bat`，或在项目根目录从 cmd 运行 `restart.bat`。
+    result: passed
+    reason:
+      text: 项目根存在 restart.bat，双击与 cmd 运行均可
+      truncated: false
+  - id: A9
+    source: specs/windows-restart-script/spec.md
+    text: 脚本首先 `cd /d "%~dp0"`，始终以脚本所在目录为 Compose 项目根。
+    result: passed
+    reason:
+      text: 脚本含 cd /d "%~dp0"
+      truncated: false
+  - id: A10
+    source: specs/windows-restart-script/spec.md
+    text: 将控制台代码页设为 UTF-8，窗口标题标明「织识 Loom」。
+    result: passed
+    reason:
+      text: 含 chcp 65001 与 title 织识 Loom
+      truncated: false
+  - id: A11
+    source: specs/windows-restart-script/spec.md
+    text: 检测 `docker` 是否在 PATH，并能执行 `docker info`（引擎已运行）。
+    result: passed
+    reason:
+      text: 先 where docker，再 docker info
+      truncated: false
+  - id: A12
+    source: specs/windows-restart-script/spec.md
+    text: 检测 Compose：优先 `docker compose version`，否则 `docker-compose
+      version`。后续命令使用检测到的那一种。
+    result: passed
+    reason:
+      text: 优先 docker compose version，失败回退 docker-compose，后续用 COMPOSE_KIND
+      truncated: false
+  - id: A13
+    source: specs/windows-restart-script/spec.md
+    text: 确认存在 `docker-compose.yml`。
+    result: passed
+    reason:
+      text: 启动前检查 docker-compose.yml 是否存在
+      truncated: false
+  - id: A14
+    source: specs/windows-restart-script/spec.md
+    text: 任一项失败：打印中文原因（未安装 Docker Desktop / 引擎未启动 / 缺少 compose 文件），`pause` 后以非 0
+      退出。不闪退。
+    result: passed
+    reason:
+      text: 缺文件/未装 Docker/引擎未启动均中文说明，pause 后 exit /b 1
+      truncated: false
+  - id: A15
+    source: specs/windows-restart-script/spec.md
+    text: 结束占用本机 TCP `8080` 且处于 LISTENING 的进程（覆盖上次残留的 Node
+      开发服务或失联容器映射）。结束失败不视为致命，继续往下。
+    result: passed
+    reason:
+      text: PowerShell 结束 8080 Listen 进程，错误吞掉后继续
+      truncated: false
+  - id: A16
+    source: specs/windows-restart-script/spec.md
+    text: 执行 `<compose> down`。禁止带 `-v` 或 `--volumes`，保留
+      `pgdata`、`miniodata`、`telethon-session`。
+    result: passed
+    reason:
+      text: compose down 不带 -v/--volumes，保留 pgdata/miniodata/telethon-session
+      truncated: false
+  - id: A17
+    source: specs/windows-restart-script/spec.md
+    text: 执行 `<compose> up --build -d`，后台拉起 `docker-compose.yml` 中的全部服务。
+    result: passed
+    reason:
+      text: call :compose up --build -d 未限定服务名，将拉起 yml 全部服务
+      truncated: false
+  - id: A18
+    source: specs/windows-restart-script/spec.md
+    text: 轮询 `http://127.0.0.1:8080/`，间隔约 3 秒，上限约 10 分钟。
+    result: passed
+    reason:
+      text: timeout /t 3 轮询，MAXWAIT=600 约 10 分钟
+      truncated: false
+  - id: A19
+    source: specs/windows-restart-script/spec.md
+    text: 成功：用默认浏览器打开 `http://127.0.0.1:8080`。
+    result: passed
+    reason:
+      text: 就绪后用 start 打开 http://127.0.0.1:8080
+      truncated: false
+  - id: A20
+    source: specs/windows-restart-script/spec.md
+    text: 超时：打印中文超时说明，提示查看窗口中的 Compose 日志；不自动 `down`；`pause` 后非 0 退出。
+    result: passed
+    reason:
+      text: 超时中文说明、不自动 down、pause 后非 0 退出
+      truncated: false
+  - id: A21
+    source: specs/windows-restart-script/spec.md
+    text: 成功路径执行 `<compose> logs -f`，窗口保持打开。用户关闭窗口或 Ctrl+C 只停止跟随日志，不作为脚本启动失败。
+    result: passed
+    reason:
+      text: 成功路径 logs -f；提示关闭窗口或 Ctrl+C 只停日志
+      truncated: false
+  - id: A22
+    source: specs/windows-restart-script/spec.md
+    text: 脚本不创建、不覆盖 `.env`，不内嵌 `TELEGRAM_API_ID`、`TELEGRAM_API_HASH`、`XAI_API_KEY`。
+    result: passed
+    reason:
+      text: 不创建/覆盖 .env，无 TELEGRAM_API_ID/HASH 与 XAI_API_KEY
+      truncated: false
+  - id: A23
+    source: specs/windows-restart-script/spec.md
+    text: 用户若已在项目根放置 `.env`，由 Docker Compose 自行读取。
+    result: passed
+    reason:
+      text: 脚本不干预 .env，cd 到项目根后 Compose 默认自行读取
+      truncated: false
+  - id: A24
+    source: specs/windows-restart-script/spec.md
+    text: 脚本不调用 `workers/telethon` 的 `login.py`。未登录时产品按现有行为回退公开网页预览。
+    result: passed
+    reason:
+      text: 无 login.py 调用，仅提示按使用指南手动登录
+      truncated: false
+  - id: A25
+    source: specs/windows-restart-script/spec.md
+    text: 不运行 `npm run dev` / 不直接调用 `vite`。
+    result: passed
+    reason:
+      text: restart.bat 不含 npm run dev 或 vite
+      truncated: false
+  - id: A26
+    source: specs/windows-restart-script/spec.md
+    text: 不修改 `startup.sh`、`docker-compose.yml`、Dockerfile。
+    result: passed
+    reason:
+      text: startup.sh、docker-compose.yml、Dockerfile 仍在且为原产品内容；本变更只新增 restart.bat
+      truncated: false
+  - id: A27
+    source: specs/windows-restart-script/spec.md
+    text: 不打开 MinIO 控制台（9001），只打开控制面 8080。
+    result: passed
+    reason:
+      text: 只 start 8080，脚本无 9001
+      truncated: false
+builder_handoff:
+  candidate_id: 812fd9f0-1391-452d-b591-a1dfa6dad384
+  identity_provider: skill-coordinated
+  builder_execution_ref: skill-coordinated:builder:eaebc985-b84d-403e-95f8-02f987954e16
+  iteration: 1
+  summary:
+    text: 新增项目根目录 restart.bat：检测 Docker/Compose，释放宿主 8080，compose down（不带卷删除）后 up
+      --build -d，轮询控制面最多约 10 分钟，就绪后打开 http://127.0.0.1:8080 并 logs -f。缺 Docker
+      或超时则中文报错并 pause。未执行完整 docker compose 重启，以免占用当前 8080。
+    truncated: false
+  addressed_acceptance_ids:
+    - A1
+    - A2
+    - A3
+    - A4
+    - A5
+    - A6
+    - A7
+    - A8
+    - A9
+    - A10
+    - A11
+    - A12
+    - A13
+    - A14
+    - A15
+    - A16
+    - A17
+    - A18
+    - A19
+    - A20
+    - A21
+    - A22
+    - A23
+    - A24
+    - A25
+    - A26
+    - A27
+  checks:
+    - name:
+        text: static-restart-bat-exists
+        truncated: false
+      result: passed
+      note:
+        text: 项目根目录存在 restart.bat，UTF-8 BOM，含中文提示。
+        truncated: false
+    - name:
+        text: static-required-commands
+        truncated: false
+      result: passed
+      note:
+        text: 含 cd /d %~dp0、chcp 65001、title 织识 Loom、docker info、docker compose /
+          docker-compose 回退、down、up --build -d、curl 轮询 8080、start
+          http://127.0.0.1:8080、logs -f、失败 pause。
+        truncated: false
+    - name:
+        text: static-forbidden-tokens
+        truncated: false
+      result: passed
+      note:
+        text: 不含 --volumes、login.py、npm run
+          dev、vite、TELEGRAM_API_ID、TELEGRAM_API_HASH、XAI_API_KEY、不写 .env。down
+          调用无 -v。
+        truncated: false
+    - name:
+        text: toolchain-docker-curl
+        truncated: false
+      result: passed
+      note:
+        text: 本机存在 docker 与 curl.exe；docker info 可访问客户端。
+        truncated: false
+    - name:
+        text: live-compose-restart
+        truncated: false
+      result: not-run
+      note:
+        text: 未执行完整 down/up --build，避免占用本工作区 8080 上的现有服务。
+        truncated: false
+  checks_truncated: false
+  known_limits:
+    - text: 完整 Docker 栈重启未在本工作区实跑，以免抢占 8080。
+      truncated: false
+    - text: 无 Docker 的错误分支依赖脚本静态路径验收，未在卸载 Docker 的机器上实点。
+      truncated: false
+  known_limits_truncated: false
+  submitted_at: 2026-08-26T08:13:12.940Z
+blockers: []
+verification:
+  candidate_id: 812fd9f0-1391-452d-b591-a1dfa6dad384
+  identity_provider: skill-coordinated
+  verifier_execution_ref: skill-coordinated:verifier:ceba3a4f-ecd0-420b-980f-08186662171a
+  iteration: 1
+  attempt: 1
+  assurance: skill-coordinated
+  verdict: pass
+  checks:
+    - id: static-restart-bat
+      name:
+        text: static-restart-bat-scan
+        truncated: false
+      argv_display:
+        - text: .comet/runtime/native/check-restart-bat.mjs
+          truncated: false
+      argv_truncated: false
+      cwd_ref: .
+      status: passed
+      exit_code: 0
+      duration_ms: 63
+  summary:
+    text: 根目录 restart.bat 的静态控制流与 A1–A27 一致：检测 Docker/Compose、释放 8080、down 不删卷、up
+      --build -d、轮询并打开 8080、失败中文 pause；startup.sh / compose / Dockerfile
+      未改。Runtime 静态扫描已通过。未实跑完整重启不影响可静态证明的项。
+    truncated: false
+  risks:
+    - text: 完整 docker compose 重启与二次双击未在本工作区实跑，以免抢占 8080
+      truncated: false
+    - text: 无 Docker 错误分支未在卸载 Docker 的机器上实点，仅静态证明控制流
+      truncated: false
+    - text: 超时时窗口尚未 logs -f，提示为关闭后再执行 docker compose logs
+      truncated: false
+  risks_truncated: false
+  completed_at: 2026-08-26T08:25:31.206Z
+history:
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 1
+    outcome: pass
+    unresolved_ids: []
+    summary:
+      text: 根目录 restart.bat 的静态控制流与 A1–A27 一致：检测 Docker/Compose、释放 8080、down 不删卷、up
+        --build -d、轮询并打开 8080、失败中文 pause；startup.sh / compose / Dockerfile
+        未改。Runtime 静态扫描已通过。未实跑完整重启不影响可静态证明的项。
+      truncated: false
+    completed_at: 2026-08-26T08:25:31.206Z
+history_overflow:
+  dropped_entries: 0
+  first_dropped_at: null
+  last_dropped_at: null
+  outcome_counts:
+    pass: 0
+    fail: 0
+    blocked: 0
+    execution-error: 0
+    recovery: 0
+verification_result: pass
+verification_report: verification.md
+archived: true
+created_at: 2026-08-26T08:00:00.333Z
