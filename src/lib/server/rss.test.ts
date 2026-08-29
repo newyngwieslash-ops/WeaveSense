@@ -67,4 +67,22 @@ describe("parseFeedXml", () => {
     assert.equal(item.body, "");
     assert.equal(item.thumbnail_url, "");
   });
+
+  it("keeps the legacy 8,000-character limit for non-WeChat feeds", () => {
+    const body = "正文".repeat(5000);
+    const [item] = parseFeedXml(atomEntry(body), "source-1", "rss");
+
+    assert.equal(item.body.length, 8000);
+    assert.equal(item.extra.body_error, undefined);
+  });
+
+  it("uses the first non-empty name from repeated Atom authors", () => {
+    const xml = atomEntry("正文").replace(
+      "<author><name>公众号作者</name></author>",
+      "<author><name></name></author><author><name>首位作者</name></author><author><name>后续作者</name></author>",
+    );
+    const [item] = parseFeedXml(xml, "source-1", "wechat");
+
+    assert.equal(item.author, "首位作者");
+  });
 });

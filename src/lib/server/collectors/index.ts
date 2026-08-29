@@ -144,7 +144,7 @@ export async function collectSource(source: SourceRecord): Promise<NormalizedIte
   try {
     return await adapter.fetch(source);
   } catch (err) {
-    if (source.feed_url.startsWith("http") && source.adapter !== "rss" && source.adapter !== "wechat_gateway") {
+    if (source.feed_url.startsWith("http") && source.adapter !== "rss") {
       return rssAdapter.fetch({ ...source, adapter: "rss" });
     }
     throw err;

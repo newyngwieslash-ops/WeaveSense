@@ -75,8 +75,8 @@ function enclosureUrl(item: Record<string, unknown>): string {
 
 function authorOf(item: Record<string, unknown>): string {
   const author = item.author;
-  if (author && typeof author === "object" && !Array.isArray(author)) {
-    const name = textOf((author as Record<string, unknown>).name);
+  for (const entry of asArray(author)) {
+    const name = entry && typeof entry === "object" ? textOf((entry as Record<string, unknown>).name) : "";
     if (name) return name;
   }
   return textOf(item["dc:creator"] ?? author ?? item["itunes:author"] ?? "");
@@ -112,8 +112,8 @@ export function parseFeedXml(xml: string, sourceId: string, platform: PlatformId
     const rawBody = textOf(
       raw["content:encoded"] ?? raw.content ?? raw.description ?? raw.summary ?? raw["media:description"],
     );
-    const tooLarge = Buffer.byteLength(rawBody, "utf8") > MAX_BODY_BYTES;
-    const body = tooLarge ? "" : stripHtml(rawBody);
+    const tooLarge = platform === "wechat" && Buffer.byteLength(rawBody, "utf8") > MAX_BODY_BYTES;
+    const body = tooLarge ? "" : platform === "wechat" ? stripHtml(rawBody) : stripHtml(rawBody).slice(0, 8000);
     const author = stripHtml(authorOf(raw));
     const published = textOf(raw.pubDate ?? raw.published ?? raw.updated ?? raw["dc:date"] ?? "") || null;
     const thumb = pickThumb(raw);
