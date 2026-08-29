@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { XMLParser } from "fast-xml-parser";
+import { XMLParser, XMLValidator } from "fast-xml-parser";
 
 const TRACKING_PARAMS = new Set([
   "scene", "sessionid", "clicktime", "enterid", "ascene", "devicetype", "version",
@@ -13,6 +13,8 @@ const parser = new XMLParser({
   cdataPropName: "#cdata",
   trimValues: true,
 });
+const MAX_PRIMARY_FEED_BYTES = 8 * 1024 * 1024;
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 const arrayOf = (value) => value == null ? [] : Array.isArray(value) ? value : [value];
 const hash32 = (value) => createHash("sha256").update(value).digest("hex").slice(0, 32);
@@ -26,7 +28,7 @@ function textOf(value) {
 function normalizeWechatUrl(raw) {
   let url;
   try { url = new URL(raw); } catch { throw new Error("需要微信原文链接"); }
-  if (url.hostname !== "mp.weixin.qq.com") throw new Error("需要微信原文链接");
+  if (url.protocol !== "https:" || url.hostname !== "mp.weixin.qq.com") throw new Error("需要微信原文链接");
   url.hash = "";
   for (const key of [...url.searchParams.keys()]) {
     if (TRACKING_PARAMS.has(key)) url.searchParams.delete(key);
@@ -99,19 +101,87 @@ function normalizeEntry(raw, source, discoveredAt) {
   };
 }
 
-export async function fetchPrimary(source, now = new Date()) {
-  const response = await fetch(source.primary_feed_url, {
-    headers: { Accept: "application/atom+xml, application/rss+xml, application/xml" },
-    signal: AbortSignal.timeout(20_000),
-    redirect: "follow",
-  });
-  if (!response.ok) throw new Error(`primary feed HTTP ${response.status}`);
-  const doc = parser.parse(await response.text());
-  const rss = doc.rss;
-  const entries = rss
-    ? arrayOf((rss.channel ?? rss).item)
-    : arrayOf(doc.feed?.entry ?? doc["rdf:RDF"]?.item);
-  if (!entries.length) throw new Error("invalid primary feed: no entries");
+function allowedUrl(raw, allowedFeedHosts) {
+  const url = new URL(raw);
+  const hosts = new Set([...allowedFeedHosts].map((host) => String(host).trim().toLowerCase()).filter(Boolean));
+  if (!['http:', 'https:'].includes(url.protocol) || !hosts.has(url.hostname.toLowerCase())) {
+    throw new Error("primary_feed_url must use an allowed host");
+  }
+  return url;
+}
+
+async function fetchAllowed(rawUrl, allowedFeedHosts) {
+  const signal = AbortSignal.timeout(20_000);
+  let url = allowedUrl(rawUrl, allowedFeedHosts);
+  for (let redirects = 0; redirects <= 5; redirects += 1) {
+    const response = await fetch(url, {
+      headers: { Accept: "application/atom+xml, application/rss+xml, application/xml" },
+      signal,
+      redirect: "manual",
+    });
+    if (!REDIRECT_STATUSES.has(response.status)) return response;
+    await response.body?.cancel();
+    if (redirects === 5) throw new Error("primary feed has too many redirects");
+    const location = response.headers.get("location");
+    if (!location) throw new Error("primary feed redirect has no location");
+    url = allowedUrl(new URL(location, url).toString(), allowedFeedHosts);
+  }
+  throw new Error("primary feed has too many redirects");
+}
+
+async function readLimited(response) {
+  const declared = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > MAX_PRIMARY_FEED_BYTES) {
+    await response.body?.cancel();
+    throw new Error("primary feed body too large");
+  }
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const chunks = [];
+  let size = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_PRIMARY_FEED_BYTES) {
+      await reader.cancel();
+      throw new Error("primary feed body too large");
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks, size).toString("utf8");
+}
+
+export async function fetchPrimary(source, now = new Date(), allowedFeedHosts) {
+  const hosts = allowedFeedHosts ?? new Set([new URL(source.primary_feed_url).hostname]);
+  const response = await fetchAllowed(source.primary_feed_url, hosts);
+  if (!response.ok) {
+    await response.body?.cancel();
+    throw new Error(`primary feed HTTP ${response.status}`);
+  }
+  const xml = await readLimited(response);
+  if (XMLValidator.validate(xml) !== true) throw new Error("invalid primary feed: malformed XML");
+  const doc = parser.parse(xml);
+  let entries;
+  if (Object.hasOwn(doc, "rss")) entries = arrayOf((doc.rss?.channel ?? doc.rss)?.item);
+  else if (Object.hasOwn(doc, "feed")) entries = arrayOf(doc.feed?.entry);
+  else if (Object.hasOwn(doc, "rdf:RDF")) entries = arrayOf(doc["rdf:RDF"]?.item);
+  else throw new Error("invalid primary feed: unknown root");
   const discoveredAt = now.toISOString();
-  return entries.slice(0, 24).map((entry) => normalizeEntry(entry, source, discoveredAt));
+  const items = [];
+  const invalid = [];
+  for (const [index, entry] of entries.slice(0, 24).entries()) {
+    try {
+      items.push(normalizeEntry(entry, source, discoveredAt));
+    } catch (error) {
+      invalid.push({ index, error: error instanceof Error ? error.message : "invalid primary entry" });
+    }
+  }
+  if (invalid.length) {
+    console.warn(JSON.stringify({ event: "wechat_primary_invalid_entries",
+      source_id: source.source_id ?? source.id ?? "", invalid_count: invalid.length,
+      errors: invalid.slice(0, 3) }));
+  }
+  if (!items.length && invalid.length) throw new Error(`invalid primary feed: ${invalid.length} invalid entries`);
+  return items;
 }

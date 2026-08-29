@@ -48,7 +48,7 @@ export function normalizeWechatUrl(raw: string): string {
     throw new Error("需要微信原文链接");
   }
 
-  if (url.hostname !== "mp.weixin.qq.com") {
+  if (url.protocol !== "https:" || url.hostname !== "mp.weixin.qq.com") {
     throw new Error("需要微信原文链接");
   }
 

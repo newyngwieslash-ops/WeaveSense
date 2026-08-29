@@ -1,14 +1,19 @@
 import { createServer } from "node:http";
+import { timingSafeEqual } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { toAtom } from "./atom.mjs";
 import { fetchPrimary } from "./primary.mjs";
 import { openStore } from "./store.mjs";
 
 export function authorize(headers, token) {
-  return Boolean(token) && headers.get("authorization") === `Bearer ${token}`;
+  const actual = headers.get("authorization");
+  if (!token || !actual?.startsWith("Bearer ")) return false;
+  const supplied = Buffer.from(actual.slice(7));
+  const expected = Buffer.from(token);
+  return supplied.length === expected.length && timingSafeEqual(supplied, expected);
 }
 
-export function validateSourceInput(input) {
+export function validateSourceInput(input, allowedFeedHosts) {
   const required = ["id", "name", "sample_url", "primary_feed_url", "account_id"];
   for (const field of required) {
     if (typeof input?.[field] !== "string" || !input[field].trim()) throw new Error(`${field} is required`);
@@ -17,8 +22,12 @@ export function validateSourceInput(input) {
   let feed;
   try { sample = new URL(input.sample_url); } catch { throw new Error("sample_url must be a WeChat URL"); }
   try { feed = new URL(input.primary_feed_url); } catch { throw new Error("primary_feed_url must be HTTP(S)"); }
-  if (sample.hostname !== "mp.weixin.qq.com") throw new Error("sample_url must be a WeChat URL");
+  if (sample.protocol !== "https:" || sample.hostname !== "mp.weixin.qq.com") {
+    throw new Error("sample_url must be an HTTPS WeChat URL");
+  }
   if (!["http:", "https:"].includes(feed.protocol)) throw new Error("primary_feed_url must be HTTP(S)");
+  if (allowedFeedHosts && !new Set([...allowedFeedHosts].map((host) => String(host).trim().toLowerCase()))
+    .has(feed.hostname.toLowerCase())) throw new Error("primary_feed_url must use an allowed host");
   const priority = input.priority ?? "normal";
   if (!['normal', 'high'].includes(priority)) throw new Error("priority must be normal or high");
   return { id: input.id.trim(), name: input.name.trim(), account_id: input.account_id.trim(), priority,
@@ -41,7 +50,8 @@ async function readJson(req) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-export function createGatewayServer({ store, token }) {
+export function createGatewayServer({ store, token, allowedFeedHosts }) {
+  if (!allowedFeedHosts?.size) throw new Error("allowedFeedHosts is required");
   return createServer(async (req, res) => {
     try {
       if (!authorize(new Headers(req.headers), token)) return json(res, 401, { error: "unauthorized" });
@@ -50,7 +60,7 @@ export function createGatewayServer({ store, token }) {
       if (req.method === "PUT" && match) {
         let input;
         try {
-          input = validateSourceInput({ ...(await readJson(req)), id: decodeURIComponent(match[1]) });
+          input = validateSourceInput({ ...(await readJson(req)), id: decodeURIComponent(match[1]) }, allowedFeedHosts);
         } catch (error) {
           return json(res, 422, { error: error instanceof Error ? error.message : "invalid source input" });
         }
@@ -67,13 +77,13 @@ export function createGatewayServer({ store, token }) {
         const source = store.getSource(decodeURIComponent(match[1]));
         if (!source) return json(res, 404, { error: "source not found" });
         try {
-          const items = await fetchPrimary(source);
+          const items = await fetchPrimary(source, new Date(), allowedFeedHosts);
           store.recordPrimarySuccess(source.source_id);
           res.writeHead(200, { "content-type": "application/atom+xml; charset=utf-8" });
           return res.end(toAtom(source.source_id, source.name, items));
-        } catch (error) {
+        } catch {
           store.recordPrimaryFailure(source.source_id);
-          return json(res, 502, { error: error instanceof Error ? error.message : "primary feed failed" });
+          return json(res, 502, { error: "primary_feed_failed" });
         }
       }
       return json(res, 404, { error: "not found" });
@@ -93,6 +103,21 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const token = requiredEnv("WECHAT_GATEWAY_TOKEN");
   const dbPath = requiredEnv("GATEWAY_DB_PATH");
   const port = Number(requiredEnv("PORT"));
+  const allowedFeedHosts = new Set(requiredEnv("WECHAT_PRIMARY_ALLOWED_HOSTS")
+    .split(",").map((host) => host.trim().toLowerCase()).filter(Boolean));
+  if (!allowedFeedHosts.size) throw new Error("WECHAT_PRIMARY_ALLOWED_HOSTS is required");
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("PORT must be a valid port");
-  createGatewayServer({ store: openStore(dbPath), token }).listen(port, "0.0.0.0");
+  const store = openStore(dbPath);
+  const server = createGatewayServer({ store, token, allowedFeedHosts }).listen(port, "0.0.0.0");
+  let closing = false;
+  const shutdown = () => {
+    if (closing) return;
+    closing = true;
+    server.close(() => {
+      store.close();
+      process.exit(0);
+    });
+  };
+  process.once("SIGTERM", shutdown);
+  process.once("SIGINT", shutdown);
 }

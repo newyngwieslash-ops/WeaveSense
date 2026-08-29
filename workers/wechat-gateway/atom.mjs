@@ -1,7 +1,8 @@
-const escapeText = (value) => String(value ?? "")
+const xmlText = (value) => String(value ?? "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
+const escapeText = (value) => xmlText(value)
   .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 const escapeAttr = (value) => escapeText(value).replaceAll('"', "&quot;").replaceAll("'", "&apos;");
-const cdata = (value) => `<![CDATA[${String(value ?? "").replaceAll("]]>", "]]]]><![CDATA[>")}]]>`;
+const cdata = (value) => `<![CDATA[${xmlText(value).replaceAll("]]>", "]]]]><![CDATA[>")}]]>`;
 
 export function toAtom(sourceId, sourceName, items) {
   const updated = items[0]?.discovered_at ?? items[0]?.published_at ?? new Date(0).toISOString();

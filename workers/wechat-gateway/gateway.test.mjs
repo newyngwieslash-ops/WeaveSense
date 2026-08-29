@@ -43,12 +43,23 @@ test("requires a WeChat sample URL and HTTP feed", () => {
     id: "wx-1", name: "示例号", account_id: "gh_example",
     sample_url: "https://mp.weixin.qq.com/s/example",
     primary_feed_url: "https://feeds.internal/wx-1.atom",
-  }).id, "wx-1");
+  }, new Set(["feeds.internal"])).id, "wx-1");
   assert.throws(() => validateSourceInput({ id: "wx-1", name: "示例号" }), /sample_url/);
+  assert.throws(() => validateSourceInput({
+    id: "wx-1", name: "示例号", account_id: "gh_example",
+    sample_url: "http://mp.weixin.qq.com/s/example",
+    primary_feed_url: "https://feeds.internal/wx-1.atom",
+  }, new Set(["feeds.internal"])), /sample_url/);
+  assert.throws(() => validateSourceInput({
+    id: "wx-1", name: "示例号", account_id: "gh_example",
+    sample_url: "https://mp.weixin.qq.com/s/example",
+    primary_feed_url: "https://untrusted.example/wx-1.atom",
+  }, new Set(["feeds.internal"])), /allowed host/);
 });
 
-test("stores source health state in SQLite", () => {
+test("stores source health state in SQLite", (t) => {
   const store = openStore(":memory:");
+  t.after(() => store.close());
   const source = validateSourceInput({
     id: "wx-1", name: "示例号", account_id: "gh_example", priority: "high",
     sample_url: "https://mp.weixin.qq.com/s/example",
@@ -56,6 +67,8 @@ test("stores source health state in SQLite", () => {
   });
   store.upsertSource(source, "2026-08-28T00:00:00.000Z");
   store.recordPrimaryFailure("wx-1", "2026-08-28T01:00:00.000Z");
+  assert.equal(store.getSource("wx-1").consecutive_primary_failures, 1);
+  store.upsertSource({ ...source, name: "改名后" }, "2026-08-28T01:30:00.000Z");
   assert.equal(store.getSource("wx-1").consecutive_primary_failures, 1);
   store.recordPrimarySuccess("wx-1", "2026-08-28T02:00:00.000Z");
   assert.equal(store.getSource("wx-1").last_primary_ok_at, "2026-08-28T02:00:00.000Z");
@@ -84,7 +97,7 @@ test("normalizes at most 24 valid primary entries", async (t) => {
   const items = await fetchPrimary({
     account_id: "gh_example", name: "示例号",
     primary_feed_url: `http://127.0.0.1:${port}/feed.atom`,
-  }, new Date("2026-08-28T09:00:00Z"));
+  }, new Date("2026-08-28T09:00:00Z"), new Set(["127.0.0.1"]));
   assert.equal(items.length, 24);
   assert.equal(items[0].provider, "primary");
   assert.equal(items[0].discovered_at, "2026-08-28T09:00:00.000Z");
@@ -101,7 +114,76 @@ test("rejects invalid primary article fields", async (t) => {
   await assert.rejects(fetchPrimary({
     account_id: "gh_example", name: "示例号",
     primary_feed_url: `http://127.0.0.1:${port}/feed.atom`,
-  }), /invalid primary entry/);
+  }, new Date(), new Set(["127.0.0.1"])), /invalid primary feed/);
+});
+
+test("accepts empty Atom, RSS, and RDF feeds but rejects an unknown root", async (t) => {
+  const documents = [
+    '<feed xmlns="http://www.w3.org/2005/Atom"></feed>',
+    '<rss version="2.0"><channel></channel></rss>',
+    '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"></rdf:RDF>',
+  ];
+  let current = documents[0];
+  const upstream = createServer((_req, res) => res.end(current)).listen(0, "127.0.0.1");
+  await once(upstream, "listening");
+  t.after(() => upstream.close());
+  const source = { account_id: "gh_example", name: "示例号",
+    primary_feed_url: `http://127.0.0.1:${upstream.address().port}/feed` };
+  for (const document of documents) {
+    current = document;
+    assert.deepEqual(await fetchPrimary(source, new Date(), new Set(["127.0.0.1"])), []);
+  }
+  current = "<html><body>not a feed</body></html>";
+  await assert.rejects(fetchPrimary(source, new Date(), new Set(["127.0.0.1"])), /invalid primary feed/);
+});
+
+test("keeps valid entries when sibling entries are invalid", async (t) => {
+  const upstream = createServer((_req, res) => res.end(`
+    <feed xmlns="http://www.w3.org/2005/Atom">
+      <entry><title>坏链接</title><published>2026-08-28T08:00:00+08:00</published><link href="http://mp.weixin.qq.com/s/bad"/></entry>
+      <entry><title>有效文章</title><published>2026-08-28T08:00:00+08:00</published><link href="https://mp.weixin.qq.com/s/good"/></entry>
+    </feed>`)).listen(0, "127.0.0.1");
+  await once(upstream, "listening");
+  t.after(() => upstream.close());
+  const warnings = [];
+  const warn = console.warn;
+  console.warn = (message) => warnings.push(JSON.parse(message));
+  t.after(() => { console.warn = warn; });
+  const items = await fetchPrimary({ account_id: "gh_example", name: "示例号",
+    primary_feed_url: `http://127.0.0.1:${upstream.address().port}/feed` },
+    new Date(), new Set(["127.0.0.1"]));
+  assert.equal(items.length, 1);
+  assert.equal(items[0].title, "有效文章");
+  assert.equal(warnings[0].invalid_count, 1);
+  assert.equal(warnings[0].event, "wechat_primary_invalid_entries");
+});
+
+test("rejects a chunked primary response above 8 MiB", async (t) => {
+  const upstream = createServer((_req, res) => {
+    res.setHeader("content-type", "application/xml");
+    for (let index = 0; index < 9; index += 1) res.write(Buffer.alloc(1024 * 1024, 65));
+    res.end();
+  }).listen(0, "127.0.0.1");
+  await once(upstream, "listening");
+  t.after(() => upstream.close());
+  await assert.rejects(fetchPrimary({ account_id: "gh_example", name: "示例号",
+    primary_feed_url: `http://127.0.0.1:${upstream.address().port}/feed` },
+    new Date(), new Set(["127.0.0.1"])), /body too large/);
+});
+
+test("revalidates every redirect against the feed host allowlist", async (t) => {
+  const upstream = createServer((req, res) => {
+    if (req.url === "/redirect") {
+      res.writeHead(302, { location: `http://localhost:${upstream.address().port}/feed` });
+      return res.end();
+    }
+    res.end('<feed xmlns="http://www.w3.org/2005/Atom"></feed>');
+  }).listen(0, "127.0.0.1");
+  await once(upstream, "listening");
+  t.after(() => upstream.close());
+  await assert.rejects(fetchPrimary({ account_id: "gh_example", name: "示例号",
+    primary_feed_url: `http://127.0.0.1:${upstream.address().port}/redirect` },
+    new Date(), new Set(["127.0.0.1"])), /allowed host/);
 });
 
 test("serializes the required XML-safe Atom contract", () => {
@@ -109,13 +191,14 @@ test("serializes the required XML-safe Atom contract", () => {
     canonical_id: "wx:MzA1:9:1", account_id: "gh_example", account_name: "示例号",
     title: "标题 <&", published_at: "2026-08-28T08:00:00+08:00",
     original_url: "https://mp.weixin.qq.com/s?__biz=MzA1&mid=9&idx=1&sn=abc",
-    body_text: "正文 ]]> 尾", cover_url: "https://mmbiz.qpic.cn/cover.jpg?a=1&b=2",
+    body_text: "正文 \u0001 ]]> 尾", cover_url: "https://mmbiz.qpic.cn/cover.jpg?a=1&b=2",
     provider: "primary", discovered_at: "2026-08-28T09:00:00Z",
   }]);
   assert.match(xml, /wx:MzA1:9:1/);
   assert.match(xml, /loom:provider>primary/);
   assert.match(xml, /media:thumbnail/);
   assert.match(xml, /]]]]><!\[CDATA\[>/);
+  assert.equal(xml.includes("\u0001"), false);
   assert.doesNotThrow(() => new XMLParser().parse(xml));
 });
 
@@ -126,9 +209,10 @@ test("serves authenticated source, health, and feed routes", async (t) => {
     <link href="https://mp.weixin.qq.com/s?__biz=MzA1&amp;mid=9&amp;idx=1&amp;sn=abc"/></entry></feed>`)).listen(0, "127.0.0.1");
   await once(upstream, "listening");
   const store = openStore(":memory:");
-  const gateway = createGatewayServer({ store, token: "gateway-test" }).listen(0, "127.0.0.1");
+  const gateway = createGatewayServer({ store, token: "gateway-test",
+    allowedFeedHosts: new Set(["127.0.0.1"]) }).listen(0, "127.0.0.1");
   await once(gateway, "listening");
-  t.after(() => { upstream.close(); gateway.close(); });
+  t.after(() => { upstream.close(); gateway.close(); store.close(); });
   const upstreamPort = upstream.address().port;
   const gatewayPort = gateway.address().port;
   const base = `http://127.0.0.1:${gatewayPort}`;
@@ -154,4 +238,28 @@ test("serves authenticated source, health, and feed routes", async (t) => {
   assert.match(feed.headers.get("content-type"), /application\/atom\+xml/);
   assert.match(await feed.text(), /<entry>/);
   assert.equal(store.getSource("wx-1").consecutive_primary_failures, 0);
+});
+
+test("an empty feed succeeds while an upstream failure is counted with a fixed error", async (t) => {
+  let body = '<feed xmlns="http://www.w3.org/2005/Atom"></feed>';
+  const upstream = createServer((_req, res) => res.end(body)).listen(0, "127.0.0.1");
+  await once(upstream, "listening");
+  const store = openStore(":memory:");
+  const gateway = createGatewayServer({ store, token: "gateway-test",
+    allowedFeedHosts: new Set(["127.0.0.1"]) }).listen(0, "127.0.0.1");
+  await once(gateway, "listening");
+  t.after(() => { upstream.close(); gateway.close(); store.close(); });
+  store.upsertSource({ id: "wx-empty", name: "示例号", account_id: "gh_example", priority: "normal",
+    sample_url: "https://mp.weixin.qq.com/s/example",
+    primary_feed_url: `http://127.0.0.1:${upstream.address().port}/feed` });
+  const headers = { authorization: "Bearer gateway-test" };
+  const base = `http://127.0.0.1:${gateway.address().port}`;
+  assert.equal((await fetch(`${base}/v1/feeds/wx-empty.atom`, { headers })).status, 200);
+  assert.equal(store.getSource("wx-empty").consecutive_primary_failures, 0);
+  assert.ok(store.getSource("wx-empty").last_primary_ok_at);
+  body = "<broken";
+  const failed = await fetch(`${base}/v1/feeds/wx-empty.atom`, { headers });
+  assert.equal(failed.status, 502);
+  assert.deepEqual(await failed.json(), { error: "primary_feed_failed" });
+  assert.equal(store.getSource("wx-empty").consecutive_primary_failures, 1);
 });

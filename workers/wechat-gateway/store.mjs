@@ -49,5 +49,6 @@ export function openStore(path) {
     recordPrimaryFailure(sourceId, now = new Date().toISOString()) {
       failure.run(now, sourceId);
     },
+    close() { db.close(); },
   };
 }

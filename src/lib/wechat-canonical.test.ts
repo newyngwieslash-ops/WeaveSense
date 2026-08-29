@@ -27,6 +27,13 @@ describe("normalizeWechatUrl", () => {
       /需要微信原文链接/,
     );
   });
+
+  it("rejects insecure WeChat article URLs", () => {
+    assert.throws(
+      () => normalizeWechatUrl("http://mp.weixin.qq.com/s/example"),
+      /需要微信原文链接/,
+    );
+  });
 });
 
 describe("canonicalWechatId", () => {
