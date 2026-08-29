@@ -41,7 +41,13 @@ function hashWechatFallback(
 }
 
 export function normalizeWechatUrl(raw: string): string {
-  const url = new URL(raw);
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error("需要微信原文链接");
+  }
+
   if (url.hostname !== "mp.weixin.qq.com") {
     throw new Error("需要微信原文链接");
   }

@@ -16,6 +16,17 @@ describe("normalizeWechatUrl", () => {
       "https://mp.weixin.qq.com/s?__biz=MzA1&idx=1&mid=9&sn=abc",
     );
   });
+
+  it("rejects malformed URLs with the WeChat article error", () => {
+    assert.throws(() => normalizeWechatUrl("not-a-url"), /需要微信原文链接/);
+  });
+
+  it("rejects non-WeChat hosts with the WeChat article error", () => {
+    assert.throws(
+      () => normalizeWechatUrl("https://example.com/s?sn=abc"),
+      /需要微信原文链接/,
+    );
+  });
 });
 
 describe("canonicalWechatId", () => {
