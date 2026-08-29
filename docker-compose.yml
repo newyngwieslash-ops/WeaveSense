@@ -90,8 +90,8 @@ services:
     build: .
     command: ["npm", "run", "gateway:start"]
     environment:
-      WECHAT_GATEWAY_TOKEN: ${WECHAT_GATEWAY_TOKEN:-change-me}
-      WECHAT_PRIMARY_ALLOWED_HOSTS: ${WECHAT_PRIMARY_ALLOWED_HOSTS:-wechat-fixture}
+      WECHAT_GATEWAY_TOKEN: ${WECHAT_GATEWAY_TOKEN:?set WECHAT_GATEWAY_TOKEN}
+      WECHAT_PRIMARY_ALLOWED_HOSTS: ${WECHAT_PRIMARY_ALLOWED_HOSTS:?set WECHAT_PRIMARY_ALLOWED_HOSTS}
       GATEWAY_DB_PATH: /data/wechat-gateway.sqlite
       PORT: "8790"
     volumes:
@@ -118,8 +118,8 @@ services:
       XAI_API_KEY: ${XAI_API_KEY:-}
       TICK_LIMIT: ${TICK_LIMIT:-20}
       EXTRACT_AUTO: ${EXTRACT_AUTO:-false}
-      WECHAT_GATEWAY_URL: http://wechat-gateway:8790
-      WECHAT_GATEWAY_TOKEN: ${WECHAT_GATEWAY_TOKEN:-change-me}
+      WECHAT_GATEWAY_URL: ${WECHAT_GATEWAY_URL:-http://wechat-gateway:8790}
+      WECHAT_GATEWAY_TOKEN: ${WECHAT_GATEWAY_TOKEN:?set WECHAT_GATEWAY_TOKEN}
       VITE_AUTH_ENABLED: "false"
     depends_on:
       postgres:

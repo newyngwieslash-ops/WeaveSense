@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import test from "node:test";
 import { XMLParser } from "fast-xml-parser";
 import { toAtom } from "./atom.mjs";
+import { createFixtureServer } from "./fixture-server.mjs";
 import { canonicalWechatId, fetchPrimary } from "./primary.mjs";
 import { authorize, createGatewayServer, validateSourceInput } from "./server.mjs";
 import { openStore } from "./store.mjs";
@@ -21,7 +22,22 @@ test("ships a QA-only primary fixture and wires its host allowlist", async () =>
   assert.ok(entries.some((entry) => String(entry.content ?? "").length > 8_000));
   assert.ok(entries.some((entry) => entry["media:thumbnail"]?.["@_url"]));
   assert.match(compose, /wechat-fixture:\s*[\s\S]*profiles:\s*\["qa"\]/);
-  assert.match(compose, /WECHAT_PRIMARY_ALLOWED_HOSTS:\s*\$\{WECHAT_PRIMARY_ALLOWED_HOSTS:-wechat-fixture\}/);
+  assert.match(compose, /WECHAT_PRIMARY_ALLOWED_HOSTS:\s*\$\{WECHAT_PRIMARY_ALLOWED_HOSTS:\?[^}]+\}/);
+  assert.equal((compose.match(/WECHAT_GATEWAY_TOKEN:\s*\$\{WECHAT_GATEWAY_TOKEN:\?[^}]+\}/g) ?? []).length, 2);
+  assert.match(compose, /WECHAT_GATEWAY_URL:\s*\$\{WECHAT_GATEWAY_URL:-http:\/\/wechat-gateway:8790\}/);
+});
+
+test("serves the deterministic fixture without side effects on import", async (t) => {
+  const fixture = await readFile(new URL("./fixtures/primary.atom", import.meta.url));
+  const server = createFixtureServer(fixture).listen(0, "127.0.0.1");
+  await once(server, "listening");
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const feed = await fetch(`${base}/primary.atom`);
+  assert.equal(feed.status, 200);
+  assert.match(feed.headers.get("content-type"), /application\/atom\+xml/);
+  assert.match(await feed.text(), /<entry>/);
+  assert.equal((await fetch(`${base}/missing`)).status, 404);
 });
 
 const canonicalFixtures = [

@@ -65,6 +65,9 @@ npm run dev
 | `TELEGRAM_WORKER_URL` | Docker 下是 | Telethon 节点，例如 `http://telethon:8787`。 |
 | `MINIO_ENDPOINT` | Docker 下是 | MinIO / S3 兼容地址。 |
 | `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | 配 MinIO 时 | 对象存储凭证。 |
+| `WECHAT_GATEWAY_URL` | 非 Compose 必填 | 微信源网关地址；Compose 默认使用内部地址。 |
+| `WECHAT_GATEWAY_TOKEN` | 是 | 应用与微信源网关共享的 Bearer 密钥。 |
+| `WECHAT_PRIMARY_ALLOWED_HOSTS` | 是 | 可信 WeWe / RSSHub 主源域名白名单，逗号分隔。 |
 | `TICK_LIMIT` | 否 | 每轮扫描到期信源数，默认 5，Docker 建议 20。 |
 | `EXTRACT_AUTO` | 否 | `true` 才在扫描时自动 OCR/ASR。 |
 | `VITE_AUTH_ENABLED` | 已关闭 | 本产品无登录。见 `.grok/app-env.json`。 |
@@ -77,6 +80,8 @@ npm run dev
 export TELEGRAM_API_ID=...
 export TELEGRAM_API_HASH=...
 export XAI_API_KEY=...          # OCR / ASR / LLM
+export WECHAT_GATEWAY_TOKEN=... # 必填，使用高强度随机密钥
+export WECHAT_PRIMARY_ALLOWED_HOSTS=feeds.example.com,rsshub.example.com
 
 docker compose run --rm -it telethon python login.py
 docker compose up --build
@@ -91,7 +96,7 @@ docker compose up --build
 
 ### 微信公众号源网关
 
-微信公众号通过带 Bearer 鉴权的源网关接入；已配置的 WeWe / RSSHub 兼容订阅仍是主数据源。运行时设置 `WECHAT_GATEWAY_TOKEN`，并把可信主源域名（不含协议和端口、多个用逗号分隔）写入 `WECHAT_PRIMARY_ALLOWED_HOSTS`。密钥只放运行环境，不提交到仓库；`qa` profile 中的 `wechat-fixture` 仅用于确定性验收，正常生产栈不会启动它。
+微信公众号通过带 Bearer 鉴权的源网关接入；已配置的 WeWe / RSSHub 兼容订阅仍是主数据源。启动前必须设置 `WECHAT_GATEWAY_TOKEN`，并把可信主源域名（不含协议和端口、多个用逗号分隔）写入 `WECHAT_PRIMARY_ALLOWED_HOSTS`。Compose 默认使用内部地址 `http://wechat-gateway:8790`；非 Compose 部署还必须显式设置 `WECHAT_GATEWAY_URL`。密钥只放运行环境，不提交到仓库；`qa` profile 中的 `wechat-fixture` 仅用于确定性验收，正常生产栈不会启动它。
 
 迁移：`migrations/0002_schema.sql`、`0003_keywords.sql`、`0004_production.sql`。
 
