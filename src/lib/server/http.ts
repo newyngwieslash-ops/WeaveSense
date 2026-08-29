@@ -5,12 +5,14 @@ export async function fetchText(
   url: string,
   timeoutMs = 10000,
   accept = "application/rss+xml, application/atom+xml, application/xml, text/html;q=0.9, */*;q=0.8",
+  headers: Record<string, string> = {},
 ): Promise<string> {
   const res = await fetch(url, {
     headers: {
       "User-Agent": UA,
       Accept: accept,
       "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+      ...headers,
     },
     signal: AbortSignal.timeout(timeoutMs),
     redirect: "follow",

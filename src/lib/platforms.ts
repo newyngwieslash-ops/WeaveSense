@@ -22,7 +22,7 @@ export const PLATFORM_IDS = [
 
 export type PlatformId = (typeof PLATFORM_IDS)[number];
 
-export type AdapterId = "rss" | "telegram_web" | "bilibili" | "youtube" | "rsshub";
+export type AdapterId = "rss" | "telegram_web" | "bilibili" | "youtube" | "rsshub" | "wechat_gateway";
 
 export type IntervalMinutes = 5 | 10 | 30 | 60 | 180 | 1440;
 
@@ -69,7 +69,7 @@ export const PLATFORMS: Record<PlatformId, PlatformDef> = {
     nameEn: "WeChat",
     blurb: "WeWe RSS / 任意 Atom 订阅，适合定时全文采集",
     icon: BookOpen,
-    adapter: "rss",
+    adapter: "wechat_gateway",
     license: "MIT",
     foundation: "WeWe RSS",
     handleLabel: "RSS 地址",

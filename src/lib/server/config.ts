@@ -5,6 +5,8 @@ function read(name: string, fallback = ""): string {
 
 export const prod = {
   telegramWorkerUrl: read("TELEGRAM_WORKER_URL").replace(/\/$/, ""),
+  wechatGatewayUrl: read("WECHAT_GATEWAY_URL").replace(/\/$/, ""),
+  wechatGatewayToken: read("WECHAT_GATEWAY_TOKEN"),
   minioEndpoint: read("MINIO_ENDPOINT").replace(/\/$/, ""),
   minioAccessKey: read("MINIO_ACCESS_KEY") || read("MINIO_ROOT_USER"),
   minioSecretKey: read("MINIO_SECRET_KEY") || read("MINIO_ROOT_PASSWORD"),
@@ -22,4 +24,8 @@ export function minioConfigured(): boolean {
 
 export function telethonConfigured(): boolean {
   return Boolean(prod.telegramWorkerUrl);
+}
+
+export function wechatGatewayConfigured(): boolean {
+  return Boolean(prod.wechatGatewayUrl && prod.wechatGatewayToken);
 }

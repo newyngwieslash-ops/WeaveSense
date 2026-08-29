@@ -2,7 +2,9 @@ import type { PlatformId } from "@/lib/platforms";
 import { fetchRss } from "../rss";
 import { fetchTelegramChannel } from "../telegram";
 import { fetchTelethonHistory, telethonReady } from "../telethon";
-import { fetchJson } from "../http";
+import { prod, wechatGatewayConfigured } from "../config";
+import { fetchJson, fetchText } from "../http";
+import { parseFeedXml } from "../rss-parser";
 import type { CollectorAdapter, NormalizedItem, SourceRecord } from "./types";
 
 function youtubeFeedUrl(source: SourceRecord): string {
@@ -22,6 +24,20 @@ const rssAdapter: CollectorAdapter = {
     const url = source.feed_url || source.handle || source.url;
     if (!url.startsWith("http")) throw new Error("需要有效的 RSS / Atom 地址");
     return fetchRss(url, source.id, source.platform);
+  },
+};
+
+const wechatGatewayAdapter: CollectorAdapter = {
+  id: "wechat_gateway",
+  async fetch(source) {
+    if (!wechatGatewayConfigured()) throw new Error("微信公众号源网关未配置");
+    const xml = await fetchText(
+      `${prod.wechatGatewayUrl}/v1/feeds/${encodeURIComponent(source.id)}.atom`,
+      20000,
+      "application/atom+xml",
+      { Authorization: `Bearer ${prod.wechatGatewayToken}` },
+    );
+    return parseFeedXml(xml, source.id, "wechat");
   },
 };
 
@@ -116,6 +132,7 @@ const rsshubAdapter: CollectorAdapter = {
 
 const ADAPTERS: Record<string, CollectorAdapter> = {
   rss: rssAdapter,
+  wechat_gateway: wechatGatewayAdapter,
   telegram_web: telegramAdapter,
   youtube: youtubeAdapter,
   bilibili: biliAdapter,
@@ -127,7 +144,7 @@ export async function collectSource(source: SourceRecord): Promise<NormalizedIte
   try {
     return await adapter.fetch(source);
   } catch (err) {
-    if (source.feed_url.startsWith("http") && source.adapter !== "rss") {
+    if (source.feed_url.startsWith("http") && source.adapter !== "rss" && source.adapter !== "wechat_gateway") {
       return rssAdapter.fetch({ ...source, adapter: "rss" });
     }
     throw err;
@@ -135,6 +152,7 @@ export async function collectSource(source: SourceRecord): Promise<NormalizedIte
 }
 
 export function defaultAdapter(platform: PlatformId): string {
+  if (platform === "wechat") return "wechat_gateway";
   if (platform === "telegram") return "telegram_web";
   if (platform === "bilibili") return "bilibili";
   if (platform === "youtube") return "youtube";
