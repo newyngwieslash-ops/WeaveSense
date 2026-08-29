@@ -86,6 +86,23 @@ services:
       start_period: 20s
     restart: unless-stopped
 
+  wechat-gateway:
+    build: .
+    command: ["npm", "run", "gateway:start"]
+    environment:
+      WECHAT_GATEWAY_TOKEN: ${WECHAT_GATEWAY_TOKEN:-change-me}
+      WECHAT_PRIMARY_ALLOWED_HOSTS: ${WECHAT_PRIMARY_ALLOWED_HOSTS:-wechat-fixture}
+      GATEWAY_DB_PATH: /data/wechat-gateway.sqlite
+      PORT: "8790"
+    volumes:
+      - wechat-gateway-data:/data
+    restart: unless-stopped
+
+  wechat-fixture:
+    profiles: ["qa"]
+    build: .
+    command: ["node", "workers/wechat-gateway/fixture-server.mjs"]
+
   app:
     build: .
     ports:
@@ -101,6 +118,8 @@ services:
       XAI_API_KEY: ${XAI_API_KEY:-}
       TICK_LIMIT: ${TICK_LIMIT:-20}
       EXTRACT_AUTO: ${EXTRACT_AUTO:-false}
+      WECHAT_GATEWAY_URL: http://wechat-gateway:8790
+      WECHAT_GATEWAY_TOKEN: ${WECHAT_GATEWAY_TOKEN:-change-me}
       VITE_AUTH_ENABLED: "false"
     depends_on:
       postgres:
@@ -109,9 +128,12 @@ services:
         condition: service_started
       minio:
         condition: service_started
+      wechat-gateway:
+        condition: service_started
     restart: unless-stopped
 
 volumes:
   pgdata:
   miniodata:
   telethon-session:
+  wechat-gateway-data:

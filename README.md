@@ -89,6 +89,10 @@ docker compose up --build
 
 登录一次后会话写在 `telethon-session` volume。未登录时 Telegram 信源回退 `t.me/s`。
 
+### 微信公众号源网关
+
+微信公众号通过带 Bearer 鉴权的源网关接入；已配置的 WeWe / RSSHub 兼容订阅仍是主数据源。运行时设置 `WECHAT_GATEWAY_TOKEN`，并把可信主源域名（不含协议和端口、多个用逗号分隔）写入 `WECHAT_PRIMARY_ALLOWED_HOSTS`。密钥只放运行环境，不提交到仓库；`qa` profile 中的 `wechat-fixture` 仅用于确定性验收，正常生产栈不会启动它。
+
 迁移：`migrations/0002_schema.sql`、`0003_keywords.sql`、`0004_production.sql`。
 
 ## 产品怎么用

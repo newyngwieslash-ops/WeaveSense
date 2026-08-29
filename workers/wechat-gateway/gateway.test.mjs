@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
+import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import test from "node:test";
 import { XMLParser } from "fast-xml-parser";
@@ -7,6 +8,21 @@ import { toAtom } from "./atom.mjs";
 import { canonicalWechatId, fetchPrimary } from "./primary.mjs";
 import { authorize, createGatewayServer, validateSourceInput } from "./server.mjs";
 import { openStore } from "./store.mjs";
+
+test("ships a QA-only primary fixture and wires its host allowlist", async () => {
+  const [compose, fixture] = await Promise.all([
+    readFile(new URL("../../docker-compose.yml", import.meta.url), "utf8"),
+    readFile(new URL("./fixtures/primary.atom", import.meta.url), "utf8"),
+  ]);
+  const parsed = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_" }).parse(fixture);
+  const entries = Array.isArray(parsed.feed.entry) ? parsed.feed.entry : [parsed.feed.entry];
+  assert.equal(entries.length, 2);
+  assert.ok(entries.every((entry) => String(entry.link?.["@_href"] ?? "").startsWith("https://mp.weixin.qq.com/")));
+  assert.ok(entries.some((entry) => String(entry.content ?? "").length > 8_000));
+  assert.ok(entries.some((entry) => entry["media:thumbnail"]?.["@_url"]));
+  assert.match(compose, /wechat-fixture:\s*[\s\S]*profiles:\s*\["qa"\]/);
+  assert.match(compose, /WECHAT_PRIMARY_ALLOWED_HOSTS:\s*\$\{WECHAT_PRIMARY_ALLOWED_HOSTS:-wechat-fixture\}/);
+});
 
 const canonicalFixtures = [
   {
