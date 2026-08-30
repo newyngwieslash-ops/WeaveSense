@@ -8,6 +8,7 @@ import { collectKeyword } from "./collectors/keyword";
 import type { NormalizedItem, SourceRecord } from "./collectors/types";
 import { enqueueItemMedia } from "./media";
 import { mapKeyword, mapSource } from "./queries";
+import { claimKeyword, claimSource, finishItemInsert } from "./scheduler-atomic";
 import { ensureRadarSource, ensureSeeded } from "./seed";
 import { asJson } from "./serialize";
 
@@ -95,12 +96,13 @@ async function persistHit(
   const publishedIso =
     published && !Number.isNaN(published.getTime()) ? published.toISOString() : null;
   const id = shortId();
-  await sql.query(
+  const inserted = await sql.query<{ id: unknown }>(
     `insert into items (
        id, source_id, platform, external_id, title, body, author, url,
        media_type, media_urls, thumbnail_url, views, likes, published_at, extra, matched_keywords
      ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12,$13,$14,$15::jsonb,$16::jsonb)
-     on conflict (source_id, external_id) do nothing`,
+     on conflict (source_id, external_id) do nothing
+     returning id`,
     [
       id,
       RADAR_SOURCE_ID,
@@ -120,8 +122,9 @@ async function persistHit(
       JSON.stringify([phrase]),
     ],
   );
-  if (it.media_urls.length) await enqueueItemMedia(id, it.media_urls, it.media_type);
-  return "new";
+  return await finishItemInsert(inserted, it.media_urls, it.media_type, enqueueItemMedia)
+    ? "new"
+    : "skip";
 }
 
 export async function tagCorpusWithPhrase(phrase: string): Promise<number> {
@@ -154,23 +157,24 @@ export async function runSourceJob(
   kind: "incremental" | "manual" | "reconcile" = "incremental",
 ): Promise<{ items_found: number; items_new: number; error: string }> {
   const sql = await getSql();
-  const [raw] = await sql.query<Record<string, unknown>>("select * from sources where id = $1", [
-    sourceId,
-  ]);
-  if (!raw) return { items_found: 0, items_new: 0, error: "信源不存在" };
-  const source = mapSource(raw);
-  if (!source.enabled) {
-    return { items_found: 0, items_new: 0, error: "已停用" };
+  const raw = await claimSource(sql, sourceId);
+  if (!raw) {
+    const [current] = await sql.query<Record<string, unknown>>("select * from sources where id = $1", [sourceId]);
+    if (!current) return { items_found: 0, items_new: 0, error: "信源不存在" };
+    const existing = mapSource(current);
+    if (!existing.enabled) return { items_found: 0, items_new: 0, error: "已停用" };
+    return { items_found: 0, items_new: 0, error: existing.status === "running" ? "正在运行" : "任务不可用" };
   }
+  const source = mapSource(raw);
 
   const jobId = shortId();
-  await sql.query(
-    `insert into jobs (id, source_id, platform, status, kind) values ($1,$2,$3,'running',$4)`,
-    [jobId, source.id, source.platform, kind],
-  );
-  await sql.query("update sources set status = 'running', last_error = '' where id = $1", [source.id]);
-
+  let jobCreated = false;
   try {
+    await sql.query(
+      `insert into jobs (id, source_id, platform, status, kind) values ($1,$2,$3,'running',$4)`,
+      [jobId, source.id, source.platform, kind],
+    );
+    jobCreated = true;
     const record: SourceRecord = {
       id: source.id,
       platform: source.platform,
@@ -189,6 +193,7 @@ export async function runSourceJob(
     const have = new Set(existing.map((r) => r.external_id));
     const fresh = fetched.filter((it) => it.external_id && !have.has(it.external_id));
     const phrases = await enabledPhrases();
+    let itemsNew = 0;
 
     for (const it of fresh) {
       const published = it.published_at ? new Date(it.published_at) : null;
@@ -198,12 +203,13 @@ export async function runSourceJob(
         .filter((p) => itemMatchesPhrase(it.title, it.body, it.author, p.phrase))
         .map((p) => p.phrase);
       const id = shortId();
-      await sql.query(
+      const inserted = await sql.query<{ id: unknown }>(
         `insert into items (
            id, source_id, platform, external_id, title, body, author, url,
            media_type, media_urls, thumbnail_url, views, likes, published_at, extra, matched_keywords
          ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12,$13,$14,$15::jsonb,$16::jsonb)
-         on conflict (source_id, external_id) do nothing`,
+           on conflict (source_id, external_id) do nothing
+           returning id`,
         [
           id,
           source.id,
@@ -223,7 +229,7 @@ export async function runSourceJob(
           JSON.stringify(matched),
         ],
       );
-      if (it.media_urls.length) await enqueueItemMedia(id, it.media_urls, it.media_type);
+      if (await finishItemInsert(inserted, it.media_urls, it.media_type, enqueueItemMedia)) itemsNew += 1;
     }
 
     const latest = pickCursor(fetched);
@@ -240,20 +246,23 @@ export async function runSourceJob(
     await sql.query(
       `update jobs set status = 'ok', finished_at = now(), items_found = $2, items_new = $3, error = ''
        where id = $1`,
-      [jobId, fetched.length, fresh.length],
+      [jobId, fetched.length, itemsNew],
     );
     for (const p of phrases) void recountKeywordHits(p.phrase);
-    return { items_found: fetched.length, items_new: fresh.length, error: "" };
+    return { items_found: fetched.length, items_new: itemsNew, error: "" };
   } catch (err) {
     const message = errMessage(err);
     await sql.query(
-      `update sources set status = 'error', last_scanned_at = now(), last_error = $2 where id = $1`,
+      `update sources set status = 'error', last_scanned_at = now(), last_error = $2
+       where id = $1 and status = 'running'`,
       [source.id, message],
     );
-    await sql.query(
-      `update jobs set status = 'error', finished_at = now(), error = $2 where id = $1`,
-      [jobId, message],
-    );
+    if (jobCreated) {
+      await sql.query(
+        `update jobs set status = 'error', finished_at = now(), error = $2 where id = $1`,
+        [jobId, message],
+      );
+    }
     return { items_found: 0, items_new: 0, error: message };
   }
 }
@@ -264,22 +273,26 @@ export async function runKeywordJob(
 ): Promise<{ items_found: number; items_new: number; error: string; phrase: string }> {
   await ensureRadarSource();
   const sql = await getSql();
-  const [raw] = await sql.query<Record<string, unknown>>("select * from keywords where id = $1", [
-    keywordId,
-  ]);
-  if (!raw) return { items_found: 0, items_new: 0, error: "关键词不存在", phrase: "" };
+  const raw = await claimKeyword(sql, keywordId);
+  if (!raw) {
+    const [current] = await sql.query<Record<string, unknown>>("select * from keywords where id = $1", [keywordId]);
+    if (!current) return { items_found: 0, items_new: 0, error: "关键词不存在", phrase: "" };
+    const existing = mapKeyword(current);
+    if (!existing.enabled) return { items_found: 0, items_new: 0, error: "已停用", phrase: existing.phrase };
+    return { items_found: 0, items_new: 0,
+      error: existing.status === "running" ? "正在运行" : "任务不可用", phrase: existing.phrase };
+  }
   const kw = mapKeyword(raw);
-  if (!kw.enabled) return { items_found: 0, items_new: 0, error: "已停用", phrase: kw.phrase };
 
   const jobId = shortId();
-  await sql.query(
-    `insert into jobs (id, source_id, platform, status, kind, keyword_id)
-     values ($1,$2,'rss','running',$3,$4)`,
-    [jobId, RADAR_SOURCE_ID, kind, kw.id],
-  );
-  await sql.query("update keywords set status = 'running', last_error = '' where id = $1", [kw.id]);
-
+  let jobCreated = false;
   try {
+    await sql.query(
+      `insert into jobs (id, source_id, platform, status, kind, keyword_id)
+       values ($1,$2,'rss','running',$3,$4)`,
+      [jobId, RADAR_SOURCE_ID, kind, kw.id],
+    );
+    jobCreated = true;
     const fetched = await collectKeyword(kw.phrase, kw.platforms);
     let itemsNew = 0;
     for (const it of fetched) {
@@ -307,13 +320,16 @@ export async function runKeywordJob(
   } catch (err) {
     const message = errMessage(err);
     await sql.query(
-      `update keywords set status = 'error', last_scanned_at = now(), last_error = $2 where id = $1`,
+      `update keywords set status = 'error', last_scanned_at = now(), last_error = $2
+       where id = $1 and status = 'running'`,
       [kw.id, message],
     );
-    await sql.query(
-      `update jobs set status = 'error', finished_at = now(), error = $2 where id = $1`,
-      [jobId, message],
-    );
+    if (jobCreated) {
+      await sql.query(
+        `update jobs set status = 'error', finished_at = now(), error = $2 where id = $1`,
+        [jobId, message],
+      );
+    }
     return { items_found: 0, items_new: 0, error: message, phrase: kw.phrase };
   }
 }

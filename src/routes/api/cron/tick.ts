@@ -3,6 +3,7 @@ import {
   authorizeCron,
   reconciliationDue,
   requestWechatReconciliation,
+  runCronStages,
   runReconciledSourceJobs,
 } from "@/lib/server/cron";
 import { prod } from "@/lib/server/config";
@@ -18,26 +19,26 @@ export const Route = createFileRoute("/api/cron/tick")({
           return Response.json({ error: "unauthorized" }, { status: 401 });
         }
 
-        const collection = await tickDueSources(prod.cronTickLimit);
-        const production = await runProductionTick();
-        let reconciliation = null;
-        if (reconciliationDue(new Date()) && prod.wechatGatewayUrl && prod.wechatGatewayToken) {
-          const gateway = await requestWechatReconciliation({
-            url: prod.wechatGatewayUrl,
-            token: prod.wechatGatewayToken,
-          });
-          reconciliation = gateway.ok
-            ? {
-                ...gateway.value,
-                source_results: await runReconciledSourceJobs(
-                  gateway.value.succeeded_source_ids,
-                  (sourceId) => runSourceJob(sourceId, "reconcile"),
-                ),
-              }
-            : gateway;
-        }
-
-        return Response.json({ collection, production, reconciliation });
+        return Response.json(await runCronStages({
+          collection: () => tickDueSources(prod.cronTickLimit),
+          production: () => runProductionTick(),
+          reconciliation: async () => {
+            if (!reconciliationDue(new Date()) || !prod.wechatGatewayUrl || !prod.wechatGatewayToken) return null;
+            const gateway = await requestWechatReconciliation({
+              url: prod.wechatGatewayUrl,
+              token: prod.wechatGatewayToken,
+            });
+            return gateway.ok
+              ? {
+                  ...gateway.value,
+                  source_results: await runReconciledSourceJobs(
+                    gateway.value.succeeded_source_ids,
+                    (sourceId) => runSourceJob(sourceId, "reconcile"),
+                  ),
+                }
+              : gateway;
+          },
+        }));
       },
     },
   },
