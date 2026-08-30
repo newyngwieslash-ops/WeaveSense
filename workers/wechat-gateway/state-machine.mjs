@@ -85,6 +85,12 @@ export function shouldReconcile(source, now) {
   if (shanghaiHourMinute(now) < "23:30") return false;
   if (source.last_paid_result === "mapping_error") return false;
 
+  if (source.last_paid_result === "ok") {
+    const successAt = eventTime(source.last_paid_ok_at, nowMs)
+      ?? eventTime(source.last_paid_check_at, nowMs);
+    return successAt === null || shanghaiDay(new Date(successAt)) !== shanghaiDay(now);
+  }
+
   const retryAt = timeOf(source.next_retry_at);
   if (hasTimeValue(source.next_retry_at) && retryAt === null) return false;
   if (source.last_paid_result === "technical_error" && retryAt !== null && retryAt > nowMs) return false;

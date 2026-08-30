@@ -711,6 +711,17 @@ test("health keeps a 24-hour alert above a newer unresolved technical error", as
   assert.equal((await health.json()).alert_state, "alert");
 });
 
+test("health ignores future paid hard errors when projecting the current state", async (t) => {
+  for (const result of ["mapping_error", "technical_error"]) {
+    const fixture = gatewayFixture(t, { clock: "2026-08-28T12:00:00.000Z" });
+    fixture.store.recordPaidResult(integrationSource.id, result,
+      result === "technical_error" ? "2026-08-29T12:05:00.000Z" : null,
+      result === "mapping_error" ? "alert" : "degraded", "2026-08-29T12:00:00.000Z");
+    const health = await fixture.request(`/v1/sources/${integrationSource.id}/health`);
+    assert.equal((await health.json()).alert_state, "normal");
+  }
+});
+
 test("does not detail-enrich an article already known to the normalized cache", async (t) => {
   let detailCalls = 0;
   const paid = {
@@ -844,8 +855,55 @@ test("reconciliation crossing Shanghai midnight bills the old day, skips details
   assert.deepEqual(store.getProviderUsage("2026-08-28", "dajiala"), { calls: 1, amount: 0.06 });
   assert.deepEqual(store.getProviderUsage("2026-08-29", "dajiala"), { calls: 0, amount: 0 });
   assert.equal(store.getSource(integrationSource.id).last_paid_check_at, "2026-08-28T16:00:01.000Z");
+  assert.equal(store.getSource(integrationSource.id).last_paid_ok_at, "2026-08-28T15:59:59.000Z");
   assert.equal(store.listGatewayItems(integrationSource.id, "2026-08-20T00:00:00.000Z")[0].discovered_at,
     "2026-08-28T16:00:01.000Z");
+});
+
+test("a paid call begun before midnight remains eligible on the next Shanghai day", async (t) => {
+  let current = new Date("2026-08-28T15:59:59.000Z");
+  let calls = 0;
+  const store = openStore(":memory:");
+  t.after(() => store.close());
+  store.upsertSource(integrationSource, "2026-08-28T00:00:00.000Z");
+  const gateway = createGateway({ store, token: "gateway-test", now: () => current,
+    primary: async () => [], paid: { estimatedListCost: 0.08, estimatedDetailCost: 0.045,
+      async listToday() {
+        calls += 1;
+        if (calls === 1) current = new Date("2026-08-28T16:00:01.000Z");
+        return { items: [], cost_money: 0.06 };
+      } } });
+  const request = () => gateway(new Request("http://gateway.local/v1/reconcile", {
+    method: "POST", headers: { authorization: "Bearer gateway-test" },
+  }));
+  assert.equal((await request()).status, 200);
+  current = new Date("2026-08-29T15:35:00.000Z");
+  assert.equal((await request()).status, 200);
+  assert.equal(calls, 2);
+});
+
+test("reconciliation crossing midnight after the lock check makes no paid call", async (t) => {
+  const moments = [
+    new Date("2026-08-28T15:59:59.000Z"),
+    new Date("2026-08-28T15:59:59.500Z"),
+    new Date("2026-08-28T16:00:00.000Z"),
+  ];
+  let clockReads = 0;
+  let calls = 0;
+  const store = openStore(":memory:");
+  t.after(() => store.close());
+  store.upsertSource(integrationSource, "2026-08-28T00:00:00.000Z");
+  const gateway = createGateway({ store, token: "gateway-test", primary: async () => [],
+    now: () => moments[Math.min(clockReads++, moments.length - 1)],
+    paid: { estimatedListCost: 0.08, estimatedDetailCost: 0.045,
+      async listToday() { calls += 1; return { items: [], cost_money: 0.06 }; } } });
+  const result = await (await gateway(new Request("http://gateway.local/v1/reconcile", {
+    method: "POST", headers: { authorization: "Bearer gateway-test" },
+  }))).json();
+  assert.equal(result.attempted, 0);
+  assert.equal(calls, 0);
+  assert.deepEqual(store.getProviderUsage("2026-08-28", "dajiala"), { calls: 0, amount: 0 });
+  assert.deepEqual(store.getProviderUsage("2026-08-29", "dajiala"), { calls: 0, amount: 0 });
 });
 
 test("feed fallback reserves on the clock at the paid call, not request entry", async (t) => {
@@ -928,4 +986,18 @@ test("PUT rejects owner changes, serializes with feed, resets repaired mapping, 
     method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: "ignored" }),
   });
   assert.match((await readable.json()).error, /name/);
+});
+
+test("the Node gateway returns a fixed 413 for a PUT body above one MiB", async (t) => {
+  const store = openStore(":memory:");
+  const gateway = createGatewayServer({ store, token: "gateway-test",
+    allowedFeedHosts: new Set(["feeds.internal"]) }).listen(0, "127.0.0.1");
+  await once(gateway, "listening");
+  t.after(() => { gateway.close(); store.close(); });
+  const response = await fetch(`http://127.0.0.1:${gateway.address().port}/v1/sources/wx-large`, {
+    method: "PUT", headers: { authorization: "Bearer gateway-test", "content-type": "application/json" },
+    body: JSON.stringify({ padding: "x".repeat(1024 * 1024) }),
+  });
+  assert.equal(response.status, 413);
+  assert.deepEqual(await response.json(), { error: "request body too large" });
 });

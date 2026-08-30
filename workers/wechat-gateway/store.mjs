@@ -296,11 +296,12 @@ function createStore(db) {
     recordPrimaryFailure(sourceId, now = new Date().toISOString()) {
       failure.run(now, sourceId);
     },
-    recordPaidResult(sourceId, result, nextRetryAt, alertState, now = new Date().toISOString()) {
+    recordPaidResult(sourceId, result, nextRetryAt, alertState, now = new Date().toISOString(), successAt = now) {
       sourceId = key(sourceId, "sourceId");
       if (!PAID_RESULTS.has(result)) throw new TypeError("result is invalid");
       if (!ALERT_STATES.has(alertState)) throw new TypeError("alertState is invalid");
       now = iso(now, "now");
+      successAt = iso(successAt, "successAt");
       nextRetryAt = iso(nextRetryAt, "nextRetryAt", true);
       db.exec("begin immediate");
       try {
@@ -311,11 +312,13 @@ function createStore(db) {
         if (Number.isFinite(previous) && current <= previous) {
           if (current < previous) throw new Error("paid result is older than the stored check");
           if (source.last_paid_result !== result || source.next_retry_at !== nextRetryAt
-            || source.alert_state !== alertState) throw new Error("paid result timestamp conflict");
+            || source.alert_state !== alertState || (result === "ok" && source.last_paid_ok_at !== successAt)) {
+            throw new Error("paid result timestamp conflict");
+          }
           db.exec("commit");
           return source;
         }
-        if (Number(paidResult.run(now, result, now, result, nextRetryAt,
+        if (Number(paidResult.run(now, result, successAt, result, nextRetryAt,
           alertState, now, sourceId).changes) !== 1) throw new Error("source not found");
         const saved = get.get(sourceId);
         db.exec("commit");

@@ -11,6 +11,8 @@ import { openStore } from "./store.mjs";
 const PROVIDER = "dajiala";
 const DAY_MS = 86_400_000;
 
+class BodyTooLargeError extends Error {}
+
 export function authorize(headers, token) {
   const actual = headers.get("authorization");
   if (!token || !actual?.startsWith("Bearer ")) return false;
@@ -124,8 +126,10 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
     const paidUsage = usage(shanghaiDay(date));
     const paidAt = Date.parse(source.last_paid_check_at ?? "");
     const primaryAt = Date.parse(source.last_primary_ok_at ?? "");
-    const unresolvedPaidError = Number.isFinite(paidAt)
-      && (!Number.isFinite(primaryAt) || primaryAt < paidAt);
+    const nowMs = date.getTime();
+    const validPaidAt = Number.isFinite(paidAt) && paidAt <= nowMs;
+    const validPrimaryAt = Number.isFinite(primaryAt) && primaryAt <= nowMs;
+    const unresolvedPaidError = validPaidAt && (!validPrimaryAt || primaryAt < paidAt);
     const dynamicAlert = alertState(source, date);
     const projectedAlert = dynamicAlert === "alert" ? "alert"
       : unresolvedPaidError && source.last_paid_result === "mapping_error" ? "alert"
@@ -151,6 +155,9 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
     if (!paid) return { response: json(503, { error: "paid_fallback_unavailable" }) };
     const listEstimate = Number(paid.estimatedListCost ?? 0.08);
     const listStarted = current();
+    if (reconciliationDay && shanghaiDay(listStarted) !== reconciliationDay) {
+      return { batchExpired: true, spentDays: [] };
+    }
     const spentDays = new Set([shanghaiDay(listStarted)]);
     const listReservation = reserve(listStarted, listEstimate);
     if (!listReservation) return { budgetExhausted: true, spentDays: [...spentDays] };
@@ -205,7 +212,8 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
     }
     const completed = current();
     store.upsertGatewayItems(source.source_id, items, completed.toISOString());
-    store.recordPaidResult(source.source_id, "ok", null, "paid_fallback", completed.toISOString());
+    store.recordPaidResult(source.source_id, "ok", null, "paid_fallback",
+      completed.toISOString(), listStarted.toISOString());
     store.deleteGatewayItemsBefore(since(completed, 30));
     return { items: store.listGatewayItems(source.source_id, since(completed, 7)),
       spentDays: [...spentDays] };
@@ -310,7 +318,7 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
         let input;
         try {
           const text = await request.text();
-          if (Buffer.byteLength(text) > 1024 * 1024) throw new Error("request body too large");
+          if (Buffer.byteLength(text) > 1024 * 1024) throw new BodyTooLargeError();
           try { parsed = JSON.parse(text); }
           catch (error) {
             if (error instanceof SyntaxError) return json(422, { error: "invalid JSON" });
@@ -318,6 +326,7 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
           }
           input = validateSourceInput({ ...parsed, id: decodeURIComponent(match[1]) }, allowedFeedHosts);
         } catch (error) {
+          if (error instanceof BodyTooLargeError) return json(413, { error: "request body too large" });
           return json(422, { error: error instanceof Error ? error.message : "invalid source input" });
         }
         try {
@@ -352,7 +361,7 @@ async function nodeRequest(req) {
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > 1024 * 1024) throw new Error("request body too large");
+    if (size > 1024 * 1024) throw new BodyTooLargeError();
     chunks.push(chunk);
   }
   const body = chunks.length ? Buffer.concat(chunks) : undefined;
@@ -375,7 +384,11 @@ export function createGatewayServer(options) {
         return await nodeResponse(res, json(401, { error: "unauthorized" }));
       }
       await nodeResponse(res, await gateway(await nodeRequest(req)));
-    } catch { await nodeResponse(res, json(500, { error: "internal error" })); }
+    } catch (error) {
+      await nodeResponse(res, error instanceof BodyTooLargeError
+        ? json(413, { error: "request body too large" })
+        : json(500, { error: "internal error" }));
+    }
   });
 }
 
