@@ -144,6 +144,23 @@ test("migrates an existing source database with paid-success history", async (t)
   assert.equal(store.getSource("legacy").last_paid_ok_at, "2026-08-28T02:00:00.000Z");
 });
 
+test("rolls back a failed store migration and closes its database", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "wechat-bad-store-"));
+  const path = join(directory, "gateway.sqlite");
+  let inspection;
+  t.after(async () => {
+    inspection?.close();
+    await rm(directory, { recursive: true, force: true });
+  });
+  const legacy = new DatabaseSync(path);
+  legacy.exec("create table gateway_sources (source_id text primary key)");
+  legacy.close();
+  assert.throws(() => openStore(path), /no such column/);
+  inspection = new DatabaseSync(path);
+  assert.equal(inspection.prepare("pragma table_info(gateway_sources)").all()
+    .some(({ name }) => name === "last_paid_ok_at"), false);
+});
+
 test("reserves and adjusts provider spend atomically within both daily caps", (t) => {
   const store = openStore(":memory:");
   t.after(() => store.close());
@@ -168,6 +185,21 @@ test("reserves and adjusts provider spend atomically within both daily caps", (t
   assert.throws(() => store.adjustSpend("2026-08-28", "dajiala", -0.01, 0), /non-negative/);
   store.adjustSpend("2026-08-28", "dajiala", 0.04, -1);
   assert.deepEqual(store.getProviderUsage("2026-08-28", "dajiala"), { calls: 2, amount: 0.06 });
+  assert.throws(() => store.adjustSpend("2026-08-28", "dajiala", 0.04, 0), /reservation not found/);
+  assert.deepEqual(store.getProviderUsage("2026-08-28", "dajiala"), { calls: 2, amount: 0.06 });
+
+  assert.equal(store.tryReserveSpend("queue", "dajiala", 0.08, 1, 3), true);
+  assert.equal(store.tryReserveSpend("queue", "dajiala", 0.08, 1, 3), true);
+  store.adjustSpend("queue", "dajiala", 0.08, 0.06);
+  store.adjustSpend("queue", "dajiala", 0.08, 0.05);
+  assert.deepEqual(store.getProviderUsage("queue", "dajiala"), { calls: 2, amount: 0.11 });
+  assert.throws(() => store.adjustSpend("queue", "dajiala", 0.08, 0.04), /reservation not found/);
+
+  assert.equal(store.tryReserveSpend("overrun", "dajiala", 0.08, 0.08, 1), true);
+  assert.throws(() => store.adjustSpend("overrun", "dajiala", 0.08, 0.09), /exceeds reservation/);
+  assert.deepEqual(store.getProviderUsage("overrun", "dajiala"), { calls: 1, amount: 0.08 });
+  store.adjustSpend("overrun", "dajiala", 0.08, 0.07);
+  assert.deepEqual(store.getProviderUsage("overrun", "dajiala"), { calls: 1, amount: 0.07 });
   assert.throws(() => store.adjustSpend("missing", "dajiala", 0.01, 0), /reservation not found/);
   assert.equal(store.tryReserveSpend("missing", "dajiala", 0.01, 1, 1), true);
   assert.deepEqual(store.getProviderUsage("empty", "dajiala"), { calls: 0, amount: 0 });
@@ -194,6 +226,22 @@ test("records paid checks without losing the last paid success", (t) => {
   assert.equal(saved.last_paid_result, "mapping_error");
   assert.equal(saved.next_retry_at, null);
   assert.equal(saved.alert_state, "alert");
+  assert.throws(() => store.recordPaidResult(source.id, "technical_error", null, "degraded",
+    "2026-08-28T02:01:00.000Z"), /older/);
+  assert.equal(store.getSource(source.id).last_paid_result, "mapping_error");
+  assert.throws(() => store.recordPaidResult(source.id, "other", null, "alert",
+    "2026-08-28T03:00:00.000Z"), /result/);
+  assert.throws(() => store.recordPaidResult(source.id, "ok", null, "warning",
+    "2026-08-28T03:00:00.000Z"), /alertState/);
+  assert.throws(() => store.recordPaidResult(source.id, "ok", null, "normal", "not-a-date"), /now/);
+  assert.throws(() => store.recordPaidResult(source.id, "technical_error", "tomorrow", "degraded",
+    "2026-08-28T03:00:00.000Z"), /nextRetryAt/);
+  assert.throws(() => store.recordPaidResult("missing", "ok", null, "normal",
+    "2026-08-28T03:00:00.000Z"), /source not found/);
+  store.recordPaidResult(source.id, "ok", null, "paid_fallback", "2026-08-28T03:00:00.900Z");
+  assert.throws(() => store.recordPaidResult(source.id, "technical_error", null, "degraded",
+    "2026-08-28T03:00:00.100Z"), /older/);
+  assert.equal(store.getSource(source.id).last_paid_check_at, "2026-08-28T03:00:00.900Z");
 });
 
 test("merges cached provider history without erasing article content", (t) => {
@@ -218,8 +266,20 @@ test("merges cached provider history without erasing article content", (t) => {
   assert.deepEqual(JSON.parse(rows[0].providers_seen), ["primary", "dajiala"]);
   assert.throws(() => store.upsertGatewayItems("wx-1", [
     { ...primary, canonical_id: "wx:MzA1:10:1" },
-    { ...primary, canonical_id: "wx:MzA1:11:1", account_id: null },
-  ]), /constraint/i);
+    { ...primary, canonical_id: "wx:MzA1:11:1", title: "" },
+  ]), /title/);
+  for (const [field, value] of [
+    ["published_at", "yesterday"],
+    ["discovered_at", "2026-08-28"],
+    ["original_url", "http://mp.weixin.qq.com/s/unsafe"],
+    ["original_url", "https://mp.weixin.qq.com.evil.example/s/unsafe"],
+    ["cover_url", "https://127.0.0.1/private.jpg"],
+  ]) {
+    assert.throws(() => store.upsertGatewayItems("wx-1", [{ ...primary,
+      canonical_id: `wx:bad:${field}:${value}`, [field]: value }]), new RegExp(field));
+  }
+  assert.throws(() => store.upsertGatewayItems("wx-1", [{ ...primary,
+    account_id: "gh_other" }]), /account_id/);
   assert.equal(store.listGatewayItems("wx-1", "2026-08-28T00:00:00.000Z").length, 1);
   assert.deepEqual(store.listGatewayItems("wx-1", "2026-08-29T00:00:00.000Z"), []);
   assert.equal(store.deleteGatewayItemsBefore("2026-08-29T00:00:00.000Z"), 1);
