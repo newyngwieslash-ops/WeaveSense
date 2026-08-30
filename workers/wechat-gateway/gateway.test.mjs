@@ -685,6 +685,22 @@ test("gateway health exposes paid configuration and capped daily usage", async (
   });
 });
 
+test("health projects unresolved paid hard errors until a later primary success", async (t) => {
+  const fixture = gatewayFixture(t, { clock: "2026-08-28T12:10:00.000Z" });
+  const path = `/v1/sources/${integrationSource.id}/health`;
+  fixture.store.recordPaidResult(integrationSource.id, "mapping_error", null, "alert",
+    "2026-08-28T12:01:00.000Z");
+  assert.equal((await (await fixture.request(path)).json()).alert_state, "alert");
+  fixture.store.recordPrimarySuccess(integrationSource.id, "2026-08-28T12:01:00.000Z");
+  assert.equal((await (await fixture.request(path)).json()).alert_state, "normal");
+
+  fixture.store.recordPaidResult(integrationSource.id, "technical_error", "2026-08-28T12:10:00.000Z",
+    "degraded", "2026-08-28T12:05:00.000Z");
+  assert.equal((await (await fixture.request(path)).json()).alert_state, "degraded");
+  fixture.store.recordPrimarySuccess(integrationSource.id, "2026-08-28T12:06:00.000Z");
+  assert.equal((await (await fixture.request(path)).json()).alert_state, "normal");
+});
+
 test("does not detail-enrich an article already known to the normalized cache", async (t) => {
   let detailCalls = 0;
   const paid = {

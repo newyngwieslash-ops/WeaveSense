@@ -121,9 +121,16 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
 
   function health(source, date) {
     const paidUsage = usage(shanghaiDay(date));
+    const paidAt = Date.parse(source.last_paid_check_at ?? "");
+    const primaryAt = Date.parse(source.last_primary_ok_at ?? "");
+    const unresolvedPaidError = Number.isFinite(paidAt)
+      && (!Number.isFinite(primaryAt) || primaryAt < paidAt);
+    const projectedAlert = unresolvedPaidError && source.last_paid_result === "mapping_error" ? "alert"
+      : unresolvedPaidError && source.last_paid_result === "technical_error" ? "degraded"
+        : alertState(source, date);
     return {
       source_id: source.source_id,
-      alert_state: alertState(source, date),
+      alert_state: projectedAlert,
       last_primary_ok_at: source.last_primary_ok_at,
       consecutive_primary_failures: source.consecutive_primary_failures,
       last_paid_check_at: source.last_paid_check_at,
