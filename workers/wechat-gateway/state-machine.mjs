@@ -87,6 +87,7 @@ export function shouldReconcile(source, now) {
 
   const retryAt = timeOf(source.next_retry_at);
   if (hasTimeValue(source.next_retry_at) && retryAt === null) return false;
+  if (source.last_paid_result === "technical_error" && retryAt !== null && retryAt > nowMs) return false;
 
   const paidAt = eventTime(source.last_paid_check_at, nowMs);
   if (paidAt === null || shanghaiDay(new Date(paidAt)) !== shanghaiDay(now)) return true;

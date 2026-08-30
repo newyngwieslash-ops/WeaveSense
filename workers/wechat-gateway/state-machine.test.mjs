@@ -110,6 +110,26 @@ test("reconciliation retries a same-day technical error only after backoff", () 
   }, now), true);
 });
 
+test("technical-error backoff applies when the persisted check is in the future", () => {
+  const source = {
+    last_paid_check_at: "2026-08-29T00:00:00Z",
+    last_paid_result: "technical_error",
+    next_retry_at: "2026-08-28T15:36:00Z",
+  };
+  assert.equal(shouldReconcile(source, now), false);
+  assert.equal(shouldReconcile(source, new Date("2026-08-28T15:36:00Z")), true);
+});
+
+test("technical-error backoff applies when the persisted check is from yesterday", () => {
+  const source = {
+    last_paid_check_at: "2026-08-27T14:00:00Z",
+    last_paid_result: "technical_error",
+    next_retry_at: "2026-08-28T15:36:00Z",
+  };
+  assert.equal(shouldReconcile(source, now), false);
+  assert.equal(shouldReconcile(source, new Date("2026-08-28T15:36:00Z")), true);
+});
+
 test("mapping errors never reconcile automatically, even on another day", () => {
   const mappingError = {
     last_paid_check_at: "2026-08-27T14:00:00Z",
