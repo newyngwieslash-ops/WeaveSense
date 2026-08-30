@@ -28,8 +28,9 @@ function isoTimestamp(value, operation) {
   const milliseconds = Number.isFinite(numeric)
     ? numeric * (Math.abs(numeric) < 1e12 ? 1_000 : 1)
     : Date.parse(raw);
-  if (!Number.isFinite(milliseconds)) throw new DajialaError("mapping_error", operation, 200);
-  return new Date(milliseconds).toISOString();
+  const date = new Date(milliseconds);
+  if (!Number.isFinite(date.getTime())) throw new DajialaError("mapping_error", operation, 200);
+  return date.toISOString();
 }
 
 function cost(value, fallback) {

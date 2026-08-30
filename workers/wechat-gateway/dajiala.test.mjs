@@ -142,6 +142,7 @@ const mappingFailures = [
   ["HTTP 400", () => response({ error: "key-test" }, 400)],
   ["non-array list", () => response({ code: 0, data: {} })],
   ["missing article field", () => response({ code: 0, data: [{ ...listArticle, title: "" }] })],
+  ["out-of-range timestamp", () => response({ code: 0, data: [{ ...listArticle, post_time: 1e20 }] })],
 ];
 
 for (const [name, makeResponse] of mappingFailures) {
