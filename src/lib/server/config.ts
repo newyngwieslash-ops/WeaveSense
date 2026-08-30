@@ -7,6 +7,8 @@ export const prod = {
   telegramWorkerUrl: read("TELEGRAM_WORKER_URL").replace(/\/$/, ""),
   wechatGatewayUrl: read("WECHAT_GATEWAY_URL").replace(/\/$/, ""),
   wechatGatewayToken: read("WECHAT_GATEWAY_TOKEN"),
+  cronSecret: read("CRON_SECRET"),
+  cronTickLimit: Math.max(1, Number(read("CRON_TICK_LIMIT", "200")) || 200),
   minioEndpoint: read("MINIO_ENDPOINT").replace(/\/$/, ""),
   minioAccessKey: read("MINIO_ACCESS_KEY") || read("MINIO_ROOT_USER"),
   minioSecretKey: read("MINIO_SECRET_KEY") || read("MINIO_ROOT_PASSWORD"),

@@ -151,7 +151,7 @@ export async function tagCorpusWithPhrase(phrase: string): Promise<number> {
 
 export async function runSourceJob(
   sourceId: string,
-  kind: "incremental" | "manual" = "incremental",
+  kind: "incremental" | "manual" | "reconcile" = "incremental",
 ): Promise<{ items_found: number; items_new: number; error: string }> {
   const sql = await getSql();
   const [raw] = await sql.query<Record<string, unknown>>("select * from sources where id = $1", [
