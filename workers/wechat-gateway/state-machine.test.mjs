@@ -60,6 +60,17 @@ test("respects paid retry backoff and allows retry at the boundary", () => {
   }, now), { allowed: true, reason: "primary_failed" });
 });
 
+test("fails closed for mapping errors and malformed retry timestamps", () => {
+  assert.deepEqual(paidDecision({
+    consecutive_primary_failures: 4,
+    last_paid_result: "mapping_error",
+  }, now), { allowed: false, reason: "mapping_error" });
+  assert.deepEqual(paidDecision({
+    consecutive_primary_failures: 4,
+    next_retry_at: "not-a-date",
+  }, now), { allowed: false, reason: "invalid_retry_at" });
+});
+
 test("schedules paid retries at 5, 15, then 60 minutes", () => {
   assert.deepEqual(PAID_RETRY_MINUTES, [5, 15, 60]);
   assert.equal(nextPaidRetry(now, 1), "2026-08-28T15:40:00.000Z");
@@ -99,6 +110,20 @@ test("reconciliation retries a same-day technical error only after backoff", () 
   }, now), true);
 });
 
+test("mapping errors never reconcile automatically, even on another day", () => {
+  const mappingError = {
+    last_paid_check_at: "2026-08-27T14:00:00Z",
+    last_paid_result: "mapping_error",
+  };
+  assert.equal(shouldReconcile(mappingError, now), false);
+  assert.equal(shouldReconcile(mappingError, new Date("2026-08-29T15:35:00Z")), false);
+  assert.equal(shouldReconcile({
+    last_paid_check_at: "2026-08-28T14:00:00Z",
+    last_paid_result: "technical_error",
+    next_retry_at: "not-a-date",
+  }, now), false);
+});
+
 test("reports normal, degraded, paid fallback, and alert states", () => {
   assert.equal(alertState({
     created_at: "2026-08-28T14:00:00Z",
@@ -135,4 +160,47 @@ test("alerts at 24 hours without a success and clears on recovery", () => {
     last_paid_check_at: "2026-08-27T00:00:00Z",
     last_paid_result: "ok",
   }, now), "normal");
+});
+
+test("tracks the last paid success separately from a newer failed attempt", () => {
+  const source = {
+    created_at: "2026-08-27T00:00:00Z",
+    last_primary_ok_at: "2026-08-27T14:00:00Z",
+    last_paid_ok_at: "2026-08-28T15:30:00Z",
+    last_paid_check_at: "2026-08-28T15:34:00Z",
+    last_paid_result: "technical_error",
+  };
+  assert.equal(alertState(source, now), "paid_fallback");
+  assert.equal(alertState(source, new Date("2026-08-29T15:29:59Z")), "paid_fallback");
+  assert.equal(alertState(source, new Date("2026-08-29T15:30:00Z")), "alert");
+});
+
+test("ignores future persisted events when making time decisions", () => {
+  assert.deepEqual(paidDecision({
+    consecutive_primary_failures: 0,
+    created_at: "2026-08-28T09:35:00Z",
+    last_primary_ok_at: "2026-08-29T00:00:00Z",
+  }, now), { allowed: true, reason: "primary_stale" });
+  assert.equal(shouldReconcile({
+    last_paid_check_at: "2026-08-29T00:00:00Z",
+    last_paid_result: "ok",
+  }, now), true);
+  assert.equal(alertState({
+    created_at: "2026-08-27T15:35:00Z",
+    last_primary_ok_at: "2026-08-29T00:00:00Z",
+    last_paid_ok_at: "2026-08-29T00:00:00Z",
+  }, now), "alert");
+});
+
+test("all exported time decisions reject an invalid current time", () => {
+  const invalid = new Date(Number.NaN);
+  const calls = [
+    () => shanghaiDay(invalid),
+    () => shanghaiHourMinute(invalid),
+    () => paidDecision({}, invalid),
+    () => shouldReconcile({}, invalid),
+    () => nextPaidRetry(invalid, 1),
+    () => alertState({}, invalid),
+  ];
+  for (const call of calls) assert.throws(call, TypeError);
 });

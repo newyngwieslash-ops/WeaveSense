@@ -26,26 +26,47 @@ function timeOf(value) {
   return Number.isFinite(timestamp) ? timestamp : null;
 }
 
+function nowTime(now) {
+  if (!(now instanceof Date) || !Number.isFinite(now.getTime())) throw new TypeError("now must be a valid Date");
+  return now.getTime();
+}
+
+function eventTime(value, nowMs) {
+  const timestamp = timeOf(value);
+  return timestamp !== null && timestamp <= nowMs ? timestamp : null;
+}
+
+function hasTimeValue(value) {
+  return value !== null && value !== undefined && String(value).trim() !== "";
+}
+
 export function shanghaiDay(now) {
+  nowTime(now);
   const { year, month, day } = parts(dateFormatter, now);
   return `${year}-${month}-${day}`;
 }
 
 export function shanghaiHourMinute(now) {
+  nowTime(now);
   const { hour, minute } = parts(timeFormatter, now);
   return `${hour}:${minute}`;
 }
 
 export function paidDecision(source, now) {
-  const nowMs = now.getTime();
+  const nowMs = nowTime(now);
+  if (source.last_paid_result === "mapping_error") return { allowed: false, reason: "mapping_error" };
+
   const retryAt = timeOf(source.next_retry_at);
+  if (hasTimeValue(source.next_retry_at) && retryAt === null) {
+    return { allowed: false, reason: "invalid_retry_at" };
+  }
   if (retryAt !== null && retryAt > nowMs) return { allowed: false, reason: "retry_backoff" };
 
   if ((source.consecutive_primary_failures ?? 0) >= PRIMARY_FAILURE_THRESHOLD) {
     return { allowed: true, reason: "primary_failed" };
   }
 
-  const primaryBaseline = timeOf(source.last_primary_ok_at) ?? timeOf(source.created_at);
+  const primaryBaseline = eventTime(source.last_primary_ok_at, nowMs) ?? eventTime(source.created_at, nowMs);
   if (primaryBaseline !== null && nowMs - primaryBaseline >= SIX_HOURS_MS) {
     return { allowed: true, reason: "primary_stale" };
   }
@@ -53,33 +74,43 @@ export function paidDecision(source, now) {
 }
 
 export function nextPaidRetry(now, failedAttemptCount) {
+  const nowMs = nowTime(now);
   const attempt = Math.max(1, Math.trunc(Number(failedAttemptCount)) || 1);
   const minutes = PAID_RETRY_MINUTES[Math.min(attempt, PAID_RETRY_MINUTES.length) - 1];
-  return new Date(now.getTime() + minutes * 60_000).toISOString();
+  return new Date(nowMs + minutes * 60_000).toISOString();
 }
 
 export function shouldReconcile(source, now) {
+  const nowMs = nowTime(now);
   if (shanghaiHourMinute(now) < "23:30") return false;
+  if (source.last_paid_result === "mapping_error") return false;
 
-  const paidAt = timeOf(source.last_paid_check_at);
+  const retryAt = timeOf(source.next_retry_at);
+  if (hasTimeValue(source.next_retry_at) && retryAt === null) return false;
+
+  const paidAt = eventTime(source.last_paid_check_at, nowMs);
   if (paidAt === null || shanghaiDay(new Date(paidAt)) !== shanghaiDay(now)) return true;
   if (source.last_paid_result !== "technical_error") return !source.last_paid_result;
 
-  const retryAt = timeOf(source.next_retry_at);
-  return retryAt === null || retryAt <= now.getTime();
+  return retryAt === null || retryAt <= nowMs;
 }
 
 export function alertState(source, now) {
-  const nowMs = now.getTime();
-  const primaryOk = timeOf(source.last_primary_ok_at);
-  const paidOk = source.last_paid_result === "ok" ? timeOf(source.last_paid_check_at) : null;
+  const nowMs = nowTime(now);
+  const primaryOk = eventTime(source.last_primary_ok_at, nowMs);
+  const explicitPaidOk = eventTime(source.last_paid_ok_at, nowMs);
+  const compatiblePaidOk = source.last_paid_result === "ok"
+    ? eventTime(source.last_paid_check_at, nowMs)
+    : null;
+  const paidSuccesses = [explicitPaidOk, compatiblePaidOk].filter((value) => value !== null);
+  const paidOk = paidSuccesses.length ? Math.max(...paidSuccesses) : null;
   const successes = [primaryOk, paidOk].filter((value) => value !== null);
-  const latestSuccess = successes.length ? Math.max(...successes) : timeOf(source.created_at);
+  const latestSuccess = successes.length ? Math.max(...successes) : eventTime(source.created_at, nowMs);
 
   if (latestSuccess !== null && nowMs - latestSuccess >= ONE_DAY_MS) return "alert";
   if (paidOk !== null && (primaryOk === null || paidOk > primaryOk)) return "paid_fallback";
 
-  const primaryBaseline = primaryOk ?? timeOf(source.created_at);
+  const primaryBaseline = primaryOk ?? eventTime(source.created_at, nowMs);
   if ((source.consecutive_primary_failures ?? 0) > 0
     || (primaryBaseline !== null && nowMs - primaryBaseline >= SIX_HOURS_MS)) return "degraded";
   return "normal";
