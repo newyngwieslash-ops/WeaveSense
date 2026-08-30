@@ -98,6 +98,8 @@ docker compose up --build
 
 微信公众号通过带 Bearer 鉴权的源网关接入；已配置的 WeWe / RSSHub 兼容订阅仍是主数据源。启动前必须设置 `WECHAT_GATEWAY_TOKEN`，并把可信主源域名（不含协议和端口、多个用逗号分隔）写入 `WECHAT_PRIMARY_ALLOWED_HOSTS`。Compose 默认使用内部地址 `http://wechat-gateway:8790`；非 Compose 部署还必须显式设置 `WECHAT_GATEWAY_URL`。密钥只放运行环境，不提交到仓库；`qa` profile 中的 `wechat-fixture` 仅用于确定性验收，正常生产栈不会启动它。
 
+微信源网关当前只支持生产单副本，禁止使用 `docker compose up --scale wechat-gateway=...` 扩容；同源互斥由进程内锁保证。进程若在付费供应商调用中崩溃，SQLite 会保留保守的预算预留，恢复后应检查当天用量；该策略可能高计，但不会低计费用。
+
 迁移：`migrations/0002_schema.sql`、`0003_keywords.sql`、`0004_production.sql`。
 
 ## 产品怎么用

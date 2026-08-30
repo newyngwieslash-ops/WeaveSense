@@ -212,9 +212,12 @@ function createStore(db) {
     (source_id, account_id, name, priority, sample_url, primary_feed_url, created_at, updated_at)
     values (?, ?, ?, ?, ?, ?, ?, ?)
     on conflict(source_id) do update set
-      account_id=excluded.account_id, name=excluded.name, priority=excluded.priority,
+      name=excluded.name, priority=excluded.priority,
       sample_url=excluded.sample_url, primary_feed_url=excluded.primary_feed_url,
       updated_at=excluded.updated_at`);
+  const resetMapping = db.prepare(`update gateway_sources set
+    last_paid_check_at = null, last_paid_result = '', next_retry_at = null,
+    alert_state = 'normal', updated_at = ? where source_id = ?`);
   const get = db.prepare("select * from gateway_sources where source_id = ?");
   const list = db.prepare("select * from gateway_sources order by source_id");
   const success = db.prepare(`update gateway_sources set
@@ -266,9 +269,24 @@ function createStore(db) {
 
   return {
     upsertSource(source, now = new Date().toISOString()) {
-      upsert.run(source.id, source.account_id, source.name, source.priority, source.sample_url,
-        source.primary_feed_url, now, now);
-      return get.get(source.id);
+      now = iso(now, "now");
+      db.exec("begin immediate");
+      try {
+        const existing = get.get(source.id);
+        if (existing && existing.account_id !== source.account_id) {
+          throw new Error("account_id cannot change");
+        }
+        upsert.run(source.id, source.account_id, source.name, source.priority, source.sample_url,
+          source.primary_feed_url, now, now);
+        if (existing?.last_paid_result === "mapping_error"
+          && existing.sample_url !== source.sample_url) resetMapping.run(now, source.id);
+        const saved = get.get(source.id);
+        db.exec("commit");
+        return saved;
+      } catch (error) {
+        rollback(db);
+        throw error;
+      }
     },
     getSource(sourceId) { return get.get(sourceId); },
     listSources() { return list.all(); },

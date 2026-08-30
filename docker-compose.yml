@@ -89,6 +89,8 @@ services:
   wechat-gateway:
     build: .
     command: ["npm", "run", "gateway:start"]
+    deploy:
+      replicas: 1
     environment:
       WECHAT_GATEWAY_TOKEN: ${WECHAT_GATEWAY_TOKEN:?set WECHAT_GATEWAY_TOKEN}
       WECHAT_PRIMARY_ALLOWED_HOSTS: ${WECHAT_PRIMARY_ALLOWED_HOSTS:?set WECHAT_PRIMARY_ALLOWED_HOSTS}

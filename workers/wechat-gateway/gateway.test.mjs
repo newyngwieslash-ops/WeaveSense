@@ -799,3 +799,133 @@ test("feed waiting behind reconciliation reuses the paid cache instead of spendi
   assert.equal(listCalls, 1);
   assert.deepEqual(fixture.store.getProviderUsage("2026-08-28", "dajiala"), { calls: 1, amount: 0.06 });
 });
+
+test("reconciliation isolates an invalid source and continues to the next source", async (t) => {
+  const paid = {
+    estimatedListCost: 0.08, estimatedDetailCost: 0.045,
+    async listToday(source) { return { items: [{ ...paidListItem, account_id: source.account_id,
+      account_name: source.name, original_url: source.source_id === "wx-bad"
+        ? "https://example.com/unsafe" : paidListItem.original_url }], cost_money: 0.06 }; },
+  };
+  const fixture = gatewayFixture(t, { clock: "2026-08-28T15:30:00.000Z", paid });
+  fixture.store.upsertSource({ ...integrationSource, id: "wx-bad", priority: "high",
+    account_id: "gh_bad" }, "2026-08-28T00:00:00.000Z");
+  const response = await fixture.request("/v1/reconcile", { method: "POST" });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { day: "2026-08-28", attempted: 2, succeeded: 1,
+    failed: 1, succeeded_source_ids: [integrationSource.id], budget_exhausted: false });
+});
+
+test("reconciliation crossing Shanghai midnight bills the old day, skips details, and stops", async (t) => {
+  let current = new Date("2026-08-28T15:59:59.000Z");
+  let detailCalls = 0;
+  const store = openStore(":memory:");
+  t.after(() => store.close());
+  store.upsertSource({ ...integrationSource, priority: "high" }, "2026-08-28T00:00:00.000Z");
+  store.upsertSource({ ...integrationSource, id: "wx-later", account_id: "gh_later" },
+    "2026-08-28T00:00:00.000Z");
+  const paid = { estimatedListCost: 0.08, estimatedDetailCost: 0.045,
+    async listToday(source) {
+      current = new Date("2026-08-28T16:00:01.000Z");
+      return { items: [{ ...paidListItem, account_id: source.account_id, account_name: source.name }],
+        cost_money: 0.06 };
+    },
+    async enrichArticle(item) { detailCalls += 1; return { ...item, body_html: "正文", cost_money: 0.04 }; },
+  };
+  const gateway = createGateway({ store, primary: async () => [], paid, token: "gateway-test",
+    now: () => current });
+  const response = await gateway(new Request("http://gateway.local/v1/reconcile", {
+    method: "POST", headers: { authorization: "Bearer gateway-test" },
+  }));
+  const result = await response.json();
+  assert.equal(result.day, "2026-08-28");
+  assert.equal(result.attempted, 1);
+  assert.equal(detailCalls, 0);
+  assert.deepEqual(store.getProviderUsage("2026-08-28", "dajiala"), { calls: 1, amount: 0.06 });
+  assert.deepEqual(store.getProviderUsage("2026-08-29", "dajiala"), { calls: 0, amount: 0 });
+  assert.equal(store.getSource(integrationSource.id).last_paid_check_at, "2026-08-28T16:00:01.000Z");
+  assert.equal(store.listGatewayItems(integrationSource.id, "2026-08-20T00:00:00.000Z")[0].discovered_at,
+    "2026-08-28T16:00:01.000Z");
+});
+
+test("feed fallback reserves on the clock at the paid call, not request entry", async (t) => {
+  let current = new Date("2026-08-28T15:59:59.000Z");
+  const store = openStore(":memory:");
+  t.after(() => store.close());
+  store.upsertSource(integrationSource, "2026-08-28T00:00:00.000Z");
+  store.recordPrimaryFailure(integrationSource.id, "2026-08-28T15:50:00.000Z");
+  const gateway = createGateway({ store, token: "gateway-test", now: () => current,
+    primary: async () => { current = new Date("2026-08-28T16:00:01.000Z"); throw new Error("down"); },
+    paid: { estimatedListCost: 0.08, estimatedDetailCost: 0.045,
+      async listToday() { return { items: [], cost_money: 0.06 }; } } });
+  assert.equal((await gateway(new Request(`http://gateway.local/v1/feeds/${integrationSource.id}.atom`, {
+    headers: { authorization: "Bearer gateway-test" },
+  }))).status, 200);
+  assert.deepEqual(store.getProviderUsage("2026-08-28", "dajiala"), { calls: 0, amount: 0 });
+  assert.deepEqual(store.getProviderUsage("2026-08-29", "dajiala"), { calls: 1, amount: 0.06 });
+});
+
+test("reconciliation reports exact call-cap and provider overrun exhaustion", async (t) => {
+  for (const [budget, actual] of [[{ rmb: 20, calls: 1 }, 0.06], [{ rmb: 0.08, calls: 10 }, 0.09]]) {
+    const fixture = gatewayFixture(t, { clock: "2026-08-28T15:30:00.000Z", budget,
+      paid: { estimatedListCost: 0.08, estimatedDetailCost: 0.045,
+        async listToday() { return { items: [], cost_money: actual }; } } });
+    const result = await (await fixture.request("/v1/reconcile", { method: "POST" })).json();
+    assert.equal(result.succeeded, 1);
+    assert.equal(result.budget_exhausted, true);
+  }
+});
+
+test("duplicate paid list items buy detail once after canonical de-duplication", async (t) => {
+  let details = 0;
+  const paid = { estimatedListCost: 0.08, estimatedDetailCost: 0.045,
+    async listToday() { return { items: [paidListItem, { ...paidListItem }], cost_money: 0.06 }; },
+    async enrichArticle(item) { details += 1; return { ...item, body_html: "正文", cost_money: 0.04 }; },
+  };
+  const fixture = gatewayFixture(t, { primary: async () => { throw new Error("down"); }, paid });
+  await fixture.request(`/v1/feeds/${integrationSource.id}.atom`);
+  assert.equal((await fixture.request(`/v1/feeds/${integrationSource.id}.atom`)).status, 200);
+  assert.equal(details, 1);
+  assert.deepEqual(fixture.store.getProviderUsage("2026-08-28", "dajiala"), { calls: 2, amount: 0.10 });
+});
+
+test("PUT rejects owner changes, serializes with feed, resets repaired mapping, and sanitizes JSON", async (t) => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const fixture = gatewayFixture(t, { primary: async () => { await gate; return [primaryItem]; } });
+  fixture.store.upsertGatewayItems(integrationSource.id, [primaryItem]);
+  fixture.store.recordPaidResult(integrationSource.id, "mapping_error", null, "alert",
+    "2026-08-28T11:00:00.000Z");
+  const badJson = await fixture.request(`/v1/sources/${integrationSource.id}`, {
+    method: "PUT", headers: { "content-type": "application/json" }, body: '{"secret":"do-not-echo",',
+  });
+  assert.deepEqual(await badJson.json(), { error: "invalid JSON" });
+  const feed = fixture.request(`/v1/feeds/${integrationSource.id}.atom`);
+  const update = fixture.request(`/v1/sources/${integrationSource.id}`, {
+    method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({
+      ...integrationSource, name: "修复后", sample_url: "https://mp.weixin.qq.com/s/repaired",
+    }),
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(fixture.store.getSource(integrationSource.id).name, integrationSource.name);
+  release();
+  assert.equal((await feed).status, 200);
+  assert.equal((await update).status, 200);
+  assert.equal(fixture.store.getSource(integrationSource.id).last_paid_result, "");
+
+  const owner = await fixture.request(`/v1/sources/${integrationSource.id}`, {
+    method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({
+      ...integrationSource, account_id: "gh_other",
+    }),
+  });
+  assert.equal(owner.status, 422);
+  assert.equal(fixture.store.getSource(integrationSource.id).account_id, integrationSource.account_id);
+  assert.equal(fixture.store.listGatewayItems(integrationSource.id, "2026-08-20T00:00:00.000Z").length, 1);
+  assert.equal(fixture.store.getSource(integrationSource.id).last_paid_check_at, null);
+  assert.equal(fixture.store.getSource(integrationSource.id).next_retry_at, null);
+  assert.equal(fixture.store.getSource(integrationSource.id).alert_state, "normal");
+  const readable = await fixture.request(`/v1/sources/${integrationSource.id}`, {
+    method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: "ignored" }),
+  });
+  assert.match((await readable.json()).error, /name/);
+});
