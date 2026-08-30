@@ -68,6 +68,10 @@ npm run dev
 | `WECHAT_GATEWAY_URL` | 非 Compose 必填 | 微信源网关地址；Compose 默认使用内部地址。 |
 | `WECHAT_GATEWAY_TOKEN` | 是 | 应用与微信源网关共享的 Bearer 密钥。 |
 | `WECHAT_PRIMARY_ALLOWED_HOSTS` | 是 | 可信 WeWe / RSSHub 主源域名白名单，逗号分隔。 |
+| `CRON_SECRET` | Compose 下是 | 应用与常驻调度器共享的 Bearer 密钥。 |
+| `CRON_INTERVAL_MS` / `CRON_TICK_LIMIT` | 否 | 常驻调度间隔（默认 30 分钟）与每轮上限（默认 200）。 |
+| `DAJIALA_KEY` / `DAJIALA_VERIFYCODE` | 否 | 极致了付费兜底凭证；均为空时保持纯主源模式。 |
+| `DAJIALA_DAILY_BUDGET_RMB` | 否 | 付费兜底每日硬上限，默认 20 RMB。 |
 | `TICK_LIMIT` | 否 | 每轮扫描到期信源数，默认 5，Docker 建议 20。 |
 | `EXTRACT_AUTO` | 否 | `true` 才在扫描时自动 OCR/ASR。 |
 | `VITE_AUTH_ENABLED` | 已关闭 | 本产品无登录。见 `.grok/app-env.json`。 |
@@ -82,6 +86,7 @@ export TELEGRAM_API_HASH=...
 export XAI_API_KEY=...          # OCR / ASR / LLM
 export WECHAT_GATEWAY_TOKEN=... # 必填，使用高强度随机密钥
 export WECHAT_PRIMARY_ALLOWED_HOSTS=feeds.example.com,rsshub.example.com
+export CRON_SECRET=...          # 必填，使用另一枚高强度随机密钥
 
 docker compose run --rm -it telethon python login.py
 docker compose up --build
@@ -100,7 +105,11 @@ docker compose up --build
 
 微信源网关当前只支持生产单副本，禁止使用 `docker compose up --scale wechat-gateway=...` 扩容；同源互斥由进程内锁保证。进程若在付费供应商调用中崩溃，SQLite 会保留保守的预算预留，恢复后应检查当天用量；该策略可能高计，但不会低计费用。
 
-迁移：`migrations/0002_schema.sql`、`0003_keywords.sql`、`0004_production.sql`。
+Compose 的 `scheduler` 会在浏览器关闭后继续按默认 30 分钟间隔调用受保护的定时入口。调度器也保持单副本，不要用 `--scale scheduler=...` 扩容；发布时先停调度器，给当前轮次最多 120 秒排空，再重启应用与网关，最后启动调度器。
+
+付费兜底默认每日 20 RMB 是硬上限，不是费用预测。按[极致了接口价格页](https://www.dajiala.com/main/interface?actnav=0)，列表查询约 0.06–0.08 RMB/信源调用，正文详情约 0.045 RMB/新文章；实际用量取决于主源失败率和新文章数。
+
+迁移：`migrations/0002_schema.sql`、`0003_keywords.sql`、`0004_production.sql`、`0005_scheduler_leases.sql`。
 
 ## 产品怎么用
 

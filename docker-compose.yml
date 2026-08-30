@@ -94,6 +94,11 @@ services:
     environment:
       WECHAT_GATEWAY_TOKEN: ${WECHAT_GATEWAY_TOKEN:?set WECHAT_GATEWAY_TOKEN}
       WECHAT_PRIMARY_ALLOWED_HOSTS: ${WECHAT_PRIMARY_ALLOWED_HOSTS:?set WECHAT_PRIMARY_ALLOWED_HOSTS}
+      DAJIALA_KEY: ${DAJIALA_KEY:-}
+      DAJIALA_VERIFYCODE: ${DAJIALA_VERIFYCODE:-}
+      DAJIALA_BASE_URL: ${DAJIALA_BASE_URL:-https://www.dajiala.com/fbmain/monitor/v3}
+      DAJIALA_DAILY_BUDGET_RMB: ${DAJIALA_DAILY_BUDGET_RMB:-20}
+      DAJIALA_DAILY_CALL_LIMIT: ${DAJIALA_DAILY_CALL_LIMIT:-250}
       GATEWAY_DB_PATH: /data/wechat-gateway.sqlite
       PORT: "8790"
     volumes:
@@ -119,6 +124,8 @@ services:
       MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-http://127.0.0.1:9000/loom}
       XAI_API_KEY: ${XAI_API_KEY:-}
       TICK_LIMIT: ${TICK_LIMIT:-20}
+      CRON_SECRET: ${CRON_SECRET:?set CRON_SECRET}
+      CRON_TICK_LIMIT: ${CRON_TICK_LIMIT:-200}
       EXTRACT_AUTO: ${EXTRACT_AUTO:-false}
       WECHAT_GATEWAY_URL: ${WECHAT_GATEWAY_URL:-http://wechat-gateway:8790}
       WECHAT_GATEWAY_TOKEN: ${WECHAT_GATEWAY_TOKEN:?set WECHAT_GATEWAY_TOKEN}
@@ -131,6 +138,20 @@ services:
       minio:
         condition: service_started
       wechat-gateway:
+        condition: service_started
+    restart: unless-stopped
+
+  scheduler:
+    build: .
+    command: ["npm", "run", "cron:start"]
+    deploy:
+      replicas: 1
+    environment:
+      CRON_ENDPOINT: http://app:8080/api/cron/tick
+      CRON_SECRET: ${CRON_SECRET:?set CRON_SECRET}
+      CRON_INTERVAL_MS: ${CRON_INTERVAL_MS:-1800000}
+    depends_on:
+      app:
         condition: service_started
     restart: unless-stopped
 
