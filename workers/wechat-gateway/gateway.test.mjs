@@ -10,7 +10,7 @@ import { XMLParser } from "fast-xml-parser";
 import { toAtom } from "./atom.mjs";
 import { createFixtureServer } from "./fixture-server.mjs";
 import { canonicalWechatId, fetchPrimary } from "./primary.mjs";
-import { authorize, createGatewayServer, validateSourceInput } from "./server.mjs";
+import { authorize, createGateway, createGatewayServer, validateSourceInput } from "./server.mjs";
 import { openStore } from "./store.mjs";
 
 test("ships a QA-only primary fixture and wires its host allowlist", async () => {
@@ -481,7 +481,9 @@ test("serves authenticated source, health, and feed routes", async (t) => {
   });
   assert.equal(saved.status, 200);
   assert.deepEqual(await saved.json(), { ok: true });
-  assert.equal((await fetch(`${base}/v1/sources/wx-1/health`, { headers })).status, 200);
+  const health = await fetch(`${base}/v1/sources/wx-1/health`, { headers });
+  assert.equal(health.status, 200);
+  assert.equal((await health.json()).paid_configured, false);
   const feed = await fetch(`${base}/v1/feeds/wx-1.atom`, { headers });
   assert.equal(feed.status, 200);
   assert.match(feed.headers.get("content-type"), /application\/atom\+xml/);
@@ -508,7 +510,217 @@ test("an empty feed succeeds while an upstream failure is counted with a fixed e
   assert.ok(store.getSource("wx-empty").last_primary_ok_at);
   body = "<broken";
   const failed = await fetch(`${base}/v1/feeds/wx-empty.atom`, { headers });
-  assert.equal(failed.status, 502);
+  assert.equal(failed.status, 503);
   assert.deepEqual(await failed.json(), { error: "primary_feed_failed" });
   assert.equal(store.getSource("wx-empty").consecutive_primary_failures, 1);
+});
+
+const integrationSource = {
+  id: "wx-integrated", name: "集成测试号", account_id: "gh_integrated", priority: "normal",
+  sample_url: "https://mp.weixin.qq.com/s/integrated",
+  primary_feed_url: "https://feeds.internal/integrated.atom",
+};
+const primaryItem = {
+  canonical_id: "wx:MzPrimary:1:1", account_id: "gh_integrated", account_name: "集成测试号",
+  title: "自建文章", published_at: "2026-08-28T10:00:00.000Z",
+  original_url: "https://mp.weixin.qq.com/s?__biz=MzPrimary&mid=1&idx=1",
+  body_text: "自建正文", cover_url: "https://mmbiz.qpic.cn/primary.jpg",
+  provider: "primary", discovered_at: "2026-08-28T10:01:00.000Z",
+};
+const paidListItem = {
+  account_id: "gh_integrated", account_name: "集成测试号", title: "付费文章",
+  published_at: "2026-08-28T11:00:00.000Z",
+  original_url: "https://mp.weixin.qq.com/s?__biz=MzPaid&mid=2&idx=1",
+  cover_url: "https://mmbiz.qpic.cn/paid.jpg", provider: "dajiala",
+};
+
+function gatewayFixture(t, {
+  clock = "2026-08-28T12:00:00.000Z",
+  primary = async () => [primaryItem],
+  paid = null,
+  budget = { rmb: 20, calls: 250 },
+} = {}) {
+  const store = openStore(":memory:");
+  t.after(() => store.close());
+  let current = new Date(clock);
+  store.upsertSource(integrationSource, current.toISOString());
+  const handler = createGateway({ store, primary, paid, token: "gateway-test",
+    dailyBudget: budget, now: () => current });
+  const request = (path, init = {}) => handler(new Request(`http://gateway.local${path}`, {
+    ...init, headers: { authorization: "Bearer gateway-test", ...init.headers },
+  }));
+  return { store, request, setNow(value) { current = new Date(value); } };
+}
+
+test("primary-first gateway caches a seven-day union and never pays on success", async (t) => {
+  let paidCalls = 0;
+  const { store, request } = gatewayFixture(t, { paid: {
+    estimatedListCost: 0.08, estimatedDetailCost: 0.045,
+    async listToday() { paidCalls += 1; return { items: [] }; },
+  } });
+  store.upsertGatewayItems(integrationSource.id, [{ ...paidListItem,
+    canonical_id: "wx:MzPaid:2:1", body_text: "对账正文", discovered_at: "2026-08-27T12:00:00.000Z" }]);
+  const response = await request(`/v1/feeds/${integrationSource.id}.atom`);
+  const xml = await response.text();
+  assert.equal(response.status, 200);
+  assert.match(xml, /loom:provider>primary/);
+  assert.match(xml, /自建文章/);
+  assert.match(xml, /付费文章/);
+  assert.equal(paidCalls, 0);
+  assert.equal(store.listGatewayItems(integrationSource.id, "2026-08-21T12:00:00.000Z").length, 2);
+});
+
+test("first primary failure is 503 without spend; second uses paid list and only missing-body detail", async (t) => {
+  let listCalls = 0;
+  const detailed = [];
+  const paid = {
+    estimatedListCost: 0.08, estimatedDetailCost: 0.045,
+    async listToday() { listCalls += 1; return { items: [paidListItem, {
+      ...paidListItem, title: "已有正文", original_url: "https://mp.weixin.qq.com/s?__biz=MzPaid&mid=3&idx=1",
+    }], cost_money: 0.06 }; },
+    async enrichArticle(item) { detailed.push(item.title); return { ...item,
+      body_html: "<p>付费完整正文</p>", cost_money: 0.04 }; },
+  };
+  const { store, request } = gatewayFixture(t, { primary: async () => { throw new Error("down"); }, paid });
+  store.upsertGatewayItems(integrationSource.id, [{ ...paidListItem,
+    canonical_id: "wx:MzPaid:3:1", title: "已有正文", body_text: "缓存正文",
+    original_url: "https://mp.weixin.qq.com/s?__biz=MzPaid&mid=3&idx=1",
+    discovered_at: "2026-08-28T11:01:00.000Z" }]);
+  const first = await request(`/v1/feeds/${integrationSource.id}.atom`);
+  assert.equal(first.status, 503);
+  assert.deepEqual(store.getProviderUsage("2026-08-28", "dajiala"), { calls: 0, amount: 0 });
+  const second = await request(`/v1/feeds/${integrationSource.id}.atom`);
+  assert.equal(second.status, 200);
+  assert.match(await second.text(), /loom:provider>dajiala/);
+  assert.equal(listCalls, 1);
+  assert.deepEqual(detailed, ["付费文章"]);
+  assert.deepEqual(store.getProviderUsage("2026-08-28", "dajiala"), { calls: 2, amount: 0.10 });
+});
+
+test("paid detail failure preserves the list floor and exhausted list budget is 429", async (t) => {
+  const paid = {
+    estimatedListCost: 0.08, estimatedDetailCost: 0.045,
+    async listToday() { return { items: [paidListItem], cost_money: 0.08 }; },
+    async enrichArticle() { throw Object.assign(new Error("detail down"), { kind: "technical_error" }); },
+  };
+  const primary = async () => { throw new Error("down"); };
+  const working = gatewayFixture(t, { primary, paid });
+  await working.request(`/v1/feeds/${integrationSource.id}.atom`);
+  const response = await working.request(`/v1/feeds/${integrationSource.id}.atom`);
+  const xml = await response.text();
+  assert.equal(response.status, 200);
+  assert.match(xml, /付费文章/);
+  assert.match(xml, /mmbiz\.qpic\.cn\/paid\.jpg/);
+
+  const exhausted = gatewayFixture(t, { primary, paid, budget: { rmb: 0.07, calls: 250 } });
+  await exhausted.request(`/v1/feeds/${integrationSource.id}.atom`);
+  const blocked = await exhausted.request(`/v1/feeds/${integrationSource.id}.atom`);
+  assert.equal(blocked.status, 429);
+  assert.deepEqual(await blocked.json(), { code: "paid_budget_exhausted" });
+});
+
+test("reconciliation is time-gated, idempotent, prioritised, and stops at the cap", async (t) => {
+  const paid = {
+    estimatedListCost: 0.08, estimatedDetailCost: 0.045,
+    async listToday(source) { return { items: [{ ...paidListItem, account_id: source.account_id,
+      account_name: source.name, title: `对账-${source.source_id}` }], cost_money: 0.08 }; },
+    async enrichArticle(item) { return { ...item, body_html: "<p>对账正文</p>", cost_money: 0.04 }; },
+  };
+  const fixture = gatewayFixture(t, { clock: "2026-08-28T15:29:00.000Z", paid,
+    budget: { rmb: 0.15, calls: 10 } });
+  fixture.store.upsertSource({ ...integrationSource, id: "wx-high", account_id: "gh_high",
+    name: "高优先级", priority: "high" }, "2026-08-28T00:00:00.000Z");
+  assert.deepEqual(await (await fixture.request("/v1/reconcile", { method: "POST" })).json(), {
+    day: "2026-08-28", attempted: 0, succeeded: 0, failed: 0,
+    succeeded_source_ids: [], budget_exhausted: false,
+  });
+  fixture.setNow("2026-08-28T15:30:00.000Z");
+  const result = await (await fixture.request("/v1/reconcile", { method: "POST" })).json();
+  assert.deepEqual(result.succeeded_source_ids, ["wx-high"]);
+  assert.equal(result.attempted, 1);
+  assert.equal(result.succeeded, 1);
+  assert.equal(result.failed, 0);
+  assert.equal(result.budget_exhausted, true);
+  assert.equal(fixture.store.listGatewayItems("wx-high", "2026-08-21T00:00:00.000Z").length, 1);
+  const repeated = await (await fixture.request("/v1/reconcile", { method: "POST" })).json();
+  assert.equal(repeated.succeeded, 0);
+});
+
+test("same-source concurrency shares work and sequential responses use the durable union", async (t) => {
+  let calls = 0;
+  let release;
+  let items = [primaryItem];
+  const primary = async () => {
+    calls += 1;
+    if (calls === 1) await new Promise((resolve) => { release = resolve; });
+    return items;
+  };
+  const { request } = gatewayFixture(t, { primary });
+  const first = request(`/v1/feeds/${integrationSource.id}.atom`);
+  const concurrent = request(`/v1/feeds/${integrationSource.id}.atom`);
+  await new Promise((resolve) => setImmediate(resolve));
+  release();
+  const [a, b] = await Promise.all([first, concurrent]);
+  assert.equal(calls, 1);
+  assert.match(await a.text(), /自建文章/);
+  assert.match(await b.text(), /自建文章/);
+  items = [];
+  const sequential = await request(`/v1/feeds/${integrationSource.id}.atom`);
+  assert.equal(sequential.status, 200);
+  assert.match(await sequential.text(), /自建文章/);
+});
+
+test("gateway health exposes paid configuration and capped daily usage", async (t) => {
+  const { store, request } = gatewayFixture(t, { paid: {
+    estimatedListCost: 0.08, estimatedDetailCost: 0.045, listToday: async () => ({ items: [] }),
+  } });
+  const id = store.tryReserveSpend("2026-08-28", "dajiala", 0.08, 20, 250);
+  store.adjustSpend(id, 0.06);
+  const response = await request(`/v1/sources/${integrationSource.id}/health`);
+  assert.deepEqual(await response.json(), {
+    source_id: integrationSource.id, alert_state: "normal", last_primary_ok_at: null,
+    consecutive_primary_failures: 0, last_paid_check_at: null, last_paid_result: "",
+    next_retry_at: null, paid_configured: true, paid_day_amount: 0.06,
+    paid_daily_budget: 20, paid_day_calls: 1, paid_daily_call_limit: 250,
+  });
+});
+
+test("does not detail-enrich an article already known to the normalized cache", async (t) => {
+  let detailCalls = 0;
+  const paid = {
+    estimatedListCost: 0.08, estimatedDetailCost: 0.045,
+    async listToday() { return { items: [paidListItem], cost_money: 0.06 }; },
+    async enrichArticle(item) { detailCalls += 1; return { ...item, body_html: "正文", cost_money: 0.04 }; },
+  };
+  const { store, request } = gatewayFixture(t, { primary: async () => { throw new Error("down"); }, paid });
+  store.upsertGatewayItems(integrationSource.id, [{ ...paidListItem,
+    canonical_id: "wx:MzPaid:2:1", body_text: "", discovered_at: "2026-08-28T11:01:00.000Z" }]);
+  await request(`/v1/feeds/${integrationSource.id}.atom`);
+  assert.equal((await request(`/v1/feeds/${integrationSource.id}.atom`)).status, 200);
+  assert.equal(detailCalls, 0);
+});
+
+test("paid technical failures advance through the 5 then 15 minute retry schedule", async (t) => {
+  const paid = {
+    estimatedListCost: 0.08, estimatedDetailCost: 0.045,
+    async listToday() { throw Object.assign(new Error("temporary"), { kind: "technical_error" }); },
+  };
+  const fixture = gatewayFixture(t, { clock: "2026-08-28T15:30:00.000Z", paid });
+  const first = await (await fixture.request("/v1/reconcile", { method: "POST" })).json();
+  assert.equal(first.failed, 1);
+  assert.equal(fixture.store.getSource(integrationSource.id).next_retry_at, "2026-08-28T15:35:00.000Z");
+  fixture.setNow("2026-08-28T15:35:00.000Z");
+  const second = await (await fixture.request("/v1/reconcile", { method: "POST" })).json();
+  assert.equal(second.failed, 1);
+  assert.equal(fixture.store.getSource(integrationSource.id).next_retry_at, "2026-08-28T15:50:00.000Z");
+});
+
+test("a successful source request removes cached articles older than 30 days", async (t) => {
+  const { store, request } = gatewayFixture(t);
+  store.upsertGatewayItems(integrationSource.id, [{ ...paidListItem,
+    canonical_id: "wx:old:1:1", published_at: "2026-07-20T10:00:00.000Z",
+    discovered_at: "2026-07-20T10:01:00.000Z" }]);
+  assert.equal((await request(`/v1/feeds/${integrationSource.id}.atom`)).status, 200);
+  assert.deepEqual(store.listGatewayItems(integrationSource.id, "2020-01-01T00:00:00.000Z")
+    .map(({ canonical_id }) => canonical_id), [primaryItem.canonical_id]);
 });
