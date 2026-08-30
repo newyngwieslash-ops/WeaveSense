@@ -701,6 +701,16 @@ test("health projects unresolved paid hard errors until a later primary success"
   assert.equal((await (await fixture.request(path)).json()).alert_state, "normal");
 });
 
+test("health keeps a 24-hour alert above a newer unresolved technical error", async (t) => {
+  const fixture = gatewayFixture(t, { clock: "2026-08-28T12:10:00.000Z" });
+  const stale = { ...integrationSource, id: "wx-stale" };
+  fixture.store.upsertSource(stale, "2026-08-26T12:00:00.000Z");
+  fixture.store.recordPaidResult(stale.id, "technical_error", "2026-08-28T12:15:00.000Z",
+    "degraded", "2026-08-28T12:10:00.000Z");
+  const health = await fixture.request(`/v1/sources/${stale.id}/health`);
+  assert.equal((await health.json()).alert_state, "alert");
+});
+
 test("does not detail-enrich an article already known to the normalized cache", async (t) => {
   let detailCalls = 0;
   const paid = {

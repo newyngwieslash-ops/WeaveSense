@@ -125,9 +125,11 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
     const primaryAt = Date.parse(source.last_primary_ok_at ?? "");
     const unresolvedPaidError = Number.isFinite(paidAt)
       && (!Number.isFinite(primaryAt) || primaryAt < paidAt);
-    const projectedAlert = unresolvedPaidError && source.last_paid_result === "mapping_error" ? "alert"
+    const dynamicAlert = alertState(source, date);
+    const projectedAlert = dynamicAlert === "alert" ? "alert"
+      : unresolvedPaidError && source.last_paid_result === "mapping_error" ? "alert"
       : unresolvedPaidError && source.last_paid_result === "technical_error" ? "degraded"
-        : alertState(source, date);
+        : dynamicAlert;
     return {
       source_id: source.source_id,
       alert_state: projectedAlert,
