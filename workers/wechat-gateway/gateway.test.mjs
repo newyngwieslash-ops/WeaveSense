@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { XMLParser } from "fast-xml-parser";
 import { toAtom } from "./atom.mjs";
@@ -106,6 +109,121 @@ test("stores source health state in SQLite", (t) => {
   assert.equal(store.getSource("wx-1").last_primary_ok_at, "2026-08-28T02:00:00.000Z");
   assert.equal(store.getSource("wx-1").consecutive_primary_failures, 0);
   assert.equal(store.listSources().length, 1);
+});
+
+test("migrates an existing source database with paid-success history", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "wechat-store-"));
+  const path = join(directory, "gateway.sqlite");
+  const legacy = new DatabaseSync(path);
+  legacy.exec(`create table gateway_sources (
+    source_id text primary key, account_id text not null, name text not null,
+    priority text not null default 'normal', sample_url text not null,
+    primary_feed_url text not null, last_primary_ok_at text,
+    consecutive_primary_failures integer not null default 0,
+    last_paid_check_at text, last_paid_result text not null default '',
+    next_retry_at text, alert_state text not null default 'normal',
+    created_at text not null, updated_at text not null
+  );
+  insert into gateway_sources
+    (source_id, account_id, name, priority, sample_url, primary_feed_url,
+      last_paid_check_at, last_paid_result, created_at, updated_at)
+    values ('legacy', 'gh_legacy', '旧公众号', 'normal',
+      'https://mp.weixin.qq.com/s/legacy', 'https://feeds.internal/legacy.atom',
+      '2026-08-28T02:00:00.000Z', 'ok',
+      '2026-08-28T00:00:00.000Z', '2026-08-28T02:00:00.000Z')`);
+  legacy.close();
+  const store = openStore(path);
+  const columns = new DatabaseSync(path, { readOnly: true });
+  t.after(async () => {
+    columns.close();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  });
+  assert.ok(columns.prepare("pragma table_info(gateway_sources)").all()
+    .some(({ name }) => name === "last_paid_ok_at"));
+  assert.equal(store.getSource("legacy").last_paid_ok_at, "2026-08-28T02:00:00.000Z");
+});
+
+test("reserves and adjusts provider spend atomically within both daily caps", (t) => {
+  const store = openStore(":memory:");
+  t.after(() => store.close());
+  assert.equal(store.tryReserveSpend("2026-08-28", "dajiala", 0.08, 0.10, 2), true);
+  assert.equal(store.getProviderBudgetState("2026-08-28", "dajiala", 0.10, 2), "warning");
+  assert.equal(store.tryReserveSpend("2026-08-28", "dajiala", 0.08, 0.10, 2), false);
+  store.adjustSpend("2026-08-28", "dajiala", 0.08, 0.06);
+  assert.deepEqual(store.getProviderUsage("2026-08-28", "dajiala"), {
+    calls: 1,
+    amount: 0.06,
+  });
+  assert.equal(store.tryReserveSpend("2026-08-28", "dajiala", 0.04, 0.10, 2), true);
+  assert.deepEqual(store.getProviderUsage("2026-08-28", "dajiala"), {
+    calls: 2,
+    amount: 0.10,
+  });
+  assert.equal(store.getProviderBudgetState("2026-08-28", "dajiala", 0.10, 3), "budget_exhausted");
+  assert.equal(store.getProviderBudgetState("2026-08-28", "dajiala", 1, 2), "budget_exhausted");
+  assert.equal(store.getProviderBudgetState("2026-08-28", "dajiala", 0.12, 3), "warning");
+  assert.throws(() => store.tryReserveSpend("2026-08-28", "dajiala", -0.01, 1, 2), /non-negative/);
+  assert.throws(() => store.tryReserveSpend("2026-08-28", "dajiala", 0.01, 1, -1), /non-negative/);
+  assert.throws(() => store.adjustSpend("2026-08-28", "dajiala", -0.01, 0), /non-negative/);
+  store.adjustSpend("2026-08-28", "dajiala", 0.04, -1);
+  assert.deepEqual(store.getProviderUsage("2026-08-28", "dajiala"), { calls: 2, amount: 0.06 });
+  assert.throws(() => store.adjustSpend("missing", "dajiala", 0.01, 0), /reservation not found/);
+  assert.equal(store.tryReserveSpend("missing", "dajiala", 0.01, 1, 1), true);
+  assert.deepEqual(store.getProviderUsage("empty", "dajiala"), { calls: 0, amount: 0 });
+});
+
+test("records paid checks without losing the last paid success", (t) => {
+  const store = openStore(":memory:");
+  t.after(() => store.close());
+  const source = {
+    id: "wx-paid", name: "付费兜底号", account_id: "gh_paid", priority: "normal",
+    sample_url: "https://mp.weixin.qq.com/s/paid",
+    primary_feed_url: "https://feeds.internal/wx-paid.atom",
+  };
+  store.upsertSource(source, "2026-08-28T00:00:00.000Z");
+  store.recordPrimarySuccess(source.id, "2026-08-28T01:00:00.000Z");
+  store.recordPaidResult(source.id, "ok", null, "paid_fallback", "2026-08-28T02:00:00.000Z");
+  store.recordPaidResult(source.id, "technical_error", "2026-08-28T02:05:00.000Z",
+    "degraded", "2026-08-28T02:01:00.000Z");
+  store.recordPaidResult(source.id, "mapping_error", null, "alert", "2026-08-28T02:02:00.000Z");
+  const saved = store.getSource(source.id);
+  assert.equal(saved.last_primary_ok_at, "2026-08-28T01:00:00.000Z");
+  assert.equal(saved.last_paid_ok_at, "2026-08-28T02:00:00.000Z");
+  assert.equal(saved.last_paid_check_at, "2026-08-28T02:02:00.000Z");
+  assert.equal(saved.last_paid_result, "mapping_error");
+  assert.equal(saved.next_retry_at, null);
+  assert.equal(saved.alert_state, "alert");
+});
+
+test("merges cached provider history without erasing article content", (t) => {
+  const store = openStore(":memory:");
+  t.after(() => store.close());
+  const primary = {
+    canonical_id: "wx:MzA1:9:1", account_id: "gh_example", account_name: "示例号",
+    title: "原始标题", published_at: "2026-08-28T08:00:00.000Z",
+    original_url: "https://mp.weixin.qq.com/s?__biz=MzA1&mid=9&idx=1",
+    body_text: "完整正文", cover_url: "https://mmbiz.qpic.cn/cover.jpg",
+    provider: "primary", discovered_at: "2026-08-28T09:00:00.000Z",
+  };
+  store.upsertGatewayItems("wx-1", [primary], "2026-08-28T09:00:00.000Z");
+  store.upsertGatewayItems("wx-1", [{ ...primary, title: "付费标题", body_text: "", cover_url: "",
+    provider: "dajiala", discovered_at: "2026-08-28T10:00:00.000Z" }],
+  "2026-08-28T10:00:00.000Z");
+  const rows = store.listGatewayItems("wx-1", "2026-08-28T00:00:00.000Z");
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].title, "付费标题");
+  assert.equal(rows[0].body_text, "完整正文");
+  assert.equal(rows[0].cover_url, "https://mmbiz.qpic.cn/cover.jpg");
+  assert.deepEqual(JSON.parse(rows[0].providers_seen), ["primary", "dajiala"]);
+  assert.throws(() => store.upsertGatewayItems("wx-1", [
+    { ...primary, canonical_id: "wx:MzA1:10:1" },
+    { ...primary, canonical_id: "wx:MzA1:11:1", account_id: null },
+  ]), /constraint/i);
+  assert.equal(store.listGatewayItems("wx-1", "2026-08-28T00:00:00.000Z").length, 1);
+  assert.deepEqual(store.listGatewayItems("wx-1", "2026-08-29T00:00:00.000Z"), []);
+  assert.equal(store.deleteGatewayItemsBefore("2026-08-29T00:00:00.000Z"), 1);
+  assert.deepEqual(store.listGatewayItems("wx-1", "2026-08-28T00:00:00.000Z"), []);
 });
 
 test("keeps the mirrored canonical algorithm in parity", () => {
