@@ -59,6 +59,11 @@ function cost(value, fallback) {
   return Number.isFinite(amount) && amount >= 0 ? amount : fallback;
 }
 
+function hasExplicitPort(raw) {
+  const authority = /^[a-z][a-z\d+.-]*:\/\/([^/?#]*)/i.exec(raw)?.[1] ?? "";
+  return /:\d*$/.test(authority.slice(authority.lastIndexOf("@") + 1));
+}
+
 function safeUrl(value, operation, httpStatus, allowedHosts, optional = false) {
   if (optional && (value == null || String(value).trim() === "")) return "";
   const raw = required(value, operation, httpStatus);
@@ -68,6 +73,7 @@ function safeUrl(value, operation, httpStatus, allowedHosts, optional = false) {
     || url.username
     || url.password
     || url.port
+    || hasExplicitPort(raw)
     || !allowedHosts.has(url.hostname)) {
     throw new DajialaError("mapping_error", operation, httpStatus);
   }
@@ -76,6 +82,15 @@ function safeUrl(value, operation, httpStatus, allowedHosts, optional = false) {
 
 function wechatUrl(value, operation, httpStatus = null) {
   return safeUrl(value, operation, httpStatus, WECHAT_HOSTS);
+}
+
+function providerWechatUrl(value, operation, httpStatus) {
+  const raw = required(value, operation, httpStatus);
+  let url;
+  try { url = new URL(raw); } catch { throw new DajialaError("mapping_error", operation, httpStatus); }
+  if (hasExplicitPort(raw)) throw new DajialaError("mapping_error", operation, httpStatus);
+  if (url.protocol === "http:") url.protocol = "https:";
+  return safeUrl(url.toString(), operation, httpStatus, WECHAT_HOSTS);
 }
 
 function coverUrl(value, operation, httpStatus) {
@@ -184,7 +199,7 @@ export function createDajialaClient({ key, verifycode = "", baseUrl, fetchImpl =
         account_name: required(source.name, operation, status),
         title: required(item?.title, operation, status),
         published_at: isoTimestamp(item?.post_time, operation, status),
-        original_url: wechatUrl(item?.url, operation, status),
+        original_url: providerWechatUrl(item?.url, operation, status),
         cover_url: coverUrl(item?.cover_url, operation, status),
         provider: PROVIDER,
       }));
@@ -205,7 +220,7 @@ export function createDajialaClient({ key, verifycode = "", baseUrl, fetchImpl =
         account_name: required(payload.nickname, operation, status),
         title: required(payload.title, operation, status),
         published_at: isoTimestamp(payload.post_time, operation, status),
-        original_url: wechatUrl(payload.article_url, operation, status),
+        original_url: providerWechatUrl(payload.article_url, operation, status),
         cover_url: coverUrl(payload.cover_url, operation, status),
         body_html: required(payload.content, operation, status),
         cost_money: cost(payload.cost_money, 0.045),

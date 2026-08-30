@@ -254,8 +254,9 @@ test("redirect failures are sanitized technical errors", async () => {
 test("rejects unsafe list article and cover URLs", async () => {
   const unsafe = [
     { ...listArticle, url: "javascript:alert(1)" },
-    { ...listArticle, url: "http://mp.weixin.qq.com/s/insecure" },
     { ...listArticle, url: "https://mp.weixin.qq.com.evil.test/s/fake" },
+    { ...listArticle, url: "http://user@mp.weixin.qq.com/s/userinfo" },
+    { ...listArticle, url: "http://mp.weixin.qq.com:80/s/explicit-port" },
     { ...listArticle, cover_url: "https://127.0.0.1/private.jpg" },
     { ...listArticle, cover_url: "http://mmbiz.qpic.cn/insecure.jpg" },
     { ...listArticle, cover_url: "https://mmbiz.qpic.cn.evil.test/fake.jpg" },
@@ -266,6 +267,32 @@ test("rejects unsafe list article and cover URLs", async () => {
       (error) => error.kind === "mapping_error",
     );
   }
+});
+
+test("keeps request article URLs HTTPS-only", async () => {
+  let listCalls = 0;
+  await assert.rejects(
+    clientWith(async () => { listCalls += 1; return response({ code: 0, data: [] }); })
+      .listToday({ ...source, sample_url: "http://mp.weixin.qq.com/s/insecure" }),
+    (error) => error.kind === "mapping_error",
+  );
+  assert.equal(listCalls, 0);
+
+  let detailCalls = 0;
+  await assert.rejects(
+    clientWith(async () => { detailCalls += 1; return response({ code: 0 }); })
+      .enrichArticle({ original_url: "http://mp.weixin.qq.com/s/insecure" }),
+    (error) => error.kind === "mapping_error",
+  );
+  assert.equal(detailCalls, 0);
+});
+
+test("upgrades provider list article HTTP URLs to HTTPS", async () => {
+  const { items } = await clientWith(async () => response({
+    code: 0,
+    data: [{ ...listArticle, url: "http://mp.weixin.qq.com/s/list?mid=1#part" }],
+  })).listToday(source);
+  assert.equal(items[0].original_url, "https://mp.weixin.qq.com/s/list?mid=1#part");
 });
 
 test("accepts an empty cover and the exact qlogo CDN host", async () => {
@@ -293,7 +320,6 @@ test("rejects unsafe detail article and cover URLs", async () => {
   };
   for (const patch of [
     { article_url: "javascript:alert(1)" },
-    { article_url: "http://mp.weixin.qq.com/s/insecure" },
     { cover_url: "https://10.0.0.1/private.jpg" },
   ]) {
     await assert.rejects(
@@ -301,6 +327,19 @@ test("rejects unsafe detail article and cover URLs", async () => {
       (error) => error.kind === "mapping_error",
     );
   }
+});
+
+test("upgrades provider detail article HTTP URLs to HTTPS", async () => {
+  const result = await clientWith(async () => response({
+    code: 0,
+    title: "详情标题",
+    content: "正文",
+    article_url: "http://mp.weixin.qq.com/s/detail?idx=2#part",
+    cover_url: "",
+    nickname: "详情公众号",
+    post_time: 1722416180,
+  })).enrichArticle({ original_url: listArticle.url });
+  assert.equal(result.original_url, "https://mp.weixin.qq.com/s/detail?idx=2#part");
 });
 
 test("accepts only finite nonnegative numeric provider costs", async () => {
