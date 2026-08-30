@@ -2,21 +2,24 @@ import { DatabaseSync } from "node:sqlite";
 
 // ponytail: six-decimal RMB precision; move to integer micro-RMB storage if provider billing gets finer.
 const MONEY_SCALE = 1_000_000;
-const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+const ISO_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|([+-])(\d{2}):(\d{2}))$/;
 const PAID_RESULTS = new Set(["ok", "technical_error", "mapping_error"]);
 const ALERT_STATES = new Set(["normal", "degraded", "paid_fallback", "alert"]);
 const WECHAT_HOSTS = new Set(["mp.weixin.qq.com"]);
 const COVER_HOSTS = new Set(["mmbiz.qpic.cn", "mmbiz.qlogo.cn"]);
-
-function money(value) {
-  return Math.round(value * MONEY_SCALE) / MONEY_SCALE;
-}
 
 function nonNegativeNumber(value, name) {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
     throw new TypeError(`${name} must be a finite non-negative number`);
   }
   return value;
+}
+
+function money(value, name = "amount") {
+  nonNegativeNumber(value, name);
+  const scaled = Math.round(value * MONEY_SCALE);
+  if (!Number.isSafeInteger(scaled)) throw new TypeError(`${name} is too large`);
+  return scaled / MONEY_SCALE;
 }
 
 function finiteNumber(value, name) {
@@ -41,9 +44,27 @@ function key(value, name) {
 function iso(value, name, nullable = false) {
   if (nullable && value == null) return null;
   const raw = key(value, name);
-  if (!ISO_TIMESTAMP.test(raw) || !Number.isFinite(Date.parse(raw))) {
+  const match = ISO_TIMESTAMP.exec(raw);
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText,
+    , offsetHourText = "0", offsetMinuteText = "0"] = match ?? [];
+  const [year, month, day, hour, minute, second, offsetHour, offsetMinute] =
+    [yearText, monthText, dayText, hourText, minuteText, secondText,
+      offsetHourText, offsetMinuteText].map(Number);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const monthDays = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (!match || month < 1 || month > 12 || day < 1 || day > monthDays[month - 1]
+    || hour > 23 || minute > 59 || second > 59 || offsetHour > 23 || offsetMinute > 59
+    || !Number.isFinite(Date.parse(raw))) {
     throw new TypeError(`${name} must be a valid ISO timestamp`);
   }
+  return raw;
+}
+
+function reservationId(value) {
+  const raw = typeof value === "bigint" ? String(value)
+    : typeof value === "number" && Number.isSafeInteger(value) ? String(value)
+      : typeof value === "string" ? value.trim() : "";
+  if (!/^[1-9]\d*$/.test(raw)) throw new TypeError("reservationId is invalid");
   return raw;
 }
 
@@ -66,6 +87,39 @@ function httpsUrl(value, name, allowedHosts, optional = false) {
 
 function rollback(db) {
   try { db.exec("rollback"); } catch { /* preserve the transaction error */ }
+}
+
+const RESERVATIONS_SQL = `create table provider_reservations (
+  id integer primary key autoincrement,
+  day text not null,
+  provider text not null,
+  estimate real not null check (estimate >= 0),
+  actual real check (actual is null or actual >= 0),
+  status text not null default 'open' check (status in ('open', 'settled', 'overrun')),
+  created_at text not null,
+  settled_at text
+)`;
+
+function migrateReservations(db) {
+  const schema = db.prepare("select sql from sqlite_master where type = 'table' and name = 'provider_reservations'")
+    .get()?.sql;
+  if (!schema) db.exec(RESERVATIONS_SQL);
+  else {
+    const columns = db.prepare("pragma table_info(provider_reservations)").all();
+    if (!columns.some(({ name }) => name === "actual") || !schema.includes("'overrun'")) {
+      const actual = columns.some(({ name }) => name === "actual") ? "actual" : "null";
+      db.exec(`drop index if exists provider_reservations_open;
+        alter table provider_reservations rename to provider_reservations_legacy;
+        ${RESERVATIONS_SQL};
+        insert into provider_reservations
+          (id, day, provider, estimate, actual, status, created_at, settled_at)
+          select id, day, provider, estimate, ${actual}, status, created_at, settled_at
+          from provider_reservations_legacy;
+        drop table provider_reservations_legacy`);
+    }
+  }
+  db.exec(`create index if not exists provider_reservations_open
+    on provider_reservations(day, provider, status, id)`);
 }
 
 function initialize(db) {
@@ -102,17 +156,6 @@ function initialize(db) {
       updated_at text not null,
       primary key (day, provider)
     );
-    create table if not exists provider_reservations (
-      id integer primary key autoincrement,
-      day text not null,
-      provider text not null,
-      estimate real not null check (estimate >= 0),
-      status text not null default 'open' check (status in ('open', 'settled')),
-      created_at text not null,
-      settled_at text
-    );
-    create index if not exists provider_reservations_open
-      on provider_reservations(day, provider, estimate, status, id);
     create table if not exists gateway_items (
       source_id text not null,
       canonical_id text not null,
@@ -129,6 +172,7 @@ function initialize(db) {
       updated_at text not null,
       primary key (source_id, canonical_id)
     )`);
+    migrateReservations(db);
     db.exec("commit");
   } catch (error) {
     rollback(db);
@@ -183,8 +227,7 @@ function createStore(db) {
     last_paid_check_at = ?,
     last_paid_ok_at = case when ? = 'ok' then ? else last_paid_ok_at end,
     last_paid_result = ?, next_retry_at = ?, alert_state = ?, updated_at = ?
-    where source_id = ? and (last_paid_check_at is null
-      or julianday(last_paid_check_at) is null or julianday(?) >= julianday(last_paid_check_at))`);
+    where source_id = ?`);
   const getUsage = db.prepare("select calls, amount from provider_usage where day = ? and provider = ?");
   const reserveUsage = db.prepare(`insert into provider_usage (day, provider, calls, amount, updated_at)
     values (?, ?, 1, ?, ?)
@@ -194,10 +237,10 @@ function createStore(db) {
     where day = ? and provider = ?`);
   const addReservation = db.prepare(`insert into provider_reservations
     (day, provider, estimate, status, created_at) values (?, ?, ?, 'open', ?)`);
-  const getReservation = db.prepare(`select id, estimate from provider_reservations
-    where day = ? and provider = ? and estimate = ? and status = 'open' order by id limit 1`);
+  const getReservation = db.prepare(`select id, day, provider, estimate, actual, status
+    from provider_reservations where id = ?`);
   const settleReservation = db.prepare(`update provider_reservations
-    set status = 'settled', settled_at = ? where id = ? and status = 'open'`);
+    set status = ?, actual = ?, settled_at = ? where id = ? and status = 'open'`);
   const getItem = db.prepare(`select account_id, provider, providers_seen, body_text, cover_url
     from gateway_items where source_id = ? and canonical_id = ?`);
   const upsertItem = db.prepare(`insert into gateway_items
@@ -241,17 +284,34 @@ function createStore(db) {
       if (!ALERT_STATES.has(alertState)) throw new TypeError("alertState is invalid");
       now = iso(now, "now");
       nextRetryAt = iso(nextRetryAt, "nextRetryAt", true);
-      const changed = paidResult.run(now, result, now, result, nextRetryAt, alertState,
-        now, sourceId, now).changes;
-      if (Number(changed) === 1) return get.get(sourceId);
-      if (!get.get(sourceId)) throw new Error("source not found");
-      throw new Error("paid result is older than the stored check");
+      db.exec("begin immediate");
+      try {
+        const source = get.get(sourceId);
+        if (!source) throw new Error("source not found");
+        const previous = Date.parse(source.last_paid_check_at ?? "");
+        const current = Date.parse(now);
+        if (Number.isFinite(previous) && current <= previous) {
+          if (current < previous) throw new Error("paid result is older than the stored check");
+          if (source.last_paid_result !== result || source.next_retry_at !== nextRetryAt
+            || source.alert_state !== alertState) throw new Error("paid result timestamp conflict");
+          db.exec("commit");
+          return source;
+        }
+        if (Number(paidResult.run(now, result, now, result, nextRetryAt,
+          alertState, now, sourceId).changes) !== 1) throw new Error("source not found");
+        const saved = get.get(sourceId);
+        db.exec("commit");
+        return saved;
+      } catch (error) {
+        rollback(db);
+        throw error;
+      }
     },
     tryReserveSpend(day, provider, estimate, dailyRmbCap, dailyCallCap) {
       day = key(day, "day");
       provider = key(provider, "provider");
-      estimate = money(nonNegativeNumber(estimate, "estimate"));
-      dailyRmbCap = money(nonNegativeNumber(dailyRmbCap, "dailyRmbCap"));
+      estimate = money(estimate, "estimate");
+      dailyRmbCap = money(dailyRmbCap, "dailyRmbCap");
       dailyCallCap = callCap(dailyCallCap);
       db.exec("begin immediate");
       try {
@@ -262,34 +322,40 @@ function createStore(db) {
           return false;
         }
         const now = new Date().toISOString();
-        addReservation.run(day, provider, estimate, now);
+        const reservation = addReservation.run(day, provider, estimate, now).lastInsertRowid;
         reserveUsage.run(day, provider, nextAmount, now, nextAmount, now);
         db.exec("commit");
-        return true;
+        return String(reservation);
       } catch (error) {
         rollback(db);
         throw error;
       }
     },
-    adjustSpend(day, provider, estimate, actual) {
-      day = key(day, "day");
-      provider = key(provider, "provider");
-      estimate = money(nonNegativeNumber(estimate, "estimate"));
-      actual = money(Math.max(0, finiteNumber(actual, "actual")));
-      if (actual > estimate) throw new Error("actual spend exceeds reservation");
+    adjustSpend(id, actual) {
+      id = reservationId(id);
+      actual = money(Math.max(0, finiteNumber(actual, "actual")), "actual");
       db.exec("begin immediate");
       try {
-        const reservation = getReservation.get(day, provider, estimate);
+        const reservation = getReservation.get(id);
         if (!reservation) throw new Error("provider spend reservation not found");
-        const current = getUsage.get(day, provider);
+        if (reservation.status !== "open") {
+          if (reservation.actual != null && money(Number(reservation.actual)) === actual) {
+            db.exec("commit");
+            return reservation.status;
+          }
+          throw new Error("provider spend reservation replay conflict");
+        }
+        const current = getUsage.get(reservation.day, reservation.provider);
         if (!current) throw new Error("provider usage not found");
         const now = new Date().toISOString();
         const amount = money(Math.max(0, Number(current.amount) - Number(reservation.estimate) + actual));
-        if (Number(settleReservation.run(now, reservation.id).changes) !== 1) {
+        const status = actual > Number(reservation.estimate) ? "overrun" : "settled";
+        if (Number(settleReservation.run(status, actual, now, id).changes) !== 1) {
           throw new Error("provider spend reservation was already settled");
         }
-        adjustUsage.run(amount, now, day, provider);
+        adjustUsage.run(amount, now, reservation.day, reservation.provider);
         db.exec("commit");
+        return status;
       } catch (error) {
         rollback(db);
         throw error;
@@ -297,7 +363,7 @@ function createStore(db) {
     },
     getProviderUsage: providerUsage,
     getProviderBudgetState(day, provider, dailyRmbCap, dailyCallCap) {
-      dailyRmbCap = money(nonNegativeNumber(dailyRmbCap, "dailyRmbCap"));
+      dailyRmbCap = money(dailyRmbCap, "dailyRmbCap");
       dailyCallCap = callCap(dailyCallCap);
       const { calls, amount } = providerUsage(day, provider);
       if (amount >= dailyRmbCap || calls >= dailyCallCap) return "budget_exhausted";
@@ -311,8 +377,11 @@ function createStore(db) {
       now = iso(now, "now");
       db.exec("begin immediate");
       try {
+        const source = get.get(sourceId);
+        if (!source) throw new Error("source not found");
         const owners = new Map();
         for (const item of validItems) {
+          if (item.account_id !== source.account_id) throw new Error("account_id does not match source");
           const existing = getItem.get(sourceId, item.canonical_id);
           const owner = owners.get(item.canonical_id) ?? existing?.account_id;
           if (owner && owner !== item.account_id) throw new Error("account_id cannot change");
