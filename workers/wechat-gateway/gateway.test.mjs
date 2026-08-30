@@ -11,6 +11,7 @@ import { toAtom } from "./atom.mjs";
 import { createFixtureServer } from "./fixture-server.mjs";
 import { canonicalWechatId, fetchPrimary } from "./primary.mjs";
 import { authorize, createGateway, createGatewayServer, validateSourceInput } from "./server.mjs";
+import { shouldReconcile } from "./state-machine.mjs";
 import { openStore } from "./store.mjs";
 
 test("ships a QA-only primary fixture and wires its host allowlist", async () => {
@@ -269,6 +270,27 @@ test("records paid checks without losing the last paid success", (t) => {
     "2026-08-28T03:00:00.100Z"), /older/);
   assert.equal(store.getSource(source.id).last_paid_check_at, "2026-08-28T03:00:00.900Z");
   store.recordPaidResult(source.id, "ok", null, "paid_fallback", "2026-08-28T12:00:00+08:00");
+});
+
+test("paid success attribution rejects the future and never moves backward", (t) => {
+  const store = openStore(":memory:");
+  t.after(() => store.close());
+  store.upsertSource({ id: "wx-attribution", name: "归属测试", account_id: "gh_attribution",
+    priority: "normal", sample_url: "https://mp.weixin.qq.com/s/attribution",
+    primary_feed_url: "https://feeds.internal/attribution.atom" }, "2026-08-28T00:00:00.000Z");
+  const before = store.getSource("wx-attribution");
+  assert.throws(() => store.recordPaidResult("wx-attribution", "ok", null, "paid_fallback",
+    "2026-08-28T12:00:00.000Z", "2026-08-28T13:00:00.000Z"), /successAt/);
+  assert.deepEqual(store.getSource("wx-attribution"), before);
+
+  store.recordPaidResult("wx-attribution", "ok", null, "paid_fallback",
+    "2026-08-29T16:20:00.000Z", "2026-08-29T16:10:00.000Z");
+  store.recordPaidResult("wx-attribution", "ok", null, "paid_fallback",
+    "2026-08-29T17:00:00.000Z", "2026-08-29T15:59:00.000Z");
+  const saved = store.getSource("wx-attribution");
+  assert.equal(saved.last_paid_check_at, "2026-08-29T17:00:00.000Z");
+  assert.equal(saved.last_paid_ok_at, "2026-08-29T16:10:00.000Z");
+  assert.equal(shouldReconcile(saved, new Date("2026-08-30T15:35:00.000Z")), false);
 });
 
 test("merges cached provider history without erasing article content", (t) => {

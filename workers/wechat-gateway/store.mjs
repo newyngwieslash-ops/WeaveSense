@@ -303,22 +303,30 @@ function createStore(db) {
       now = iso(now, "now");
       successAt = iso(successAt, "successAt");
       nextRetryAt = iso(nextRetryAt, "nextRetryAt", true);
+      const current = Date.parse(now);
+      const incomingSuccess = Date.parse(successAt);
+      if (result === "ok" && incomingSuccess > current) {
+        throw new TypeError("successAt cannot be later than now");
+      }
       db.exec("begin immediate");
       try {
         const source = get.get(sourceId);
         if (!source) throw new Error("source not found");
         const previous = Date.parse(source.last_paid_check_at ?? "");
-        const current = Date.parse(now);
+        const previousSuccess = Date.parse(source.last_paid_ok_at ?? "");
+        const effectiveSuccessAt = result === "ok" && Number.isFinite(previousSuccess)
+          && previousSuccess >= incomingSuccess ? source.last_paid_ok_at : successAt;
         if (Number.isFinite(previous) && current <= previous) {
           if (current < previous) throw new Error("paid result is older than the stored check");
           if (source.last_paid_result !== result || source.next_retry_at !== nextRetryAt
-            || source.alert_state !== alertState || (result === "ok" && source.last_paid_ok_at !== successAt)) {
+            || source.alert_state !== alertState
+            || (result === "ok" && source.last_paid_ok_at !== effectiveSuccessAt)) {
             throw new Error("paid result timestamp conflict");
           }
           db.exec("commit");
           return source;
         }
-        if (Number(paidResult.run(now, result, successAt, result, nextRetryAt,
+        if (Number(paidResult.run(now, result, effectiveSuccessAt, result, nextRetryAt,
           alertState, now, sourceId).changes) !== 1) throw new Error("source not found");
         const saved = get.get(sourceId);
         db.exec("commit");
