@@ -15,10 +15,10 @@ const listArticle = {
   cover_url: "https://mmbiz.qpic.cn/list.jpg",
 };
 
-function response(body, status = 200) {
+function response(body, status = 200, headers = {}) {
   return new Response(typeof body === "string" ? body : JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...headers },
   });
 }
 
@@ -44,6 +44,7 @@ test("lists today's articles with the exact provider request and no detail call"
   assert.equal(calls[0].url, `${baseUrl}/post_condition`);
   assert.equal(calls[0].init.method, "POST");
   assert.deepEqual(calls[0].init.headers, { "content-type": "application/json" });
+  assert.equal(calls[0].init.redirect, "error");
   assert.deepEqual(JSON.parse(calls[0].init.body), {
     url: source.sample_url,
     page: 1,
@@ -115,6 +116,7 @@ test("enriches one article with the exact detail request", async () => {
   assert.equal(calls[0].url, `${baseUrl}/article_detail`);
   assert.equal(calls[0].init.method, "POST");
   assert.deepEqual(calls[0].init.headers, { "content-type": "application/json" });
+  assert.equal(calls[0].init.redirect, "error");
   assert.ok(calls[0].init.signal instanceof AbortSignal);
   assert.deepEqual(JSON.parse(calls[0].init.body), {
     url: listArticle.url,
@@ -139,13 +141,17 @@ test("enriches one article with the exact detail request", async () => {
 const mappingFailures = [
   ["provider code", () => response({ code: 10002, msg: "key-test verify-test" })],
   ["invalid JSON", () => response("not-json")],
-  ["HTTP 400", () => response({ error: "key-test" }, 400)],
+  ["HTTP 400", () => response({ error: "key-test" }, 400), 400],
   ["non-array list", () => response({ code: 0, data: {} })],
   ["missing article field", () => response({ code: 0, data: [{ ...listArticle, title: "" }] })],
   ["out-of-range timestamp", () => response({ code: 0, data: [{ ...listArticle, post_time: 1e20 }] })],
+  ["implausible future timestamp", () => response({ code: 0, data: [{ ...listArticle, post_time: 99999999999 }] })],
+  ["fractional timestamp", () => response({ code: 0, data: [{ ...listArticle, post_time: 1722416179.5 }] })],
+  ["ambiguous date string", () => response({ code: 0, data: [{ ...listArticle, post_time: "July 31, 2024" }] })],
+  ["HTTP 201 missing field", () => response({ code: 0, data: [{ ...listArticle, title: "" }] }, 201), 201],
 ];
 
-for (const [name, makeResponse] of mappingFailures) {
+for (const [name, makeResponse, expectedStatus = 200] of mappingFailures) {
   test(`${name} is a sanitized mapping error`, async () => {
     const client = clientWith(async () => makeResponse());
     await assert.rejects(client.listToday(source), (error) => {
@@ -161,7 +167,7 @@ for (const [name, makeResponse] of mappingFailures) {
         operation: "list_today",
         status: "error",
         error_type: "mapping_error",
-        http_status: name === "HTTP 400" ? 400 : 200,
+        http_status: expectedStatus,
       });
       return true;
     });
@@ -215,4 +221,168 @@ test("missing detail fields fail without leaking credentials", async () => {
 
 test("validates the API key before making requests", () => {
   assert.throws(() => createDajialaClient({ key: "", baseUrl, fetchImpl: fetch }), /key is required/);
+});
+
+test("accepts only a credential-free HTTPS provider base URL", () => {
+  for (const invalid of [
+    "http://www.dajiala.com/fbmain/monitor/v3",
+    "https://user:pass@www.dajiala.com/fbmain/monitor/v3",
+    "https://www.dajiala.com/fbmain/monitor/v3?key=secret",
+    "https://www.dajiala.com/fbmain/monitor/v3#secret",
+  ]) {
+    assert.throws(() => createDajialaClient({ key: "key-test", baseUrl: invalid }), /baseUrl/);
+  }
+});
+
+test("redirect failures are sanitized technical errors", async () => {
+  let init;
+  const client = clientWith(async (_url, request) => {
+    init = request;
+    throw new TypeError("redirect exposed key-test verify-test");
+  });
+  await assert.rejects(client.listToday(source), (error) => {
+    assert.equal(error.kind, "technical_error");
+    assert.equal(error.retryable, true);
+    assert.equal(init.redirect, "error");
+    const visible = `${error.message}\n${error.stack}\n${JSON.stringify(error)}`;
+    assert.equal(visible.includes("key-test"), false);
+    assert.equal(visible.includes("verify-test"), false);
+    return true;
+  });
+});
+
+test("rejects unsafe list article and cover URLs", async () => {
+  const unsafe = [
+    { ...listArticle, url: "javascript:alert(1)" },
+    { ...listArticle, url: "http://mp.weixin.qq.com/s/insecure" },
+    { ...listArticle, url: "https://mp.weixin.qq.com.evil.test/s/fake" },
+    { ...listArticle, cover_url: "https://127.0.0.1/private.jpg" },
+    { ...listArticle, cover_url: "http://mmbiz.qpic.cn/insecure.jpg" },
+    { ...listArticle, cover_url: "https://mmbiz.qpic.cn.evil.test/fake.jpg" },
+  ];
+  for (const article of unsafe) {
+    await assert.rejects(
+      clientWith(async () => response({ code: 0, data: [article] })).listToday(source),
+      (error) => error.kind === "mapping_error",
+    );
+  }
+});
+
+test("accepts an empty cover and the exact qlogo CDN host", async () => {
+  const client = clientWith(async () => response({
+    code: 0,
+    data: [
+      { ...listArticle, cover_url: "" },
+      { ...listArticle, url: `${listArticle.url}-2`, cover_url: "https://mmbiz.qlogo.cn/cover.jpg" },
+    ],
+  }));
+  const { items } = await client.listToday(source);
+  assert.equal(items[0].cover_url, "");
+  assert.equal(items[1].cover_url, "https://mmbiz.qlogo.cn/cover.jpg");
+});
+
+test("rejects unsafe detail article and cover URLs", async () => {
+  const detail = {
+    code: 0,
+    title: "详情标题",
+    content: "正文",
+    article_url: listArticle.url,
+    cover_url: listArticle.cover_url,
+    nickname: "详情公众号",
+    post_time: 1722416180,
+  };
+  for (const patch of [
+    { article_url: "javascript:alert(1)" },
+    { article_url: "http://mp.weixin.qq.com/s/insecure" },
+    { cover_url: "https://10.0.0.1/private.jpg" },
+  ]) {
+    await assert.rejects(
+      clientWith(async () => response({ ...detail, ...patch })).enrichArticle({ original_url: listArticle.url }),
+      (error) => error.kind === "mapping_error",
+    );
+  }
+});
+
+test("accepts only finite nonnegative numeric provider costs", async () => {
+  for (const invalid of [null, "", " ", false, Number.NaN, -1, "-0.01"]) {
+    const list = await clientWith(async () => response({ code: 0, cost_money: invalid, data: [] })).listToday(source);
+    assert.equal(list.cost_money, 0.08);
+  }
+  const list = await clientWith(async () => response({ code: 0, cost_money: "0.06", data: [] })).listToday(source);
+  assert.equal(list.cost_money, 0.06);
+
+  const detail = await clientWith(async () => response({
+    code: 0,
+    cost_money: false,
+    title: "详情标题",
+    content: "正文",
+    article_url: listArticle.url,
+    cover_url: "",
+    nickname: "详情公众号",
+    post_time: 1722416180,
+  })).enrichArticle({ original_url: listArticle.url });
+  assert.equal(detail.cost_money, 0.045);
+});
+
+test("normalizes an explicit ISO timestamp", async () => {
+  const value = "2024-07-31T12:00:00+08:00";
+  const { items } = await clientWith(async () => response({
+    code: 0,
+    data: [{ ...listArticle, post_time: value }],
+  })).listToday(source);
+  assert.equal(items[0].published_at, new Date(value).toISOString());
+});
+
+test("classifies response body timeout and network errors as sanitized technical errors", async () => {
+  for (const failure of [
+    new DOMException("key-test verify-test", "TimeoutError"),
+    new Error("network exposed key-test verify-test"),
+  ]) {
+    const body = new ReadableStream({ pull(controller) { controller.error(failure); } });
+    const client = clientWith(async () => new Response(body, {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    await assert.rejects(client.listToday(source), (error) => {
+      assert.equal(error.kind, "technical_error");
+      const visible = `${error.message}\n${error.stack}\n${JSON.stringify(error)}`;
+      assert.equal(visible.includes("key-test"), false);
+      assert.equal(visible.includes("verify-test"), false);
+      return true;
+    });
+  }
+});
+
+test("rejects a declared response above 4 MiB and cancels it", async () => {
+  let cancelled = false;
+  let sent = false;
+  const body = new ReadableStream({
+    pull(controller) {
+      if (!sent) {
+        sent = true;
+        controller.enqueue(new TextEncoder().encode("{}"));
+      } else controller.close();
+    },
+    cancel() { cancelled = true; },
+  });
+  const client = clientWith(async () => new Response(body, {
+    status: 200,
+    headers: { "content-length": String(4 * 1024 * 1024 + 1) },
+  }));
+  await assert.rejects(client.listToday(source), (error) => error.kind === "mapping_error");
+  assert.equal(cancelled, true);
+});
+
+test("rejects and cancels a chunked response above 4 MiB", async () => {
+  let cancelled = false;
+  let sent = 0;
+  const body = new ReadableStream({
+    pull(controller) {
+      if (sent++ < 2) controller.enqueue(new Uint8Array(3 * 1024 * 1024));
+    },
+    cancel() { cancelled = true; },
+  });
+  const client = clientWith(async () => new Response(body, { status: 200 }));
+  await assert.rejects(client.listToday(source), (error) => error.kind === "mapping_error");
+  assert.equal(cancelled, true);
 });
