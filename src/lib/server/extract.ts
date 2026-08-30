@@ -106,7 +106,7 @@ async function appendExtract(itemId: string, label: string, text: string): Promi
   await sql.query("update items set body = $2, pipeline_status = 'extracted' where id = $1", [itemId, next]);
 }
 
-export async function extractItem(itemId: string): Promise<{
+export async function extractItem(itemId: string, targetLimit = 4): Promise<{
   ok: boolean;
   ran: number;
   error?: string;
@@ -143,7 +143,7 @@ export async function extractItem(itemId: string): Promise<{
 
   let ran = 0;
   let lastError = "";
-  for (const m of targets.slice(0, 4)) {
+  for (const m of targets.slice(0, Math.min(4, Math.max(1, targetLimit)))) {
     const jobKind = kindOf(m.content_type, m.kind);
     if (!jobKind) continue;
     const jobId = shortId();
@@ -176,7 +176,7 @@ export async function extractItem(itemId: string): Promise<{
   return { ok: true, ran };
 }
 
-export async function extractPending(limit = 3): Promise<{ ran: number; errors: number }> {
+export async function extractPending(limit = 3, targetLimit = 4): Promise<{ ran: number; errors: number }> {
   const sql = await getSql();
   const rows = await sql.query<{ id: string }>(
     `select id from items
@@ -189,7 +189,7 @@ export async function extractPending(limit = 3): Promise<{ ran: number; errors: 
   let ran = 0;
   let errors = 0;
   for (const row of rows) {
-    const result = await extractItem(row.id);
+    const result = await extractItem(row.id, targetLimit);
     if (result.ok) ran += result.ran;
     else errors += 1;
   }

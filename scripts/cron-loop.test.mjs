@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createCronLoop } from "./cron-loop.mjs";
 
-test("runOnce posts the protected cron request with a 120-second timeout", async () => {
+test("runOnce posts the protected cron request with response margin over the server budget", async () => {
   const originalTimeout = AbortSignal.timeout;
   const signal = new AbortController().signal;
   AbortSignal.timeout = (milliseconds) => {
-    assert.equal(milliseconds, 120_000);
+    assert.equal(milliseconds, 630_000);
     return signal;
   };
   try {
@@ -91,4 +92,17 @@ test("runOnce skips an overlapping invocation", async () => {
   assert.equal(calls, 1);
   release();
   await first;
+});
+
+test("interval accepts only Node's safe timer range", () => {
+  const options = { endpoint: "http://app/api/cron/tick", secret: "cron-test",
+    fetchImpl: async () => Response.json({}) };
+  assert.doesNotThrow(() => createCronLoop({ ...options, intervalMs: 2_147_483_647 }));
+  assert.throws(() => createCronLoop({ ...options, intervalMs: 2_147_483_648 }), /intervalMs/);
+});
+
+test("Compose waits for an app healthcheck before the immediate tick", () => {
+  const compose = readFileSync(new URL("../docker-compose.yml", import.meta.url), "utf8");
+  assert.match(compose, /\n  app:[\s\S]*?\n    healthcheck:/);
+  assert.match(compose, /\n  scheduler:[\s\S]*?app:\s*\n\s+condition: service_healthy/);
 });

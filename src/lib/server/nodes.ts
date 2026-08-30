@@ -5,6 +5,7 @@ import { telethonHealth } from "./telethon";
 import { xaiReady } from "./extract";
 import { ingestPending } from "./media";
 import { extractPending } from "./extract";
+import { cronHasBudget, CRON_EXTRACT_RESERVE_MS, CRON_INGEST_RESERVE_MS } from "./cron";
 
 export type NodeCard = {
   id: string;
@@ -98,18 +99,27 @@ export async function getNodesStatus(): Promise<{
   };
 }
 
-export async function runProductionTick(): Promise<{
+export async function runProductionTick({ deadlineMs, now = Date.now }: {
+  deadlineMs?: number;
+  now?: () => number;
+} = {}): Promise<{
   stored: number;
   extracted: number;
   ingest_errors: number;
   extract_errors: number;
+  deferred: number;
 }> {
-  const ingest = await ingestPending(8);
-  const extract = prod.extractAuto ? await extractPending(2) : { ran: 0, errors: 0 };
+  const bounded = deadlineMs !== undefined;
+  const runIngest = !bounded || cronHasBudget(deadlineMs, CRON_INGEST_RESERVE_MS, now);
+  const ingest = runIngest ? await ingestPending(bounded ? 1 : 8) : { stored: 0, errors: 0 };
+  const runExtract = prod.extractAuto
+    && (!bounded || cronHasBudget(deadlineMs, CRON_EXTRACT_RESERVE_MS, now));
+  const extract = runExtract ? await extractPending(bounded ? 1 : 2, bounded ? 1 : 4) : { ran: 0, errors: 0 };
   return {
     stored: ingest.stored,
     extracted: extract.ran,
     ingest_errors: ingest.errors,
     extract_errors: extract.errors,
+    deferred: Number(!runIngest) + Number(prod.extractAuto && !runExtract),
   };
 }

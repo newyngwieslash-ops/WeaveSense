@@ -1,6 +1,9 @@
 import { isMainModule } from "./with-app-env.mjs";
 
 const DEFAULT_INTERVAL_MS = 1_800_000;
+const MAX_INTERVAL_MS = 2_147_483_647;
+// The server stops starting work at 600 seconds; this leaves 30 seconds to serialize and respond.
+const REQUEST_TIMEOUT_MS = 630_000;
 
 function count(value) {
   return Number.isSafeInteger(value) && value >= 0 ? value : 0;
@@ -45,7 +48,9 @@ export function createCronLoop({
   onError = () => {},
 }) {
   if (!endpoint || !secret) throw new TypeError("endpoint and secret are required");
-  if (!Number.isSafeInteger(intervalMs) || intervalMs < 1) throw new TypeError("intervalMs must be a positive integer");
+  if (!Number.isSafeInteger(intervalMs) || intervalMs < 1 || intervalMs > MAX_INTERVAL_MS) {
+    throw new TypeError("intervalMs must be a positive 32-bit timer integer");
+  }
   let running = false;
   let timer = null;
 
@@ -58,7 +63,7 @@ export function createCronLoop({
         response = await fetchImpl(endpoint, {
           method: "POST",
           headers: { Authorization: `Bearer ${secret}` },
-          signal: AbortSignal.timeout(120_000),
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         });
       } catch {
         onError(failure(0));

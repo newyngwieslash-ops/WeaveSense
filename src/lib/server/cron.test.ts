@@ -5,6 +5,7 @@ import {
   parseCronTickLimit,
   reconciliationDue,
   requestWechatReconciliation,
+  runCronBatch,
   runCronStages,
   runReconciledSourceJobs,
 } from "./cron.ts";
@@ -123,6 +124,18 @@ test("reconciled source scans are ordered, deduplicated, and failure-isolated", 
   ]);
 });
 
+test("reconciled source scans defer IDs that cannot safely finish in the server budget", async () => {
+  let now = 75;
+  const called: string[] = [];
+  const results = await runReconciledSourceJobs(["wx-1", "wx-2"], async (sourceId) => {
+    called.push(sourceId);
+    now += 20;
+    return { items_found: 1, items_new: 1, error: "" };
+  }, { deadlineMs: 100, reserveMs: 20, now: () => now });
+  assert.deepEqual(called, ["wx-1"]);
+  assert.deepEqual(results.map((result) => result.source_id), ["wx-1"]);
+});
+
 test("cron stage failures are isolated and sanitized", async () => {
   const called: string[] = [];
   const result = await runCronStages({
@@ -154,4 +167,17 @@ test("cron tick limit accepts only safe integers from 1 through 500", () => {
   for (const value of [undefined, "", "0", "-1", "1.5", "Infinity", "501", "9007199254740992"]) {
     assert.equal(parseCronTickLimit(value), 200);
   }
+});
+
+test("bounded cron batches stop before an unsafe start and leave work for the next batch", async () => {
+  let now = 0;
+  const first = await runCronBatch(["one", "two", "three"], async (item) => {
+    now += 40;
+    return item;
+  }, { deadlineMs: 100, reserveMs: 30, now: () => now });
+  assert.deepEqual(first, { results: ["one", "two"], deferred: 1 });
+
+  const second = await runCronBatch(["three"], async (item) => item,
+    { deadlineMs: 140, reserveMs: 30, now: () => now });
+  assert.deepEqual(second, { results: ["three"], deferred: 0 });
 });

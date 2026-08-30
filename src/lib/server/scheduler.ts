@@ -6,6 +6,7 @@ import type { TickResult } from "@/lib/types";
 import { collectSource } from "./collectors";
 import { collectKeyword } from "./collectors/keyword";
 import type { NormalizedItem, SourceRecord } from "./collectors/types";
+import { runCronBatch, type CronBatchOptions } from "./cron";
 import { enqueueItemMedia } from "./media";
 import { mapKeyword, mapSource } from "./queries";
 import {
@@ -346,7 +347,7 @@ export async function runKeywordJob(
   }
 }
 
-export async function tickDueSources(limit = 5): Promise<TickResult> {
+export async function tickDueSources(limit = 5, budget: CronBatchOptions = {}): Promise<TickResult & { deferred: number }> {
   await ensureSeeded();
   const sql = await getSql();
   const sourceLimit = Math.max(1, Math.ceil(limit * 0.6));
@@ -388,39 +389,34 @@ export async function tickDueSources(limit = 5): Promise<TickResult> {
     [keywordLimit, SCHEDULER_LEASE_MINUTES],
   );
 
-  const jobs: TickResult["jobs"] = [];
-  let items_new = 0;
-  let errors = 0;
-
-  for (const row of due) {
+  const sourceBatch = await runCronBatch(due, async (row) => {
     const source = mapSource(row);
     const result = await runSourceJob(source.id, "incremental");
-    items_new += result.items_new;
-    if (result.error) errors += 1;
-    jobs.push({
+    return {
       source_id: source.id,
       name: source.name,
       items_new: result.items_new,
       error: result.error,
       kind: "source",
-    });
-  }
+    };
+  }, budget);
 
-  for (const row of dueKw) {
+  const keywordBatch = sourceBatch.deferred ? { results: [], deferred: dueKw.length } : await runCronBatch(dueKw, async (row) => {
     const kw = mapKeyword(row);
     const result = await runKeywordJob(kw.id, "keyword");
-    items_new += result.items_new;
-    if (result.error && result.items_new === 0 && result.error !== "已停用" && !result.error.includes("本地")) {
-      errors += 1;
-    }
-    jobs.push({
+    return {
       source_id: kw.id,
       name: `关键词 · ${kw.phrase}`,
       items_new: result.items_new,
       error: result.error,
       kind: "keyword",
-    });
-  }
+    };
+  }, budget);
 
-  return { ran: due.length + dueKw.length, items_new, errors, jobs };
+  const jobs: TickResult["jobs"] = [...sourceBatch.results, ...keywordBatch.results];
+  const items_new = jobs.reduce((total, job) => total + job.items_new, 0);
+  const errors = jobs.filter((job) => job.error && (job.kind === "source"
+    || (job.items_new === 0 && job.error !== "已停用" && !job.error.includes("本地")))).length;
+
+  return { ran: jobs.length, items_new, errors, jobs, deferred: sourceBatch.deferred + keywordBatch.deferred };
 }

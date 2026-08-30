@@ -9,6 +9,36 @@ const shanghaiClock = new Intl.DateTimeFormat("en-GB", {
 const MAX_GATEWAY_BODY_BYTES = 1024 * 1024;
 const SAFE_SOURCE_ID = /^[A-Za-z0-9._:-]+$/;
 
+export const CRON_SERVER_BUDGET_MS = 600_000;
+export const CRON_SOURCE_RESERVE_MS = 100_000;
+export const CRON_INGEST_RESERVE_MS = 55_000;
+export const CRON_EXTRACT_RESERVE_MS = 115_000;
+export const CRON_GATEWAY_RESERVE_MS = 125_000;
+
+export type CronBatchOptions = {
+  deadlineMs?: number;
+  reserveMs?: number;
+  now?: () => number;
+};
+
+export function cronHasBudget(deadlineMs: number, reserveMs: number, now: () => number = Date.now): boolean {
+  return now() + reserveMs <= deadlineMs;
+}
+
+// ponytail: batches stay sequential; P3 can add bounded concurrency if measured 100-source throughput needs it.
+export async function runCronBatch<Item, Result>(
+  items: readonly Item[],
+  run: (item: Item) => Promise<Result>,
+  { deadlineMs, reserveMs = 0, now = Date.now }: CronBatchOptions = {},
+): Promise<{ results: Result[]; deferred: number }> {
+  const results: Result[] = [];
+  for (const item of items) {
+    if (deadlineMs !== undefined && !cronHasBudget(deadlineMs, reserveMs, now)) break;
+    results.push(await run(item));
+  }
+  return { results, deferred: items.length - results.length };
+}
+
 export function authorizeCron(header: string, secret: string): boolean {
   if (!secret || !header.startsWith("Bearer ")) return false;
   const supplied = Buffer.from(header.slice(7));
@@ -143,24 +173,28 @@ export async function requestWechatReconciliation({ url, token, fetchImpl = fetc
 export async function runReconciledSourceJobs(
   sourceIds: readonly unknown[],
   run: (sourceId: string) => Promise<SourceJobResult>,
+  budget: CronBatchOptions = {},
 ): Promise<Array<SourceJobResult & { source_id: string }>> {
   const seen = new Set<string>();
-  const results: Array<SourceJobResult & { source_id: string }> = [];
+  const normalized: string[] = [];
   for (const rawSourceId of sourceIds) {
     if (typeof rawSourceId !== "string") continue;
     const sourceId = rawSourceId.trim();
     if (!sourceId || seen.has(sourceId)) continue;
     seen.add(sourceId);
+    normalized.push(sourceId);
+  }
+  const { results } = await runCronBatch(normalized, async (sourceId) => {
     try {
       const result = await run(sourceId);
       if (result.error !== "" || count(result.items_found) === null || count(result.items_new) === null) {
         throw new TypeError("invalid source job result");
       }
-      results.push({ source_id: sourceId, ...result });
+      return { source_id: sourceId, ...result };
     } catch {
-      results.push({ source_id: sourceId, items_found: 0, items_new: 0, error: "reconcile_scan_failed" });
+      return { source_id: sourceId, items_found: 0, items_new: 0, error: "reconcile_scan_failed" };
     }
-  }
+  }, budget);
   return results;
 }
 
