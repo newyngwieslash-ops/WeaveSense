@@ -8,7 +8,17 @@ import { collectKeyword } from "./collectors/keyword";
 import type { NormalizedItem, SourceRecord } from "./collectors/types";
 import { enqueueItemMedia } from "./media";
 import { mapKeyword, mapSource } from "./queries";
-import { claimKeyword, claimSource, finishItemInsert } from "./scheduler-atomic";
+import {
+  claimKeyword,
+  claimSource,
+  completeKeywordClaim,
+  completeSourceClaim,
+  failKeywordClaim,
+  failSourceClaim,
+  finishItemInsert,
+  SCHEDULER_LEASE_LOST,
+  SCHEDULER_LEASE_MINUTES,
+} from "./scheduler-atomic";
 import { ensureRadarSource, ensureSeeded } from "./seed";
 import { asJson } from "./serialize";
 
@@ -45,7 +55,7 @@ function mergeKeywords(current: string[], extra: string[]): string[] {
   return out;
 }
 
-async function recountKeywordHits(phrase: string): Promise<number> {
+async function recountKeywordHits(phrase: string, persist = true): Promise<number> {
   const sql = await getSql();
   const [row] = await sql.query<{ n: number }>(
     `select count(*)::int as n from items
@@ -55,7 +65,7 @@ async function recountKeywordHits(phrase: string): Promise<number> {
     [phrase],
   );
   const n = row?.n ?? 0;
-  await sql.query("update keywords set hits = $2 where phrase = $1", [phrase, n]);
+  if (persist) await sql.query("update keywords set hits = $2 where phrase = $1", [phrase, n]);
   return n;
 }
 
@@ -157,7 +167,8 @@ export async function runSourceJob(
   kind: "incremental" | "manual" | "reconcile" = "incremental",
 ): Promise<{ items_found: number; items_new: number; error: string }> {
   const sql = await getSql();
-  const raw = await claimSource(sql, sourceId);
+  const jobId = shortId();
+  const raw = await claimSource(sql, sourceId, jobId);
   if (!raw) {
     const [current] = await sql.query<Record<string, unknown>>("select * from sources where id = $1", [sourceId]);
     if (!current) return { items_found: 0, items_new: 0, error: "信源不存在" };
@@ -167,7 +178,6 @@ export async function runSourceJob(
   }
   const source = mapSource(raw);
 
-  const jobId = shortId();
   let jobCreated = false;
   try {
     await sql.query(
@@ -233,16 +243,20 @@ export async function runSourceJob(
     }
 
     const latest = pickCursor(fetched);
-    await sql.query(
-      `update sources set
-         status = 'ok',
-         last_scanned_at = now(),
-         last_error = '',
-         last_external_id = coalesce(nullif($2, ''), last_external_id),
-         last_published_at = coalesce($3::timestamptz, last_published_at)
-       where id = $1`,
-      [source.id, latest?.external_id ?? "", latest?.published_at ?? null],
+    const completed = await completeSourceClaim(
+      sql,
+      source.id,
+      jobId,
+      latest?.external_id ?? "",
+      latest?.published_at ?? null,
     );
+    if (!completed) {
+      await sql.query(
+        `update jobs set status = 'error', finished_at = now(), error = $2 where id = $1`,
+        [jobId, SCHEDULER_LEASE_LOST],
+      );
+      return { items_found: 0, items_new: 0, error: SCHEDULER_LEASE_LOST };
+    }
     await sql.query(
       `update jobs set status = 'ok', finished_at = now(), items_found = $2, items_new = $3, error = ''
        where id = $1`,
@@ -252,18 +266,15 @@ export async function runSourceJob(
     return { items_found: fetched.length, items_new: itemsNew, error: "" };
   } catch (err) {
     const message = errMessage(err);
-    await sql.query(
-      `update sources set status = 'error', last_scanned_at = now(), last_error = $2
-       where id = $1 and status = 'running'`,
-      [source.id, message],
-    );
+    const released = await failSourceClaim(sql, source.id, jobId, message);
+    const jobError = released ? message : SCHEDULER_LEASE_LOST;
     if (jobCreated) {
       await sql.query(
         `update jobs set status = 'error', finished_at = now(), error = $2 where id = $1`,
-        [jobId, message],
+        [jobId, jobError],
       );
     }
-    return { items_found: 0, items_new: 0, error: message };
+    return { items_found: 0, items_new: 0, error: jobError };
   }
 }
 
@@ -273,7 +284,8 @@ export async function runKeywordJob(
 ): Promise<{ items_found: number; items_new: number; error: string; phrase: string }> {
   await ensureRadarSource();
   const sql = await getSql();
-  const raw = await claimKeyword(sql, keywordId);
+  const jobId = shortId();
+  const raw = await claimKeyword(sql, keywordId, jobId);
   if (!raw) {
     const [current] = await sql.query<Record<string, unknown>>("select * from keywords where id = $1", [keywordId]);
     if (!current) return { items_found: 0, items_new: 0, error: "关键词不存在", phrase: "" };
@@ -284,7 +296,6 @@ export async function runKeywordJob(
   }
   const kw = mapKeyword(raw);
 
-  const jobId = shortId();
   let jobCreated = false;
   try {
     await sql.query(
@@ -300,17 +311,21 @@ export async function runKeywordJob(
       if (result === "new") itemsNew += 1;
     }
     const localTagged = await tagCorpusWithPhrase(kw.phrase);
-    const hits = await recountKeywordHits(kw.phrase);
+    const hits = await recountKeywordHits(kw.phrase, false);
     const note =
       fetched.length === 0 && localTagged === 0
         ? "检索源暂无新结果，已扫描本地库"
         : fetched.length === 0
           ? `外部检索受限，本地命中 ${localTagged} 条`
           : "";
-    await sql.query(
-      `update keywords set status = 'ok', last_scanned_at = now(), last_error = $2, hits = $3 where id = $1`,
-      [kw.id, note, hits],
-    );
+    const completed = await completeKeywordClaim(sql, kw.id, jobId, note, hits);
+    if (!completed) {
+      await sql.query(
+        `update jobs set status = 'error', finished_at = now(), error = $2 where id = $1`,
+        [jobId, SCHEDULER_LEASE_LOST],
+      );
+      return { items_found: 0, items_new: 0, error: SCHEDULER_LEASE_LOST, phrase: kw.phrase };
+    }
     await sql.query(
       `update jobs set status = 'ok', finished_at = now(), items_found = $2, items_new = $3, error = $4
        where id = $1`,
@@ -319,18 +334,15 @@ export async function runKeywordJob(
     return { items_found: fetched.length + localTagged, items_new: itemsNew, error: note, phrase: kw.phrase };
   } catch (err) {
     const message = errMessage(err);
-    await sql.query(
-      `update keywords set status = 'error', last_scanned_at = now(), last_error = $2
-       where id = $1 and status = 'running'`,
-      [kw.id, message],
-    );
+    const released = await failKeywordClaim(sql, kw.id, jobId, message);
+    const jobError = released ? message : SCHEDULER_LEASE_LOST;
     if (jobCreated) {
       await sql.query(
         `update jobs set status = 'error', finished_at = now(), error = $2 where id = $1`,
-        [jobId, message],
+        [jobId, jobError],
       );
     }
-    return { items_found: 0, items_new: 0, error: message, phrase: kw.phrase };
+    return { items_found: 0, items_new: 0, error: jobError, phrase: kw.phrase };
   }
 }
 
@@ -344,26 +356,36 @@ export async function tickDueSources(limit = 5): Promise<TickResult> {
     `select * from sources
      where enabled = true
        and id <> $2
-       and status <> 'running'
        and (
-         last_scanned_at is null
-         or last_scanned_at < now() - (interval_minutes * interval '1 minute')
+         (status = 'running' and (
+           claimed_at is null
+           or claimed_at <= now() - ($3::integer * interval '1 minute')
+         ))
+         or (status <> 'running' and (
+           last_scanned_at is null
+           or last_scanned_at < now() - (interval_minutes * interval '1 minute')
+         ))
        )
      order by last_scanned_at nulls first
      limit $1`,
-    [sourceLimit, RADAR_SOURCE_ID],
+    [sourceLimit, RADAR_SOURCE_ID, SCHEDULER_LEASE_MINUTES],
   );
   const dueKw = await sql.query<Record<string, unknown>>(
     `select * from keywords
      where enabled = true
-       and status <> 'running'
        and (
-         last_scanned_at is null
-         or last_scanned_at < now() - (interval_minutes * interval '1 minute')
+         (status = 'running' and (
+           claimed_at is null
+           or claimed_at <= now() - ($2::integer * interval '1 minute')
+         ))
+         or (status <> 'running' and (
+           last_scanned_at is null
+           or last_scanned_at < now() - (interval_minutes * interval '1 minute')
+         ))
        )
      order by last_scanned_at nulls first
      limit $1`,
-    [keywordLimit],
+    [keywordLimit, SCHEDULER_LEASE_MINUTES],
   );
 
   const jobs: TickResult["jobs"] = [];
