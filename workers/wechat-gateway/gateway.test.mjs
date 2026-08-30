@@ -724,3 +724,52 @@ test("a successful source request removes cached articles older than 30 days", a
   assert.deepEqual(store.listGatewayItems(integrationSource.id, "2020-01-01T00:00:00.000Z")
     .map(({ canonical_id }) => canonical_id), [primaryItem.canonical_id]);
 });
+
+test("concurrent reconciliations serialize per source and the waiter skips a completed success", async (t) => {
+  let listCalls = 0;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const paid = {
+    estimatedListCost: 0.08, estimatedDetailCost: 0.045,
+    async listToday() {
+      listCalls += 1;
+      await gate;
+      return { items: [], cost_money: 0.06 };
+    },
+  };
+  const fixture = gatewayFixture(t, { clock: "2026-08-28T15:30:00.000Z", paid });
+  const first = fixture.request("/v1/reconcile", { method: "POST" });
+  const second = fixture.request("/v1/reconcile", { method: "POST" });
+  await new Promise((resolve) => setImmediate(resolve));
+  release();
+  const results = await Promise.all([first, second].map(async (response) => (await response).json()));
+  assert.equal(listCalls, 1);
+  assert.deepEqual(results.map(({ succeeded }) => succeeded).sort(), [0, 1]);
+  assert.deepEqual(results.map(({ attempted }) => attempted).sort(), [0, 1]);
+  assert.deepEqual(fixture.store.getProviderUsage("2026-08-28", "dajiala"), { calls: 1, amount: 0.06 });
+});
+
+test("feed waiting behind reconciliation reuses the paid cache instead of spending twice", async (t) => {
+  let listCalls = 0;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const paid = {
+    estimatedListCost: 0.08, estimatedDetailCost: 0.045,
+    async listToday() {
+      listCalls += 1;
+      await gate;
+      return { items: [], cost_money: 0.06 };
+    },
+  };
+  const fixture = gatewayFixture(t, { clock: "2026-08-28T15:30:00.000Z",
+    primary: async () => { throw new Error("down"); }, paid });
+  fixture.store.recordPrimaryFailure(integrationSource.id, "2026-08-28T15:20:00.000Z");
+  const reconciliation = fixture.request("/v1/reconcile", { method: "POST" });
+  const feed = fixture.request(`/v1/feeds/${integrationSource.id}.atom`);
+  await new Promise((resolve) => setImmediate(resolve));
+  release();
+  assert.equal((await reconciliation).status, 200);
+  assert.equal((await feed).status, 200);
+  assert.equal(listCalls, 1);
+  assert.deepEqual(fixture.store.getProviderUsage("2026-08-28", "dajiala"), { calls: 1, amount: 0.06 });
+});

@@ -99,10 +99,25 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
   if (!store) throw new TypeError("store is required");
   if (typeof primary !== "function") throw new TypeError("primary must be a function");
   const budget = budgetOf(dailyBudget);
-  const inFlight = new Map();
+  const sourceOperations = new Map();
   const usage = (day) => store.getProviderUsage(day, PROVIDER);
   const reserve = (date, estimate) => store.tryReserveSpend(shanghaiDay(date), PROVIDER,
     estimate, budget.rmb, budget.calls);
+
+  function sourceLock(sourceId, kind, task) {
+    const current = sourceOperations.get(sourceId);
+    if (current) {
+      if (kind === "feed" && current.kind === "feed") return current.promise;
+      return current.promise.catch(() => {}).then(() => sourceLock(sourceId, kind, task));
+    }
+    const promise = Promise.resolve().then(task);
+    const operation = { kind, promise };
+    sourceOperations.set(sourceId, operation);
+    promise.finally(() => {
+      if (sourceOperations.get(sourceId) === operation) sourceOperations.delete(sourceId);
+    }).catch(() => {});
+    return promise;
+  }
 
   function health(source, date) {
     const paidUsage = usage(shanghaiDay(date));
@@ -190,15 +205,15 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
   }
 
   async function lockedFeed(source, date) {
-    let promise = inFlight.get(source.source_id);
-    if (!promise) {
-      promise = feed(source, date);
-      inFlight.set(source.source_id, promise);
-      promise.finally(() => {
-        if (inFlight.get(source.source_id) === promise) inFlight.delete(source.source_id);
-      }).catch(() => {});
-    }
-    return (await promise).clone();
+    const observedPaidAt = source.last_paid_check_at;
+    const response = await sourceLock(source.source_id, "feed", async () => {
+      const fresh = store.getSource(source.source_id);
+      if (fresh.last_paid_result === "ok" && fresh.last_paid_check_at !== observedPaidAt) {
+        return atom(fresh, store.listGatewayItems(fresh.source_id, since(date, 7)));
+      }
+      return feed(fresh, date);
+    });
+    return response.clone();
   }
 
   async function reconcile(date) {
@@ -212,11 +227,14 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
       .sort((a, b) => a.priority === b.priority ? successTime(a) - successTime(b)
         : a.priority === "high" ? -1 : 1);
     for (const source of candidates) {
-      if (store.getProviderBudgetState(day, PROVIDER, budget.rmb, budget.calls) === "budget_exhausted") {
-        result.budget_exhausted = true;
-        break;
-      }
-      const paidResult = await runPaid(source, date);
+      const paidResult = await sourceLock(source.source_id, "reconcile", async () => {
+        const fresh = store.getSource(source.source_id);
+        if (!fresh || !shouldReconcile(fresh, date)) return { skipped: true };
+        if (store.getProviderBudgetState(day, PROVIDER, budget.rmb, budget.calls)
+          === "budget_exhausted") return { budgetExhausted: true };
+        return runPaid(fresh, date);
+      });
+      if (paidResult.skipped) continue;
       if (paidResult.budgetExhausted) {
         result.budget_exhausted = true;
         break;
