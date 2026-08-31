@@ -654,7 +654,8 @@ test("reconciliation is time-gated, idempotent, prioritised, and stops at the ca
     name: "高优先级", priority: "high" }, "2026-08-28T00:00:00.000Z");
   assert.deepEqual(await (await fixture.request("/v1/reconcile", { method: "POST" })).json(), {
     day: "2026-08-28", attempted: 0, succeeded: 0, failed: 0,
-    succeeded_source_ids: [], budget_exhausted: false,
+    succeeded_source_ids: [], budget_exhausted: false, outbox_source_ids: [],
+    pending_details: 0, completed_details: 0,
   });
   fixture.setNow("2026-08-28T15:30:00.000Z");
   const result = await (await fixture.request("/v1/reconcile", { method: "POST" })).json();
@@ -744,7 +745,7 @@ test("health ignores future paid hard errors when projecting the current state",
   }
 });
 
-test("does not detail-enrich an article already known to the normalized cache", async (t) => {
+test("detail-enriches a cached article whose normalized body is still empty", async (t) => {
   let detailCalls = 0;
   const paid = {
     estimatedListCost: 0.08, estimatedDetailCost: 0.045,
@@ -756,7 +757,7 @@ test("does not detail-enrich an article already known to the normalized cache", 
     canonical_id: "wx:MzPaid:2:1", body_text: "", discovered_at: "2026-08-28T11:01:00.000Z" }]);
   await request(`/v1/feeds/${integrationSource.id}.atom`);
   assert.equal((await request(`/v1/feeds/${integrationSource.id}.atom`)).status, 200);
-  assert.equal(detailCalls, 0);
+  assert.equal(detailCalls, 1);
 });
 
 test("paid technical failures advance through the 5 then 15 minute retry schedule", async (t) => {
@@ -846,7 +847,8 @@ test("reconciliation isolates an invalid source and continues to the next source
   const response = await fixture.request("/v1/reconcile", { method: "POST" });
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { day: "2026-08-28", attempted: 2, succeeded: 1,
-    failed: 1, succeeded_source_ids: [integrationSource.id], budget_exhausted: false });
+    failed: 1, succeeded_source_ids: [integrationSource.id], budget_exhausted: false,
+    outbox_source_ids: [integrationSource.id], pending_details: 0, completed_details: 0 });
 });
 
 test("reconciliation crossing Shanghai midnight bills the old day, skips details, and stops", async (t) => {
@@ -1053,4 +1055,124 @@ test("the Node gateway returns a fixed 413 for a PUT body above one MiB", async 
   });
   assert.equal(response.status, 413);
   assert.deepEqual(await response.json(), { error: "request body too large" });
+});
+
+test("paid success is durably replayed from the outbox until authenticated ACK", async (t) => {
+  const paid = { estimatedListCost: 0.08, async listToday() { return { items: [], cost_money: 0.06 }; } };
+  const fixture = gatewayFixture(t, { clock: "2026-08-28T15:30:00.000Z", paid });
+  const first = await (await fixture.request("/v1/reconcile", { method: "POST" })).json();
+  assert.deepEqual(first.outbox_source_ids, [integrationSource.id]);
+  const replay = await (await fixture.request("/v1/reconcile", { method: "POST" })).json();
+  assert.equal(replay.attempted, 0);
+  assert.deepEqual(replay.outbox_source_ids, [integrationSource.id]);
+  const invalid = await fixture.request("/v1/reconcile/ack", { method: "POST",
+    body: JSON.stringify({ source_ids: [" unsafe "] }) });
+  assert.equal(invalid.status, 422);
+  const ack = await fixture.request("/v1/reconcile/ack", { method: "POST",
+    body: JSON.stringify({ source_ids: [integrationSource.id] }) });
+  assert.deepEqual(await ack.json(), { acked: 1 });
+  assert.deepEqual((await (await fixture.request("/v1/reconcile", { method: "POST" })).json())
+    .outbox_source_ids, []);
+});
+
+test("reconciliation outbox pages at the app protocol cap", async (t) => {
+  const store = openStore(":memory:");
+  t.after(() => store.close());
+  for (let index = 0; index < 501; index += 1) {
+    const id = `wx-page-${String(index).padStart(3, "0")}`;
+    store.upsertSource({ ...integrationSource, id, account_id: `gh_${index}` }, "2026-08-28T00:00:00.000Z");
+    store.recordPaidResult(id, "ok", null, "paid_fallback", "2026-08-28T15:30:00.000Z",
+      "2026-08-28T15:30:00.000Z", true);
+  }
+  const gateway = createGateway({ store, token: "gateway-test", now: () => new Date("2026-08-28T15:31:00Z") });
+  const call = (path, body) => gateway(new Request(`http://gateway.local${path}`, { method: "POST",
+    headers: { authorization: "Bearer gateway-test" }, ...(body ? { body: JSON.stringify(body) } : {}) }));
+  const first = await (await call("/v1/reconcile")).json();
+  assert.equal(first.outbox_source_ids.length, 500);
+  assert.equal((await call("/v1/reconcile/ack", { source_ids: first.outbox_source_ids })).status, 200);
+  assert.equal((await (await call("/v1/reconcile")).json()).outbox_source_ids.length, 1);
+});
+
+test("a detail deferred by the paid deadline is persisted and completed without another list", async (t) => {
+  let current = new Date("2026-08-28T15:30:00.000Z");
+  let lists = 0;
+  let details = 0;
+  const store = openStore(":memory:");
+  t.after(() => store.close());
+  store.upsertSource(integrationSource, "2026-08-28T00:00:00.000Z");
+  const gateway = createGateway({ store, token: "gateway-test", now: () => current,
+    reconciliationBudgetMs: 45_000, primary: async () => [], paid: {
+      estimatedListCost: 0.08, estimatedDetailCost: 0.045,
+      async listToday() { lists += 1; current = new Date(current.getTime() + 24_000);
+        return { items: [paidListItem], cost_money: 0.06 }; },
+      async enrichArticle(item) { details += 1; return { ...item, body_html: "<p>稍后补齐正文</p>", cost_money: 0.04 }; },
+    } });
+  const request = () => gateway(new Request("http://gateway.local/v1/reconcile", {
+    method: "POST", headers: { authorization: "Bearer gateway-test" },
+  }));
+  const first = await (await request()).json();
+  assert.equal(first.pending_details, 1);
+  assert.equal(details, 0);
+  current = new Date("2026-08-29T02:00:00.000Z"); // 10:00 Shanghai, outside reconciliation window
+  const second = await (await request()).json();
+  assert.equal(second.completed_details, 1);
+  assert.equal(second.pending_details, 0);
+  assert.equal(lists, 1);
+  assert.equal(details, 1);
+  assert.equal(store.listGatewayItems(integrationSource.id, "2026-08-21T00:00:00.000Z")[0].body_text,
+    "稍后补齐正文");
+});
+
+test("mapping detail failures keep the list floor without entering automatic retry", async (t) => {
+  let details = 0;
+  const mapping = Object.assign(new Error("bad mapping"), { kind: "mapping_error", retryable: false });
+  const fixture = gatewayFixture(t, { clock: "2026-08-28T15:30:00.000Z", paid: {
+    estimatedListCost: 0.08, estimatedDetailCost: 0.045,
+    async listToday() { return { items: [paidListItem], cost_money: 0.06 }; },
+    async enrichArticle() { details += 1; throw mapping; },
+  } });
+  fixture.store.enqueueDetail(integrationSource.id, { ...paidListItem,
+    canonical_id: "wx:MzPaid:2:1", body_text: "", discovered_at: "2026-08-28T15:00:00.000Z" },
+  "2026-08-28T15:00:00.000Z", "technical_error", "2026-08-28T16:30:00.000Z");
+  const result = await (await fixture.request("/v1/reconcile", { method: "POST" })).json();
+  assert.equal(result.succeeded, 1);
+  assert.equal(result.pending_details, 0);
+  assert.equal(details, 1);
+  assert.equal(fixture.store.listGatewayItems(integrationSource.id, "2026-08-21T00:00:00Z").length, 1);
+  await fixture.request("/v1/reconcile", { method: "POST" });
+  assert.equal(details, 1);
+});
+
+test("technical detail failures back off for 5, 15, 60, then 60 minutes", async (t) => {
+  let current = new Date("2026-08-28T15:30:00.000Z");
+  let lists = 0;
+  const technical = Object.assign(new Error("temporary"), { kind: "technical_error", retryable: true });
+  const store = openStore(":memory:");
+  t.after(() => store.close());
+  store.upsertSource(integrationSource, "2026-08-28T00:00:00.000Z");
+  const gateway = createGateway({ store, token: "gateway-test", now: () => current,
+    primary: async () => [], paid: {
+      estimatedListCost: 0.08, estimatedDetailCost: 0.045,
+      async listToday() { lists += 1; return { items: [paidListItem], cost_money: 0.06 }; },
+      async enrichArticle() { throw technical; },
+    } });
+  const call = async () => (await gateway(new Request("http://gateway.local/v1/reconcile", {
+    method: "POST", headers: { authorization: "Bearer gateway-test" },
+  }))).json();
+  await call();
+  const canonicalId = "wx:MzPaid:2:1";
+  let pending = store.getPendingDetail(integrationSource.id, canonicalId);
+  assert.deepEqual({ attempts: pending.attempts, next: pending.next_retry_at },
+    { attempts: 1, next: "2026-08-28T15:35:00.000Z" });
+  for (const [at, attempts, next] of [
+    ["2026-08-28T15:35:00.000Z", 2, "2026-08-28T15:50:00.000Z"],
+    ["2026-08-28T15:50:00.000Z", 3, "2026-08-28T16:50:00.000Z"],
+    ["2026-08-28T16:50:00.000Z", 4, "2026-08-28T17:50:00.000Z"],
+  ]) {
+    current = new Date(at);
+    await call();
+    pending = store.getPendingDetail(integrationSource.id, canonicalId);
+    assert.deepEqual({ attempts: pending.attempts, next: pending.next_retry_at }, { attempts, next });
+  }
+  assert.equal(lists, 1);
 });

@@ -2,8 +2,8 @@ import { isMainModule } from "./with-app-env.mjs";
 
 const DEFAULT_INTERVAL_MS = 1_800_000;
 const MAX_INTERVAL_MS = 2_147_483_647;
-// The server stops starting work at 600 seconds; this leaves 30 seconds to serialize and respond.
-const REQUEST_TIMEOUT_MS = 630_000;
+// The server stops starting work at 720 seconds; this leaves 30 seconds to serialize and respond.
+const REQUEST_TIMEOUT_MS = 750_000;
 
 function count(value) {
   return Number.isSafeInteger(value) && value >= 0 ? value : 0;
@@ -33,6 +33,7 @@ function summarize(status, payload) {
       + failedStage(collection)
       + failedStage(production)
       + failedStage(reconciliation)
+      + failedStage(reconciliation?.delivery_ack)
       + count(reconciliationQueue?.failed)
       + (reconciliationQueue?.error ? 1 : 0),
   };

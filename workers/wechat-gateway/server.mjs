@@ -12,6 +12,7 @@ const PROVIDER = "dajiala";
 const DAY_MS = 86_400_000;
 const DEFAULT_RECONCILIATION_BUDGET_MS = 100_000;
 const PAID_CALL_RESERVE_MS = 22_000;
+const SAFE_SOURCE_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 
 class BodyTooLargeError extends Error {}
 
@@ -85,7 +86,7 @@ function normalizeItem(item, source, date, provider = item?.provider ?? PROVIDER
     title,
     published_at: publishedAt,
     original_url: originalUrl,
-    body_text: String(item?.body_text ?? bodyText(item?.body_html)),
+    body_text: String(item?.body_text || bodyText(item?.body_html)),
     cover_url: String(item?.cover_url ?? ""),
     provider,
     discovered_at: String(item?.discovered_at ?? date.toISOString()),
@@ -196,7 +197,8 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
     let deferredPaidCalls = 0;
     for (const { raw, item: listedItem } of unique.values()) {
       let item = listedItem;
-      if (!cached.has(listedItem.canonical_id) && !listedItem.body_text
+      const cachedItem = cached.get(listedItem.canonical_id);
+      if (!listedItem.body_text && !String(cachedItem?.body_text ?? "").trim()
         && typeof paid.enrichArticle === "function") {
         const detailEstimate = Number(paid.estimatedDetailCost ?? 0.045);
         const detailStarted = deadlineDeferred ? null : current();
@@ -204,6 +206,7 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
           && detailStarted.getTime() + PAID_CALL_RESERVE_MS > deadlineMs)) {
           deadlineDeferred = true;
           deferredPaidCalls += 1;
+          store.enqueueDetail(source.source_id, listedItem, current().toISOString());
           items.push(item);
           continue;
         }
@@ -218,17 +221,22 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
             const detailed = await paid.enrichArticle(raw);
             store.adjustSpend(detailReservation, Number(detailed.cost_money ?? detailEstimate));
             item = normalizeItem(detailed, source, current());
-          } catch {
+          } catch (error) {
             store.adjustSpend(detailReservation, detailEstimate);
+            if (error?.kind !== "mapping_error" && error?.retryable !== false) {
+              const failedAt = current();
+              store.enqueueDetail(source.source_id, listedItem, failedAt.toISOString(), "technical_error",
+                nextPaidRetry(failedAt, 1));
+            } else store.removePendingDetail(source.source_id, listedItem.canonical_id);
           }
-        }
+        } else store.enqueueDetail(source.source_id, listedItem, current().toISOString());
       }
       items.push(item);
     }
     const completed = current();
     store.upsertGatewayItems(source.source_id, items, completed.toISOString());
     store.recordPaidResult(source.source_id, "ok", null, "paid_fallback",
-      completed.toISOString(), listStarted.toISOString());
+      completed.toISOString(), listStarted.toISOString(), Boolean(reconciliationDay));
     store.deleteGatewayItemsBefore(since(completed, 30));
     return { items: store.listGatewayItems(source.source_id, since(completed, 7)),
       spentDays: [...spentDays], deadlineDeferred, deferredPaidCalls };
@@ -272,7 +280,51 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
     const deadlineMs = date.getTime() + reconciliationBudgetMs;
     const result = { day, attempted: 0, succeeded: 0, failed: 0,
       succeeded_source_ids: [], budget_exhausted: false };
-    if (!paid) return result;
+    let completedDetails = 0;
+    let deferredDetails = store.pendingDetailCount();
+    if (paid && typeof paid.enrichArticle === "function") {
+      for (const pending of store.listDueDetails(clock(now).toISOString(), 2)) {
+        const detailResult = await sourceLock(pending.source_id, "reconcile", async () => {
+          const detailStarted = clock(now);
+          if (detailStarted.getTime() + PAID_CALL_RESERVE_MS > deadlineMs) return "deferred";
+          if (String(store.getGatewayItem(pending.source_id, pending.canonical_id)?.body_text ?? "").trim()) {
+            store.removePendingDetail(pending.source_id, pending.canonical_id);
+            return "completed";
+          }
+          const source = store.getSource(pending.source_id);
+          if (!source) return "failed";
+          const detailEstimate = Number(paid.estimatedDetailCost ?? 0.045);
+          const reservation = reserve(detailStarted, detailEstimate);
+          if (!reservation) return "budget";
+          let settled = false;
+          try {
+            const detailed = await paid.enrichArticle(pending.item);
+            store.adjustSpend(reservation, Number(detailed.cost_money ?? detailEstimate));
+            settled = true;
+            const completed = clock(now);
+            store.completeDetail(source.source_id, pending.canonical_id,
+              normalizeItem(detailed, source, completed), completed.toISOString());
+            return "completed";
+          } catch (error) {
+            if (!settled) store.adjustSpend(reservation, detailEstimate);
+            if (error?.kind === "mapping_error" || error?.retryable === false) {
+              store.removePendingDetail(pending.source_id, pending.canonical_id);
+            } else {
+              const failedAt = clock(now);
+              store.enqueueDetail(pending.source_id, pending.item, failedAt.toISOString(), "technical_error",
+                nextPaidRetry(failedAt, Number(pending.attempts) + 1));
+            }
+            return "failed";
+          }
+        });
+        if (detailResult === "deferred") break;
+        if (detailResult === "budget") { result.budget_exhausted = true; break; }
+        if (detailResult === "completed") completedDetails += 1;
+      }
+      deferredDetails = store.pendingDetailCount();
+    }
+    if (!paid) return { ...result, outbox_source_ids: store.listReconciliationOutbox(),
+      pending_details: deferredDetails, completed_details: completedDetails };
     const successTime = (source) => Math.max(Date.parse(source.last_primary_ok_at ?? "") || 0,
       Date.parse(source.last_paid_ok_at ?? "") || 0);
     const candidates = store.listSources().filter((source) => shouldReconcile(source, date))
@@ -337,7 +389,8 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
     }
     if (store.getProviderBudgetState(day, PROVIDER, budget.rmb, budget.calls)
       === "budget_exhausted") result.budget_exhausted = true;
-    return result;
+    return { ...result, outbox_source_ids: store.listReconciliationOutbox(),
+      pending_details: store.pendingDetailCount(), completed_details: completedDetails };
   }
 
   return async function gateway(request) {
@@ -380,6 +433,24 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
       }
       if (request.method === "POST" && url.pathname === "/v1/reconcile") {
         return json(200, await reconcile(clock(now)));
+      }
+      if (request.method === "POST" && url.pathname === "/v1/reconcile/ack") {
+        let body;
+        try {
+          const text = await request.text();
+          if (Buffer.byteLength(text) > 1024 * 1024) throw new BodyTooLargeError();
+          body = JSON.parse(text);
+        } catch (error) {
+          if (error instanceof BodyTooLargeError) return json(413, { error: "request body too large" });
+          return json(422, { error: "invalid JSON" });
+        }
+        if (!body || typeof body !== "object" || Array.isArray(body)
+          || Object.keys(body).length !== 1 || !Array.isArray(body.source_ids)
+          || body.source_ids.length > 500 || new Set(body.source_ids).size !== body.source_ids.length
+          || body.source_ids.some((id) => typeof id !== "string" || !SAFE_SOURCE_ID.test(id))) {
+          return json(422, { error: "invalid source_ids" });
+        }
+        return json(200, { acked: store.ackReconciliationOutbox(body.source_ids) });
       }
       return json(404, { error: "not found" });
     } catch {

@@ -3,11 +3,14 @@ import {
   authorizeCron,
   cronHasBudget,
   CRON_GATEWAY_RESERVE_MS,
+  CRON_EXTRACT_RESERVE_MS,
   CRON_INGEST_RESERVE_MS,
   CRON_SERVER_BUDGET_MS,
   CRON_SOURCE_RESERVE_MS,
   reconciliationDue,
+  cronWorkSlot,
   requestWechatReconciliation,
+  requestWechatReconciliationAck,
   runCronStages,
 } from "@/lib/server/cron";
 import { prod } from "@/lib/server/config";
@@ -30,9 +33,12 @@ export const Route = createFileRoute("/api/cron/tick")({
 
         const startedAt = Date.now();
         const deadlineMs = startedAt + CRON_SERVER_BUDGET_MS;
-        const reconciliationConfigured = reconciliationDue(new Date(startedAt))
-          && Boolean(prod.wechatGatewayUrl && prod.wechatGatewayToken);
-        const gatewayReserve = reconciliationConfigured ? CRON_GATEWAY_RESERVE_MS : 0;
+        const gatewayConfigured = Boolean(prod.wechatGatewayUrl && prod.wechatGatewayToken);
+        const reconciliationWindow = reconciliationDue(new Date(startedAt));
+        const gatewayReserve = gatewayConfigured ? CRON_GATEWAY_RESERVE_MS : 0;
+        const allowExtract = !(gatewayConfigured && reconciliationWindow)
+          && cronWorkSlot(new Date(startedAt)) === "extract";
+        const extractReserve = allowExtract ? CRON_EXTRACT_RESERVE_MS : 0;
         const queue = { processed: 0, succeeded: 0, failed: 0, deferred: 0,
           results: [] as Array<{ source_id: string; items_found: number; items_new: number; error: string }> };
         let queueError = false;
@@ -54,16 +60,15 @@ export const Route = createFileRoute("/api/cron/tick")({
         };
         const stages = await runCronStages({
           collection: async () => {
-            await drainQueue(deadlineMs - gatewayReserve);
+            await drainQueue(deadlineMs - gatewayReserve - CRON_INGEST_RESERVE_MS - extractReserve);
             return tickDueSources(prod.cronTickLimit, {
-              // Extraction is optional in a bounded tick; reserve ingest + gateway so collection cannot starve.
-              deadlineMs: deadlineMs - CRON_INGEST_RESERVE_MS - gatewayReserve,
+              deadlineMs: deadlineMs - CRON_INGEST_RESERVE_MS - gatewayReserve - extractReserve,
               reserveMs: CRON_SOURCE_RESERVE_MS,
             });
           },
-          production: () => runProductionTick({ deadlineMs: deadlineMs - gatewayReserve }),
+          production: () => runProductionTick({ deadlineMs: deadlineMs - gatewayReserve, allowExtract }),
           reconciliation: async () => {
-            if (!reconciliationConfigured) return null;
+            if (!gatewayConfigured) return null;
             if (!cronHasBudget(deadlineMs, CRON_GATEWAY_RESERVE_MS)) {
               return { ok: false, error: "reconciliation_deferred" };
             }
@@ -73,11 +78,16 @@ export const Route = createFileRoute("/api/cron/tick")({
             });
             if (!gateway.ok) return gateway;
             queue.deferred = await enqueueReconciliationSources(
-              await getSql(), gateway.value.succeeded_source_ids,
+              await getSql(), gateway.value.outbox_source_ids,
             );
+            const deliveryAck = await requestWechatReconciliationAck({
+              url: prod.wechatGatewayUrl, token: prod.wechatGatewayToken,
+              sourceIds: gateway.value.outbox_source_ids,
+            });
             return {
               ...gateway.value,
-              queued_source_count: gateway.value.succeeded_source_ids.length,
+              queued_source_count: gateway.value.outbox_source_ids.length,
+              delivery_ack: deliveryAck,
               source_results: [],
               deferred_source_count: queue.deferred,
             };

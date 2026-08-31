@@ -7,7 +7,7 @@ test("runOnce posts the protected cron request with response margin over the ser
   const originalTimeout = AbortSignal.timeout;
   const signal = new AbortController().signal;
   AbortSignal.timeout = (milliseconds) => {
-    assert.equal(milliseconds, 630_000);
+    assert.equal(milliseconds, 750_000);
     return signal;
   };
   try {

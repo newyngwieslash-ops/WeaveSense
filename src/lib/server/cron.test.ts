@@ -7,9 +7,13 @@ import {
   CRON_INGEST_RESERVE_MS,
   CRON_SERVER_BUDGET_MS,
   CRON_SOURCE_RESERVE_MS,
+  CRON_SOURCE_CONCURRENCY,
   parseCronTickLimit,
   reconciliationDue,
   requestWechatReconciliation,
+  requestWechatReconciliationAck,
+  cronWorkSlot,
+  cronDueQuotas,
   runCronBatch,
   runCronStages,
   runReconciledSourceJobs,
@@ -50,12 +54,65 @@ test("normalizes successful reconciliation IDs in first-seen order", async () =>
       assert.ok(init?.signal instanceof AbortSignal);
       return Response.json({ day: "2026-08-28", attempted: 4, succeeded: 2, failed: 2,
         succeeded_source_ids: [" wx-2 ", "wx-1"], budget_exhausted: false,
+        outbox_source_ids: ["wx-3", "wx-2"], pending_details: 3, completed_details: 1,
         deferred: 3, budget_deferred: true, deferred_paid_calls: 2 });
     },
   });
   assert.deepEqual(result, { ok: true, value: { day: "2026-08-28", attempted: 4,
     succeeded: 2, failed: 2, succeeded_source_ids: ["wx-2", "wx-1"], budget_exhausted: false,
+    outbox_source_ids: ["wx-3", "wx-2"], pending_details: 3, completed_details: 1,
     deferred: 3, budget_deferred: true, deferred_paid_calls: 2 } });
+});
+
+test("ACK uses the protected bounded endpoint and sanitizes invalid responses", async () => {
+  const originalTimeout = AbortSignal.timeout;
+  const signal = new AbortController().signal;
+  AbortSignal.timeout = (ms) => { assert.equal(ms, 10_000); return signal; };
+  try {
+    const ok = await requestWechatReconciliationAck({ url: "https://gateway.internal/base/", token: "secret",
+      sourceIds: ["wx-1"], fetchImpl: async (url, init) => {
+        assert.equal(url, "https://gateway.internal/base/v1/reconcile/ack");
+        assert.equal(new Headers(init?.headers).get("authorization"), "Bearer secret");
+        assert.equal(init?.signal, signal);
+        assert.deepEqual(JSON.parse(String(init?.body)), { source_ids: ["wx-1"] });
+        return Response.json({ acked: 1 });
+      } });
+    assert.deepEqual(ok, { ok: true, acked: 1 });
+    const bad = await requestWechatReconciliationAck({ url: "https://gateway.internal", token: "secret",
+      sourceIds: ["wx-1"], fetchImpl: async () => Response.json({ acked: 2, body: "secret" }) });
+    assert.deepEqual(bad, { ok: false, error: "wechat_gateway_ack_failed" });
+  } finally { AbortSignal.timeout = originalTimeout; }
+});
+
+test("four half-hour slots give 100 due sources capacity without starving extraction", () => {
+  const slots = Array.from({ length: 4 }, (_, index) => cronWorkSlot(new Date(index * 1_800_000)));
+  assert.deepEqual(slots, ["collect", "collect", "collect", "extract"]);
+  const capacity = slots.filter((slot) => slot === "collect")
+    .reduce((sum) => sum + cronDueQuotas(200).sources, 0);
+  assert.ok(capacity >= 100);
+  assert.ok(Math.ceil(cronDueQuotas(200).sources / CRON_SOURCE_CONCURRENCY) * CRON_SOURCE_RESERVE_MS
+    + CRON_INGEST_RESERVE_MS + CRON_GATEWAY_RESERVE_MS <= CRON_SERVER_BUDGET_MS);
+  assert.ok(CRON_SERVER_BUDGET_MS >= CRON_SOURCE_RESERVE_MS * 2
+    + CRON_INGEST_RESERVE_MS + CRON_EXTRACT_RESERVE_MS);
+});
+
+test("source backlog is capped while every due tick reserves a keyword opportunity", () => {
+  assert.deepEqual(cronDueQuotas(200), { sources: 34, keywords: 1 });
+  assert.deepEqual(cronDueQuotas(1), { sources: 1, keywords: 1 });
+});
+
+test("source batch concurrency is fixed and never fans out all due work", async () => {
+  let active = 0;
+  let peak = 0;
+  const batch = await runCronBatch(Array.from({ length: 34 }, (_, index) => index), async (value) => {
+    active += 1;
+    peak = Math.max(peak, active);
+    await new Promise((resolve) => setImmediate(resolve));
+    active -= 1;
+    return value;
+  }, { concurrency: CRON_SOURCE_CONCURRENCY });
+  assert.equal(batch.results.length, 34);
+  assert.equal(peak, 7);
 });
 
 test("rejects unknown reconciliation response fields", async () => {

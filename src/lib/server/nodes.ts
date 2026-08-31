@@ -99,9 +99,10 @@ export async function getNodesStatus(): Promise<{
   };
 }
 
-export async function runProductionTick({ deadlineMs, now = Date.now }: {
+export async function runProductionTick({ deadlineMs, now = Date.now, allowExtract = true }: {
   deadlineMs?: number;
   now?: () => number;
+  allowExtract?: boolean;
 } = {}): Promise<{
   stored: number;
   extracted: number;
@@ -112,7 +113,7 @@ export async function runProductionTick({ deadlineMs, now = Date.now }: {
   const bounded = deadlineMs !== undefined;
   const runIngest = !bounded || cronHasBudget(deadlineMs, CRON_INGEST_RESERVE_MS, now);
   const ingest = runIngest ? await ingestPending(bounded ? 1 : 8) : { stored: 0, errors: 0 };
-  const runExtract = prod.extractAuto
+  const runExtract = allowExtract && prod.extractAuto
     && (!bounded || cronHasBudget(deadlineMs, CRON_EXTRACT_RESERVE_MS, now));
   const extract = runExtract ? await extractPending(bounded ? 1 : 2) : { ran: 0, errors: 0 };
   return {
@@ -120,6 +121,6 @@ export async function runProductionTick({ deadlineMs, now = Date.now }: {
     extracted: extract.ran,
     ingest_errors: ingest.errors,
     extract_errors: extract.errors,
-    deferred: Number(!runIngest) + Number(prod.extractAuto && !runExtract),
+    deferred: Number(!runIngest) + Number(allowExtract && prod.extractAuto && !runExtract),
   };
 }

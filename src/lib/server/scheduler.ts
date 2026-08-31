@@ -6,7 +6,7 @@ import type { TickResult } from "@/lib/types";
 import { collectSource } from "./collectors";
 import { collectKeyword } from "./collectors/keyword";
 import type { NormalizedItem, SourceRecord } from "./collectors/types";
-import { runCronBatch, type CronBatchOptions } from "./cron";
+import { cronDueQuotas, CRON_SOURCE_CONCURRENCY, runCronBatch, type CronBatchOptions } from "./cron";
 import { enqueueItemMedia } from "./media";
 import { mapKeyword, mapSource } from "./queries";
 import {
@@ -17,6 +17,7 @@ import {
   failKeywordClaim,
   failSourceClaim,
   finishItemInsert,
+  mergeExistingItem,
   SCHEDULER_LEASE_LOST,
   SCHEDULER_LEASE_MINUTES,
 } from "./scheduler-atomic";
@@ -197,22 +198,26 @@ export async function runSourceJob(
       last_external_id: source.last_external_id,
     };
     const fetched = await collectSource(record);
-    const existing = await sql.query<{ external_id: string }>(
-      "select external_id from items where source_id = $1",
+    const existing = await sql.query<{ id: string; external_id: string }>(
+      "select id, external_id from items where source_id = $1",
       [source.id],
     );
-    const have = new Set(existing.map((r) => r.external_id));
-    const fresh = fetched.filter((it) => it.external_id && !have.has(it.external_id));
+    const existingByExternalId = new Map(existing.map((row) => [row.external_id, row.id]));
     const phrases = await enabledPhrases();
     let itemsNew = 0;
 
-    for (const it of fresh) {
+    for (const it of fetched.filter((item) => item.external_id)) {
       const published = it.published_at ? new Date(it.published_at) : null;
       const publishedIso =
         published && !Number.isNaN(published.getTime()) ? published.toISOString() : null;
       const matched = phrases
         .filter((p) => itemMatchesPhrase(it.title, it.body, it.author, p.phrase))
         .map((p) => p.phrase);
+      const existingId = existingByExternalId.get(it.external_id);
+      if (existingId) {
+        await mergeExistingItem(sql, existingId, { ...it, published_at: publishedIso }, matched);
+        continue;
+      }
       const id = shortId();
       const inserted = await sql.query<{ id: unknown }>(
         `insert into items (
@@ -349,8 +354,7 @@ export async function runKeywordJob(
 export async function tickDueSources(limit = 5, budget: CronBatchOptions = {}): Promise<TickResult & { deferred: number }> {
   await ensureSeeded();
   const sql = await getSql();
-  const sourceLimit = Math.max(1, Math.ceil(limit * 0.6));
-  const keywordLimit = Math.max(1, limit - sourceLimit);
+  const { sources: sourceLimit, keywords: keywordLimit } = cronDueQuotas(limit);
 
   const due = await sql.query<Record<string, unknown>>(
     `select * from sources
@@ -388,19 +392,8 @@ export async function tickDueSources(limit = 5, budget: CronBatchOptions = {}): 
     [keywordLimit, SCHEDULER_LEASE_MINUTES],
   );
 
-  const sourceBatch = await runCronBatch(due, async (row) => {
-    const source = mapSource(row);
-    const result = await runSourceJob(source.id, "incremental");
-    return {
-      source_id: source.id,
-      name: source.name,
-      items_new: result.items_new,
-      error: result.error,
-      kind: "source",
-    };
-  }, budget);
-
-  const keywordBatch = sourceBatch.deferred ? { results: [], deferred: dueKw.length } : await runCronBatch(dueKw, async (row) => {
+  // Fixed pools let keyword and source work share the same bounded window without either backlog starving.
+  const [keywordBatch, sourceBatch] = await Promise.all([runCronBatch(dueKw, async (row) => {
     const kw = mapKeyword(row);
     const result = await runKeywordJob(kw.id, "keyword");
     return {
@@ -410,9 +403,19 @@ export async function tickDueSources(limit = 5, budget: CronBatchOptions = {}): 
       error: result.error,
       kind: "keyword",
     };
-  }, budget);
+  }, budget), runCronBatch(due, async (row) => {
+    const source = mapSource(row);
+    const result = await runSourceJob(source.id, "incremental");
+    return {
+      source_id: source.id,
+      name: source.name,
+      items_new: result.items_new,
+      error: result.error,
+      kind: "source",
+    };
+  }, { ...budget, concurrency: CRON_SOURCE_CONCURRENCY })]);
 
-  const jobs: TickResult["jobs"] = [...sourceBatch.results, ...keywordBatch.results];
+  const jobs: TickResult["jobs"] = [...keywordBatch.results, ...sourceBatch.results];
   const items_new = jobs.reduce((total, job) => total + job.items_new, 0);
   const errors = jobs.filter((job) => job.error && (job.kind === "source"
     || (job.items_new === 0 && job.error !== "已停用" && !job.error.includes("本地")))).length;

@@ -11,12 +11,13 @@ function validCount(value: unknown): value is number {
 }
 
 export async function enqueueReconciliationSources(sql: QuerySql, sourceIds: readonly string[]): Promise<number> {
-  for (const sourceId of new Set(sourceIds.map((value) => value.trim()).filter(Boolean))) {
-    await sql.query(
-      "insert into reconciliation_queue (source_id) values ($1) on conflict (source_id) do nothing",
-      [sourceId],
-    );
-  }
+  const unique = [...new Set(sourceIds.map((value) => value.trim()).filter(Boolean))];
+  if (unique.length) await sql.query(
+    `insert into reconciliation_queue (source_id)
+     select source_id from unnest($1::text[]) as source_id
+     on conflict (source_id) do nothing`,
+    [unique],
+  );
   return queueSize(sql);
 }
 
@@ -32,7 +33,8 @@ export async function processReconciliationQueue(
   budget: CronBatchOptions = {},
 ): Promise<{ processed: number; succeeded: number; failed: number; deferred: number; results: SourceJobResult[] }> {
   const rows = await sql.query<{ source_id: string }>(
-    "select source_id from reconciliation_queue order by created_at, source_id limit 500",
+    `select source_id from reconciliation_queue where next_attempt_at <= now()
+     order by next_attempt_at, updated_at, source_id limit 2`,
   );
   const { results } = await runCronBatch(rows, async ({ source_id }) => {
     let result: SourceJobResult;
@@ -45,7 +47,8 @@ export async function processReconciliationQueue(
       result = { source_id, items_found: 0, items_new: 0, error: "reconcile_scan_failed" };
       await sql.query(
         `update reconciliation_queue
-         set attempts = attempts + 1, last_error = 'reconcile_scan_failed'
+         set attempts = attempts + 1, last_error = 'reconcile_scan_failed', updated_at = now(),
+             next_attempt_at = now() + interval '30 minutes'
          where source_id = $1`,
         [source_id],
       );

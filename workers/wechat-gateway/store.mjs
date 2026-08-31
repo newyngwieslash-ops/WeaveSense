@@ -171,6 +171,21 @@ function initialize(db) {
       discovered_at text not null,
       updated_at text not null,
       primary key (source_id, canonical_id)
+    );
+    create table if not exists reconciliation_outbox (
+      source_id text primary key,
+      created_at text not null
+    );
+    create table if not exists detail_queue (
+      source_id text not null,
+      canonical_id text not null,
+      item_json text not null,
+      attempts integer not null default 0,
+      next_retry_at text,
+      last_error text not null default '',
+      created_at text not null,
+      updated_at text not null,
+      primary key (source_id, canonical_id)
     )`);
     migrateReservations(db);
     db.exec("commit");
@@ -231,6 +246,11 @@ function createStore(db) {
     last_paid_ok_at = case when ? = 'ok' then ? else last_paid_ok_at end,
     last_paid_result = ?, next_retry_at = ?, alert_state = ?, updated_at = ?
     where source_id = ?`);
+  const addOutbox = db.prepare(`insert into reconciliation_outbox (source_id, created_at)
+    values (?, ?) on conflict(source_id) do nothing`);
+  const listOutbox = db.prepare(`select source_id from reconciliation_outbox
+    order by created_at, source_id limit 500`);
+  const ackOutbox = db.prepare("delete from reconciliation_outbox where source_id = ?");
   const getUsage = db.prepare("select calls, amount from provider_usage where day = ? and provider = ?");
   const reserveUsage = db.prepare(`insert into provider_usage (day, provider, calls, amount, updated_at)
     values (?, ?, 1, ?, ?)
@@ -260,6 +280,21 @@ function createStore(db) {
     where source_id = ? and unixepoch(published_at) >= unixepoch(?)
     order by unixepoch(published_at) desc, canonical_id`);
   const deleteItems = db.prepare("delete from gateway_items where unixepoch(published_at) < unixepoch(?)");
+  const queueDetail = db.prepare(`insert into detail_queue
+    (source_id, canonical_id, item_json, attempts, next_retry_at, last_error, created_at, updated_at)
+    values (?, ?, ?, ?, ?, ?, ?, ?)
+    on conflict(source_id, canonical_id) do update set
+      item_json=excluded.item_json,
+      attempts=detail_queue.attempts + excluded.attempts,
+      next_retry_at=excluded.next_retry_at,
+      last_error=excluded.last_error,
+      updated_at=excluded.updated_at`);
+  const listDetails = db.prepare(`select * from detail_queue
+    where next_retry_at is null or unixepoch(next_retry_at) <= unixepoch(?)
+    order by updated_at, source_id, canonical_id limit ?`);
+  const deleteDetail = db.prepare("delete from detail_queue where source_id = ? and canonical_id = ?");
+  const getDetail = db.prepare("select * from detail_queue where source_id = ? and canonical_id = ?");
+  const countDetails = db.prepare("select count(*) as count from detail_queue");
 
   function providerUsage(day, provider) {
     const usage = getUsage.get(key(day, "day"), key(provider, "provider"));
@@ -296,7 +331,8 @@ function createStore(db) {
     recordPrimaryFailure(sourceId, now = new Date().toISOString()) {
       failure.run(now, sourceId);
     },
-    recordPaidResult(sourceId, result, nextRetryAt, alertState, now = new Date().toISOString(), successAt = now) {
+    recordPaidResult(sourceId, result, nextRetryAt, alertState, now = new Date().toISOString(), successAt = now,
+      enqueueOutbox = false) {
       sourceId = key(sourceId, "sourceId");
       if (!PAID_RESULTS.has(result)) throw new TypeError("result is invalid");
       if (!ALERT_STATES.has(alertState)) throw new TypeError("alertState is invalid");
@@ -323,11 +359,13 @@ function createStore(db) {
             || (result === "ok" && source.last_paid_ok_at !== effectiveSuccessAt)) {
             throw new Error("paid result timestamp conflict");
           }
+          if (result === "ok" && enqueueOutbox) addOutbox.run(sourceId, now);
           db.exec("commit");
           return source;
         }
         if (Number(paidResult.run(now, result, effectiveSuccessAt, result, nextRetryAt,
           alertState, now, sourceId).changes) !== 1) throw new Error("source not found");
+        if (result === "ok" && enqueueOutbox) addOutbox.run(sourceId, now);
         const saved = get.get(sourceId);
         db.exec("commit");
         return saved;
@@ -433,6 +471,67 @@ function createStore(db) {
     },
     listGatewayItems(sourceId, sinceIso) {
       return listItems.all(key(sourceId, "sourceId"), iso(sinceIso, "sinceIso"));
+    },
+    getGatewayItem(sourceId, canonicalId) {
+      return getItem.get(key(sourceId, "sourceId"), key(canonicalId, "canonicalId"));
+    },
+    listReconciliationOutbox() { return listOutbox.all().map(({ source_id }) => source_id); },
+    ackReconciliationOutbox(sourceIds) {
+      if (!Array.isArray(sourceIds)) throw new TypeError("sourceIds must be an array");
+      db.exec("begin immediate");
+      try {
+        let acked = 0;
+        for (const sourceId of sourceIds) acked += Number(ackOutbox.run(key(sourceId, "sourceId")).changes);
+        db.exec("commit");
+        return acked;
+      } catch (error) {
+        rollback(db);
+        throw error;
+      }
+    },
+    enqueueDetail(sourceId, item, now = new Date().toISOString(), error = "", nextRetryAt = null) {
+      sourceId = key(sourceId, "sourceId");
+      const valid = validateGatewayItem(item);
+      now = iso(now, "now");
+      nextRetryAt = iso(nextRetryAt, "nextRetryAt", true);
+      queueDetail.run(sourceId, valid.canonical_id, JSON.stringify(valid), error ? 1 : 0,
+        nextRetryAt, String(error).slice(0, 200), now, now);
+    },
+    listDueDetails(now = new Date().toISOString(), limit = 2) {
+      now = iso(now, "now");
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 20) throw new TypeError("limit is invalid");
+      return listDetails.all(now, limit).map((row) => ({ ...row, item: JSON.parse(row.item_json) }));
+    },
+    completeDetail(sourceId, canonicalId, item, now = new Date().toISOString()) {
+      sourceId = key(sourceId, "sourceId");
+      canonicalId = key(canonicalId, "canonicalId");
+      const valid = validateGatewayItem(item);
+      now = iso(now, "now");
+      db.exec("begin immediate");
+      try {
+        const source = get.get(sourceId);
+        if (!source || valid.account_id !== source.account_id || valid.canonical_id !== canonicalId) {
+          throw new Error("detail does not match source");
+        }
+        const existing = getItem.get(sourceId, canonicalId);
+        upsertItem.run(sourceId, canonicalId, valid.account_id, valid.account_name, valid.title,
+          valid.published_at, valid.original_url, preferNonEmpty(valid.body_text, existing?.body_text),
+          preferNonEmpty(valid.cover_url, existing?.cover_url), valid.provider,
+          providersSeen(existing, valid.provider), valid.discovered_at, now);
+        deleteDetail.run(sourceId, canonicalId);
+        addOutbox.run(sourceId, now);
+        db.exec("commit");
+      } catch (error) {
+        rollback(db);
+        throw error;
+      }
+    },
+    pendingDetailCount() { return Number(countDetails.get().count); },
+    getPendingDetail(sourceId, canonicalId) {
+      return getDetail.get(key(sourceId, "sourceId"), key(canonicalId, "canonicalId"));
+    },
+    removePendingDetail(sourceId, canonicalId) {
+      return Number(deleteDetail.run(key(sourceId, "sourceId"), key(canonicalId, "canonicalId")).changes);
     },
     deleteGatewayItemsBefore(cutoffIso) {
       return Number(deleteItems.run(iso(cutoffIso, "cutoffIso")).changes);

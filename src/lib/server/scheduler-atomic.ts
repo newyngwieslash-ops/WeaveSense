@@ -130,3 +130,35 @@ export async function finishItemInsert(
   if (mediaUrls.length) await enqueue(id, mediaUrls, mediaType);
   return true;
 }
+
+export async function mergeExistingItem(sql: Queryable, itemId: string, item: {
+  title: string;
+  body: string;
+  author: string;
+  url: string;
+  media_type: string;
+  media_urls: string[];
+  thumbnail_url: string;
+  views: number | null;
+  likes: number | null;
+  published_at: string | null;
+  extra: Record<string, unknown>;
+}, matchedKeywords: string[]): Promise<void> {
+  await sql.query(`update items set
+      title=coalesce(nullif(title,''),nullif($2,''),title),
+      body=coalesce(nullif(body,''),nullif($3,''),body),
+      author=coalesce(nullif(author,''),nullif($4,''),author),
+      url=coalesce(nullif(url,''),nullif($5,''),url),
+      media_type=coalesce(nullif(media_type,''),nullif($6,''),media_type),
+      media_urls=case when jsonb_array_length(media_urls)=0 and jsonb_array_length($7::jsonb)>0
+        then $7::jsonb else media_urls end,
+      thumbnail_url=coalesce(nullif(thumbnail_url,''),nullif($8,''),thumbnail_url),
+      views=coalesce(views,$9), likes=coalesce(likes,$10),
+      published_at=coalesce(published_at,$11::timestamptz), extra=extra || $12::jsonb,
+      matched_keywords=(select coalesce(jsonb_agg(keyword order by keyword),'[]'::jsonb)
+        from (select distinct value as keyword
+          from jsonb_array_elements_text(items.matched_keywords || $13::jsonb)) merged)
+    where id=$1`, [itemId, item.title, item.body, item.author, item.url, item.media_type,
+    JSON.stringify(item.media_urls), item.thumbnail_url, item.views, item.likes, item.published_at,
+    JSON.stringify(item.extra), JSON.stringify(matchedKeywords)]);
+}

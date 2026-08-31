@@ -10,19 +10,22 @@ const MAX_GATEWAY_BODY_BYTES = 1024 * 1024;
 const SAFE_SOURCE_ID = /^[A-Za-z0-9._:-]+$/;
 const GATEWAY_RECONCILIATION_KEYS = new Set([
   "day", "attempted", "succeeded", "failed", "succeeded_source_ids", "budget_exhausted",
-  "deferred", "budget_deferred", "deferred_paid_calls",
+  "deferred", "budget_deferred", "deferred_paid_calls", "outbox_source_ids",
+  "pending_details", "completed_details",
 ]);
 
-export const CRON_SERVER_BUDGET_MS = 600_000;
+export const CRON_SERVER_BUDGET_MS = 720_000;
 export const CRON_SOURCE_RESERVE_MS = 100_000;
 export const CRON_INGEST_RESERVE_MS = 55_000;
 export const CRON_EXTRACT_RESERVE_MS = 460_000;
 export const CRON_GATEWAY_RESERVE_MS = 125_000;
+export const CRON_SOURCE_CONCURRENCY = 7;
 
 export type CronBatchOptions = {
   deadlineMs?: number;
   reserveMs?: number;
   now?: () => number;
+  concurrency?: number;
 };
 
 export function cronHasBudget(deadlineMs: number, reserveMs: number, now: () => number = Date.now): boolean {
@@ -33,14 +36,24 @@ export function cronHasBudget(deadlineMs: number, reserveMs: number, now: () => 
 export async function runCronBatch<Item, Result>(
   items: readonly Item[],
   run: (item: Item) => Promise<Result>,
-  { deadlineMs, reserveMs = 0, now = Date.now }: CronBatchOptions = {},
+  { deadlineMs, reserveMs = 0, now = Date.now, concurrency = 1 }: CronBatchOptions = {},
 ): Promise<{ results: Result[]; deferred: number }> {
-  const results: Result[] = [];
-  for (const item of items) {
-    if (deadlineMs !== undefined && !cronHasBudget(deadlineMs, reserveMs, now)) break;
-    results.push(await run(item));
-  }
-  return { results, deferred: items.length - results.length };
+  const results: Array<Result | undefined> = [];
+  const done: boolean[] = [];
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < items.length) {
+      if (deadlineMs !== undefined && !cronHasBudget(deadlineMs, reserveMs, now)) return;
+      const index = cursor++;
+      results[index] = await run(items[index]);
+      done[index] = true;
+    }
+  };
+  const size = Math.min(items.length,
+    Number.isSafeInteger(concurrency) ? Math.min(32, Math.max(1, concurrency)) : 1);
+  await Promise.all(Array.from({ length: size }, worker));
+  const completed = results.filter((_value, index): _value is Result => done[index] === true);
+  return { results: completed, deferred: items.length - completed.length };
 }
 
 export function authorizeCron(header: string, secret: string): boolean {
@@ -72,6 +85,9 @@ type GatewayReconciliation = {
   deferred?: number;
   budget_deferred?: boolean;
   deferred_paid_calls?: number;
+  outbox_source_ids: string[];
+  pending_details: number;
+  completed_details: number;
 };
 
 type ReconciliationRequestResult =
@@ -101,11 +117,14 @@ function normalizePayload(payload: unknown): GatewayReconciliation | null {
   const deferred = value.deferred === undefined ? undefined : count(value.deferred);
   const deferredPaidCalls = value.deferred_paid_calls === undefined
     ? undefined : count(value.deferred_paid_calls);
+  const pendingDetails = count(value.pending_details);
+  const completedDetails = count(value.completed_details);
   if (!validDay(value.day) || attempted === null || succeeded === null || failed === null
     || attempted !== succeeded + failed || !Array.isArray(value.succeeded_source_ids)
     || value.succeeded_source_ids.length !== succeeded || value.succeeded_source_ids.length > 500
     || typeof value.budget_exhausted !== "boolean"
-    || deferred === null || deferredPaidCalls === null
+    || deferred === null || deferredPaidCalls === null || pendingDetails === null || completedDetails === null
+    || !Array.isArray(value.outbox_source_ids) || value.outbox_source_ids.length > 500
     || (value.budget_deferred !== undefined && typeof value.budget_deferred !== "boolean")) return null;
   const seen = new Set<string>();
   const sourceIds: string[] = [];
@@ -116,19 +135,29 @@ function normalizePayload(payload: unknown): GatewayReconciliation | null {
     seen.add(sourceId);
     sourceIds.push(sourceId);
   }
+  const outboxSeen = new Set<string>();
+  const outboxIds: string[] = [];
+  for (const rawSourceId of value.outbox_source_ids) {
+    if (typeof rawSourceId !== "string") return null;
+    const sourceId = rawSourceId.trim();
+    if (!sourceId || sourceId.length > 128 || !SAFE_SOURCE_ID.test(sourceId) || outboxSeen.has(sourceId)) return null;
+    outboxSeen.add(sourceId);
+    outboxIds.push(sourceId);
+  }
   return { day: value.day, attempted, succeeded, failed,
     succeeded_source_ids: sourceIds, budget_exhausted: value.budget_exhausted,
+    outbox_source_ids: outboxIds, pending_details: pendingDetails, completed_details: completedDetails,
     ...(deferred === undefined ? {} : { deferred }),
     ...(value.budget_deferred === undefined ? {} : { budget_deferred: value.budget_deferred }),
     ...(deferredPaidCalls === undefined ? {} : { deferred_paid_calls: deferredPaidCalls }) };
 }
 
-function reconciliationUrl(base: string): string | null {
+function gatewayUrl(base: string, path: string): string | null {
   try {
     const url = new URL(base);
     if (!(["http:", "https:"] as string[]).includes(url.protocol)
       || url.username || url.password || url.search || url.hash) return null;
-    url.pathname = `${url.pathname.replace(/\/+$/, "")}/v1/reconcile`;
+    url.pathname = `${url.pathname.replace(/\/+$/, "")}${path}`;
     return url.toString();
   } catch {
     return null;
@@ -165,7 +194,7 @@ export async function requestWechatReconciliation({ url, token, fetchImpl = fetc
   token: string;
   fetchImpl?: typeof fetch;
 }): Promise<ReconciliationRequestResult> {
-  const endpoint = reconciliationUrl(url);
+  const endpoint = gatewayUrl(url, "/v1/reconcile");
   if (!endpoint) return { ok: false, error: "wechat_gateway_unavailable" };
   let response: Response;
   try {
@@ -184,6 +213,40 @@ export async function requestWechatReconciliation({ url, token, fetchImpl = fetc
   }
   const value = normalizePayload(await readGatewayJson(response));
   return value ? { ok: true, value } : { ok: false, error: "wechat_gateway_invalid_response" };
+}
+
+export async function requestWechatReconciliationAck({ url, token, sourceIds, fetchImpl = fetch }: {
+  url: string;
+  token: string;
+  sourceIds: string[];
+  fetchImpl?: typeof fetch;
+}): Promise<{ ok: true; acked: number } | { ok: false; error: "wechat_gateway_ack_failed" }> {
+  const endpoint = gatewayUrl(url, "/v1/reconcile/ack");
+  if (!endpoint) return { ok: false, error: "wechat_gateway_ack_failed" };
+  try {
+    const response = await fetchImpl(endpoint, { method: "POST", redirect: "error",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ source_ids: sourceIds }), signal: AbortSignal.timeout(10_000) });
+    if (!response.ok) { await response.body?.cancel(); return { ok: false, error: "wechat_gateway_ack_failed" }; }
+    const body = await readGatewayJson(response);
+    if (!body || typeof body !== "object" || Array.isArray(body)
+      || Object.keys(body).length !== 1 || count((body as Record<string, unknown>).acked) === null
+      || Number((body as Record<string, unknown>).acked) > sourceIds.length) {
+      return { ok: false, error: "wechat_gateway_ack_failed" };
+    }
+    return { ok: true, acked: Number((body as Record<string, unknown>).acked) };
+  } catch {
+    return { ok: false, error: "wechat_gateway_ack_failed" };
+  }
+}
+
+export function cronWorkSlot(now: Date): "collect" | "extract" {
+  if (!(now instanceof Date) || !Number.isFinite(now.getTime())) throw new TypeError("now must be a valid Date");
+  return Math.floor(now.getTime() / 1_800_000) % 4 === 3 ? "extract" : "collect";
+}
+
+export function cronDueQuotas(limit: number): { sources: number; keywords: 1 } {
+  return { sources: Math.min(34, Math.max(1, Number.isSafeInteger(limit) ? limit - 1 : 1)), keywords: 1 };
 }
 
 export async function runReconciledSourceJobs(
