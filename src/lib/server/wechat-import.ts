@@ -42,6 +42,7 @@ export type WechatImportPreview = {
     line: number;
     status: "valid" | "duplicate" | "error";
     errors: string[];
+    input?: Readonly<{ name: string; wechat_id: string; priority: string }>;
     value?: WechatImportValue;
   }>;
   valid: number;
@@ -192,6 +193,7 @@ export function previewWechatImport(
     const primaryFeedUrl = rawFeedUrl.trim();
     const interval = rawInterval.trim();
     const priority = rawPriority.trim() || "normal";
+    const input = { name, wechat_id: wechatId, priority };
 
     if (!name) errors.push("name 不能为空");
     if (!wechatId) errors.push("wechat_id 不能为空");
@@ -221,10 +223,10 @@ export function previewWechatImport(
     }
 
     if (errors.length > 0) {
-      preview.rows.push({ line: record.line, status: "error", errors });
+      preview.rows.push({ line: record.line, status: "error", errors, input });
       preview.error += 1;
     } else if (duplicateError) {
-      preview.rows.push({ line: record.line, status: "duplicate", errors: [duplicateError] });
+      preview.rows.push({ line: record.line, status: "duplicate", errors: [duplicateError], input });
       preview.duplicate += 1;
     } else {
       preview.rows.push({

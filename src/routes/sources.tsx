@@ -6,8 +6,17 @@ import { Plus, RefreshCw } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input, NativeSelect } from "@/components/ui/input";
-import { addSourceFn, addTelegramChannelsFn, listSourcesFn, scanSourceFn, toggleSourceFn } from "@/lib/server/fns";
+import { Input, NativeSelect, Textarea } from "@/components/ui/input";
+import {
+  addSourceFn,
+  addTelegramChannelsFn,
+  importWechatSourcesFn,
+  listSourcesFn,
+  previewWechatImportFn,
+  scanSourceFn,
+  toggleSourceFn,
+} from "@/lib/server/fns";
+import type { WechatImportPreview } from "@/lib/server/wechat-import";
 import { RADAR_SOURCE_ID } from "@/lib/keyword";
 import { INTERVALS, PLATFORMS, PLATFORM_LIST, type PlatformId } from "@/lib/platforms";
 import { formatRelative } from "@/lib/format";
@@ -116,12 +125,32 @@ function SourcesPage() {
 function AddSourceDialog({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const [platform, setPlatform] = useState<PlatformId>("rss");
+  const [wechatMode, setWechatMode] = useState<"single" | "csv">("single");
   const [name, setName] = useState("");
   const [handle, setHandle] = useState("");
   const [feed, setFeed] = useState("");
   const [bulk, setBulk] = useState("");
   const [interval, setInterval] = useState(30);
+  const [csv, setCsv] = useState("");
+  const [previewedCsv, setPreviewedCsv] = useState("");
+  const [csvPreview, setCsvPreview] = useState<WechatImportPreview | null>(null);
+  const [selectedLines, setSelectedLines] = useState<Set<number>>(new Set());
+  const [csvError, setCsvError] = useState("");
+  const [importFailures, setImportFailures] = useState<
+    Array<{ line: number; name: string; error: string }>
+  >([]);
   const def = PLATFORMS[platform];
+  const resetCsvResult = () => {
+    setPreviewedCsv("");
+    setCsvPreview(null);
+    setSelectedLines(new Set());
+    setCsvError("");
+    setImportFailures([]);
+  };
+  const updateCsv = (value: string) => {
+    setCsv(value);
+    resetCsvResult();
+  };
   const add = useMutation({
     mutationFn: () =>
       addSourceFn({
@@ -152,15 +181,68 @@ function AddSourceDialog({ onClose }: { onClose: () => void }) {
     },
     onError: (e: Error) => toast.error(e.message),
   });
+  const previewCsv = useMutation({
+    mutationFn: (value: string) => previewWechatImportFn({ data: { csv: value } }),
+    onSuccess: (result, value) => {
+      setPreviewedCsv(value);
+      setCsvPreview(result);
+      setSelectedLines(new Set(result.rows
+        .filter((row) => row.status === "valid")
+        .map((row) => row.line)));
+      setCsvError("");
+      setImportFailures([]);
+    },
+    onError: (error: Error) => {
+      setCsvError(error.message);
+      toast.error(error.message);
+    },
+  });
+  const importCsv = useMutation({
+    mutationFn: () => importWechatSourcesFn({
+      data: { csv: previewedCsv, confirmed_lines: [...selectedLines] },
+    }),
+    onSuccess: (result) => {
+      const summary = `创建 ${result.created} · 跳过 ${result.skipped} · 失败 ${result.failed.length}`;
+      if (result.failed.length) toast.warning(summary);
+      else toast.success(summary);
+      void Promise.all([
+        qc.invalidateQueries({ queryKey: ["sources"] }),
+        qc.invalidateQueries({ queryKey: ["overview"] }),
+        qc.invalidateQueries({ queryKey: ["wechat-health"] }),
+      ]);
+      setImportFailures(result.failed);
+      if (result.failed.length) {
+        setSelectedLines(new Set(result.failed.map((failure) => failure.line)));
+      } else {
+        onClose();
+      }
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const csvMode = platform === "wechat" && wechatMode === "csv";
+  const csvBusy = previewCsv.isPending || importCsv.isPending;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
-      <button type="button" className="absolute inset-0 bg-bg/75" onClick={onClose} aria-label="关闭" />
+      <button
+        type="button"
+        className="absolute inset-0 bg-bg/75"
+        onClick={onClose}
+        disabled={csvBusy}
+        aria-label={csvBusy ? "正在处理，暂时无法关闭" : "关闭"}
+      />
       <form
-        className="relative w-full max-w-lg rounded-t-xl bg-surface p-5 shadow-[var(--shadow-border)] sm:rounded-xl"
+        aria-busy={csvBusy}
+        className={cn(
+          "relative max-h-dvh min-w-0 w-full overflow-y-auto rounded-t-xl bg-surface p-5 shadow-[var(--shadow-border)] sm:rounded-xl",
+          csvMode ? "max-w-4xl" : "max-w-lg",
+        )}
         onSubmit={(e) => {
           e.preventDefault();
-          if (platform === "telegram" && bulk.trim()) bulkAdd.mutate();
+          if (csvMode) {
+            if (csvPreview && selectedLines.size) importCsv.mutate();
+          } else if (platform === "telegram" && bulk.trim()) bulkAdd.mutate();
           else add.mutate();
         }}
       >
@@ -169,7 +251,16 @@ function AddSourceDialog({ onClose }: { onClose: () => void }) {
         <div className="mt-5 grid gap-3">
           <label className="grid gap-1.5 text-xs text-muted">
             平台
-            <NativeSelect value={platform} onChange={(e) => setPlatform(e.target.value as PlatformId)}>
+            <NativeSelect
+              value={platform}
+              disabled={csvBusy}
+              onChange={(e) => {
+                setPlatform(e.target.value as PlatformId);
+                setWechatMode("single");
+                setCsv("");
+                resetCsvResult();
+              }}
+            >
               {PLATFORM_LIST.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
@@ -177,52 +268,216 @@ function AddSourceDialog({ onClose }: { onClose: () => void }) {
               ))}
             </NativeSelect>
           </label>
-          <label className="grid gap-1.5 text-xs text-muted">
-            名称
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="例如 量子位" required />
-          </label>
-          <label className="grid gap-1.5 text-xs text-muted">
-            {def.handleLabel}
-            <Input
-              value={handle}
-              onChange={(e) => setHandle(e.target.value)}
-              placeholder={def.handlePlaceholder}
-              required={platform !== "telegram" || !bulk.trim()}
-            />
-          </label>
-          {platform === "telegram" ? (
-            <label className="grid gap-1.5 text-xs text-muted">
-              批量频道（每行一个，最多 1000）
-              <textarea
-                value={bulk}
-                onChange={(e) => setBulk(e.target.value)}
-                rows={6}
-                placeholder={"durov\ntelegram\nhttps://t.me/s/bbc"}
-                className="min-h-28 w-full rounded-sm border-0 bg-raised px-3 py-2 font-mono text-sm text-fg outline-none ring-1 ring-border focus:ring-fg/40"
-              />
-            </label>
+          {platform === "wechat" ? (
+            <div className="grid grid-cols-2 gap-1 rounded-md bg-raised p-1" aria-label="微信公众号接入方式">
+              <Button
+                type="button"
+                variant={wechatMode === "single" ? "outline" : "ghost"}
+                aria-pressed={wechatMode === "single"}
+                disabled={csvBusy}
+                onClick={() => {
+                  if (wechatMode !== "single") resetCsvResult();
+                  setWechatMode("single");
+                }}
+              >
+                单个
+              </Button>
+              <Button
+                type="button"
+                variant={wechatMode === "csv" ? "outline" : "ghost"}
+                aria-pressed={wechatMode === "csv"}
+                disabled={csvBusy}
+                onClick={() => {
+                  if (wechatMode !== "csv") resetCsvResult();
+                  setWechatMode("csv");
+                }}
+              >
+                CSV 批量
+              </Button>
+            </div>
           ) : null}
-          <label className="grid gap-1.5 text-xs text-muted">
-            RSS / WeWe / RSSHub（可选）
-            <Input value={feed} onChange={(e) => setFeed(e.target.value)} placeholder="https://" />
-          </label>
-          <label className="grid gap-1.5 text-xs text-muted">
-            扫描间隔
-            <NativeSelect value={interval} onChange={(e) => setInterval(Number(e.target.value))}>
-              {INTERVALS.map((i) => (
-                <option key={i.value} value={i.value}>
-                  {i.label}
-                </option>
-              ))}
-            </NativeSelect>
-          </label>
+          {csvMode ? (
+            <>
+              <label className="grid gap-1.5 text-xs text-muted">
+                CSV 文件
+                <Input
+                  type="file"
+                  accept=".csv"
+                  disabled={csvBusy}
+                  onChange={async (event) => {
+                    const file = event.currentTarget.files?.[0];
+                    if (!file) return;
+                    if (file.size > 1024 * 1024) {
+                      setCsv("");
+                      resetCsvResult();
+                      setCsvError("CSV 文件不能超过 1 MiB");
+                      event.currentTarget.value = "";
+                      return;
+                    }
+                    try {
+                      updateCsv(await file.text());
+                    } catch {
+                      setCsv("");
+                      resetCsvResult();
+                      setCsvError("CSV 文件读取失败");
+                    }
+                  }}
+                />
+              </label>
+              <label className="grid gap-1.5 text-xs text-muted">
+                或粘贴 CSV
+                <Textarea
+                  value={csv}
+                  onChange={(event) => updateCsv(event.target.value)}
+                  rows={7}
+                  className="font-mono"
+                  disabled={csvBusy}
+                  placeholder={"name,wechat_id,sample_url,primary_feed_url,interval_minutes,priority\n示例科技,gh_example,https://mp.weixin.qq.com/s/example,https://feeds.example.com/example.atom,60,normal"}
+                />
+              </label>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!csv.trim() || csvBusy}
+                  onClick={() => {
+                    resetCsvResult();
+                    previewCsv.mutate(csv);
+                  }}
+                >
+                  {previewCsv.isPending ? "校验中" : "预览"}
+                </Button>
+                {csvPreview ? (
+                  <div className="flex flex-wrap gap-2" aria-label="CSV 预览统计">
+                    <Badge tone="live">有效 {csvPreview.valid}</Badge>
+                    <Badge tone="muted">重复 {csvPreview.duplicate}</Badge>
+                    <Badge tone={csvPreview.error ? "danger" : "muted"}>错误 {csvPreview.error}</Badge>
+                  </div>
+                ) : null}
+              </div>
+              {csvError ? <p role="alert" className="text-sm text-danger">{csvError}</p> : null}
+              {csvPreview ? (
+                <div className="min-w-0 max-w-full overflow-x-auto rounded-lg shadow-[var(--shadow-border)]">
+                  <table className="min-w-3xl w-full text-left text-xs">
+                    <thead className="bg-raised text-muted">
+                      <tr>
+                        <th className="px-3 py-2 font-medium">选择</th>
+                        <th className="px-3 py-2 font-medium">行</th>
+                        <th className="px-3 py-2 font-medium">名称</th>
+                        <th className="px-3 py-2 font-medium">微信 ID</th>
+                        <th className="px-3 py-2 font-medium">优先级</th>
+                        <th className="px-3 py-2 font-medium">校验结果</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {csvPreview.rows.map((row) => {
+                        const selectable = row.status === "valid";
+                        return (
+                          <tr key={row.line}>
+                            <td className="px-1 py-0">
+                              <label className="flex min-h-11 min-w-11 items-center justify-center">
+                                <input
+                                  type="checkbox"
+                                  aria-label={`选择第 ${row.line} 行`}
+                                  disabled={!selectable}
+                                  checked={selectable && selectedLines.has(row.line)}
+                                  onChange={(event) => {
+                                    setSelectedLines((current) => {
+                                      const next = new Set(current);
+                                      if (event.target.checked) next.add(row.line);
+                                      else next.delete(row.line);
+                                      return next;
+                                    });
+                                  }}
+                                  className="size-4 accent-accent"
+                                />
+                              </label>
+                            </td>
+                            <td className="px-3 py-2 font-mono text-faint">{row.line}</td>
+                            <td className="px-3 py-2 text-fg">{row.value?.name || row.input?.name || "—"}</td>
+                            <td className="px-3 py-2 font-mono text-faint">{row.value?.wechat_id || row.input?.wechat_id || "—"}</td>
+                            <td className="px-3 py-2 text-muted">{row.value?.priority || row.input?.priority || "—"}</td>
+                            <td className={cn("px-3 py-2", row.errors.length ? "text-danger" : "text-muted")}>
+                              {row.errors.length ? row.errors.join("；") : "可导入"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+              {importFailures.length ? (
+                <div role="alert" className="rounded-md bg-danger/10 p-3 text-sm text-danger">
+                  <p className="font-medium">以下行未导入，可修正后重新预览，或直接重试：</p>
+                  <ul className="mt-2 space-y-1">
+                    {importFailures.map((failure) => (
+                      <li key={`${failure.line}:${failure.name}`}>
+                        第 {failure.line} 行 · {failure.name || "未命名"} · {failure.error}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <label className="grid gap-1.5 text-xs text-muted">
+                名称
+                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="例如 量子位" required />
+              </label>
+              <label className="grid gap-1.5 text-xs text-muted">
+                {def.handleLabel}
+                <Input
+                  value={handle}
+                  onChange={(e) => setHandle(e.target.value)}
+                  placeholder={def.handlePlaceholder}
+                  required={platform !== "telegram" || !bulk.trim()}
+                />
+              </label>
+              {platform === "telegram" ? (
+                <label className="grid gap-1.5 text-xs text-muted">
+                  批量频道（每行一个，最多 1000）
+                  <Textarea
+                    value={bulk}
+                    onChange={(e) => setBulk(e.target.value)}
+                    rows={6}
+                    placeholder={"durov\ntelegram\nhttps://t.me/s/bbc"}
+                    className="min-h-28 font-mono"
+                  />
+                </label>
+              ) : null}
+              <label className="grid gap-1.5 text-xs text-muted">
+                RSS / WeWe / RSSHub（可选）
+                <Input value={feed} onChange={(e) => setFeed(e.target.value)} placeholder="https://" />
+              </label>
+              <label className="grid gap-1.5 text-xs text-muted">
+                扫描间隔
+                <NativeSelect value={interval} onChange={(e) => setInterval(Number(e.target.value))}>
+                  {INTERVALS.map((i) => (
+                    <option key={i.value} value={i.value}>
+                      {i.label}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </label>
+            </>
+          )}
         </div>
         <div className="mt-5 flex justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={onClose}>
+          <Button type="button" variant="ghost" onClick={onClose} disabled={csvBusy}>
             取消
           </Button>
-          <Button type="submit" disabled={add.isPending || bulkAdd.isPending}>
-            {add.isPending || bulkAdd.isPending ? "写入中" : platform === "telegram" && bulk.trim() ? "批量加入" : "加入矩阵"}
+          <Button
+            type="submit"
+            disabled={csvMode
+              ? !csvPreview || selectedLines.size === 0 || importCsv.isPending
+              : add.isPending || bulkAdd.isPending}
+          >
+            {csvMode
+              ? importCsv.isPending ? "导入中" : `确认导入 ${selectedLines.size} 个公众号`
+              : add.isPending || bulkAdd.isPending ? "写入中"
+                : platform === "telegram" && bulk.trim() ? "批量加入" : "加入矩阵"}
           </Button>
         </div>
       </form>

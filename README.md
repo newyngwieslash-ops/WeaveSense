@@ -105,6 +105,19 @@ docker compose up --build
 
 微信源网关当前只支持生产单副本，禁止使用 `docker compose up --scale wechat-gateway=...` 扩容；同源互斥由进程内锁保证。进程若在付费供应商调用中崩溃，SQLite 会保留保守的预算预留，恢复后应检查当天用量；该策略可能高计，但不会低计费用。
 
+#### CSV 批量导入公众号
+
+在「信源 → 接入 → 微信公众号 → CSV 批量」中上传 `.csv` 或直接粘贴内容。表头必须完全一致：
+
+```csv
+name,wechat_id,sample_url,primary_feed_url,interval_minutes,priority
+示例科技,gh_example,https://mp.weixin.qq.com/s/example,https://feeds.example.com/example.atom,60,normal
+```
+
+示例均为虚构数据，不包含真实账号或凭证。文件使用 UTF-8；支持 BOM、CRLF、带逗号的引号字段和双引号转义。`name`、`wechat_id`、`sample_url`、`primary_feed_url` 必填；样例链接必须是无账号密码的 `https://mp.weixin.qq.com` 原文链接，主源必须是无账号密码的 HTTP/HTTPS URL。`interval_minutes` 固定为 `60`；`priority` 留空时按 `normal`，也可填写 `high`。文件内重复或数据库中已存在的 `wechat_id` 会标记为重复。
+
+单个文件不超过 1 MiB、最多 1000 条数据行；系统保证 500 条合法数据可在一次预览中完整校验。预览不会写入数据，只有勾选有效行并确认后才开始导入。每行都先幂等配置微信源网关，网关返回成功后才写入 Loom 数据库；单行失败不阻断后续行，使用确定性信源 ID 重试不会产生新的映射。
+
 Compose 的 `scheduler` 会在浏览器关闭后继续按默认 30 分钟间隔调用受保护的定时入口，并等应用健康后才发起首轮。调度器也保持单副本，不要用 `--scale scheduler=...` 扩容；每轮服务端工作预算为 12 分钟，循环只在剩余预算足够覆盖下一项最坏外部超时时才启动，未执行项保留到下轮。发布时先停调度器，等待当前 JSON 结果（客户端最多 12 分 30 秒）后再重启应用与网关，最后启动调度器。
 
 网关把付费对账成功来源写入 SQLite outbox；应用先用一条 PostgreSQL 语句幂等写入重扫队列，成功后才 ACK。ACK 前中断会在下轮安全重放。付费正文因期限或临时错误未补齐时也会持久排队，技术错误按 5/15/60 分钟再按小时退避，映射错误不自动重试；后续重扫会更新同一文章而不是生成重复项。OCR/ASR 按最多四个媒体目标分别记终态，空文本也算成功；每四个半小时轮次安排三轮 9 路固定并发采集和一轮完整提取，对账重扫固定 2 路并发，最坏一轮预算为 680 秒，100 个到期信源可在两小时容量窗口内处理。失败目标最多重试三次且不会重复调用已成功目标。

@@ -170,6 +170,29 @@ describe("previewWechatImport", () => {
       { valid: 1, duplicate: 1, error: 1 });
   });
 
+  it("keeps normalized display fields for quoted duplicate and invalid rows", () => {
+    const preview = previewWechatImport([
+      HEADER,
+      row("首行", "gh_first"),
+      '" 文件内,重复 "," GH_FIRST ",https://mp.weixin.qq.com/s/duplicate,https://feeds.example.com/duplicate.atom,60,high',
+      '" 无效,链接 "," GH_INVALID ",https://example.com/not-wechat,https://feeds.example.com/invalid.atom,60,',
+    ].join("\n"), new Set());
+    assert.deepEqual(preview.rows.slice(1), [
+      {
+        line: 3,
+        status: "duplicate",
+        errors: ["wechat_id 在 CSV 中重复"],
+        input: { name: "文件内,重复", wechat_id: "GH_FIRST", priority: "high" },
+      },
+      {
+        line: 4,
+        status: "error",
+        errors: ["sample_url 必须是 mp.weixin.qq.com 的 HTTPS 链接"],
+        input: { name: "无效,链接", wechat_id: "GH_INVALID", priority: "normal" },
+      },
+    ]);
+  });
+
   it("previews 500 valid rows", () => {
     const csv = [HEADER, ...Array.from({ length: 500 }, (_, index) => row(`公众号${index}`, `gh_${index}`))].join("\n");
     const preview = previewWechatImport(csv, new Set());
