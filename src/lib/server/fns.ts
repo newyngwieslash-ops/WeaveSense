@@ -13,6 +13,44 @@ import { ensureSeeded } from "./seed";
 import { runKeywordJob, runSourceJob, tickDueSources } from "./scheduler";
 import { isPlatform, type PlatformId } from "@/lib/platforms";
 import { shortId } from "@/lib/utils";
+import { importWechatSources, previewWechatImport } from "./wechat-import";
+import { createProductionWechatGatewayClient } from "./wechat-gateway-client";
+
+const MAX_WECHAT_IMPORT_BYTES = 1024 * 1024;
+
+function validateWechatCsvInput(input: unknown): { csv: string } {
+  if (!input || typeof input !== "object" || Array.isArray(input) ||
+    Object.keys(input).length !== 1 || !("csv" in input) || typeof input.csv !== "string") {
+    throw new Error("wechat_import_invalid_input");
+  }
+  if (Buffer.byteLength(input.csv, "utf8") > MAX_WECHAT_IMPORT_BYTES) {
+    throw new Error("CSV 文件不能超过 1 MiB");
+  }
+  return { csv: input.csv };
+}
+
+function validateWechatImportInput(input: unknown): { csv: string; confirmed_lines: number[] } {
+  if (!input || typeof input !== "object" || Array.isArray(input) ||
+    Object.keys(input).length !== 2 || !("csv" in input) || !("confirmed_lines" in input) ||
+    typeof input.csv !== "string" || !Array.isArray(input.confirmed_lines) ||
+    input.confirmed_lines.length > 1_000 || input.confirmed_lines.some((line) =>
+      !Number.isSafeInteger(line) || Number(line) < 2) ||
+    new Set(input.confirmed_lines).size !== input.confirmed_lines.length) {
+    throw new Error("wechat_import_invalid_input");
+  }
+  if (Buffer.byteLength(input.csv, "utf8") > MAX_WECHAT_IMPORT_BYTES) {
+    throw new Error("CSV 文件不能超过 1 MiB");
+  }
+  return { csv: input.csv, confirmed_lines: input.confirmed_lines as number[] };
+}
+
+async function getWechatImportSql() {
+  try {
+    return await getSql();
+  } catch {
+    throw new Error("database_check_failed");
+  }
+}
 
 export const bootstrapFn = createServerFn({ method: "POST" }).handler(async () => {
   const seed = await ensureSeeded();
@@ -35,6 +73,51 @@ export const listSourcesFn = createServerFn({ method: "GET" }).handler(async () 
   await ensureSeeded();
   return listSources();
 });
+
+export const previewWechatImportFn = createServerFn({ method: "POST" })
+  .validator(validateWechatCsvInput)
+  .handler(async ({ data }) => {
+    const sql = await getWechatImportSql();
+    let rows: Array<{ handle: string }>;
+    try {
+      rows = await sql.query<{ handle: string }>(
+        "select handle from sources where platform = 'wechat'",
+      );
+    } catch {
+      throw new Error("database_check_failed");
+    }
+    return previewWechatImport(data.csv, new Set(rows.map((row) => row.handle)));
+  });
+
+export const importWechatSourcesFn = createServerFn({ method: "POST" })
+  .validator(validateWechatImportInput)
+  .handler(async ({ data }) => {
+    const sql = await getWechatImportSql();
+    let existingRows: Array<{ handle: string }>;
+    try {
+      existingRows = await sql.query<{ handle: string }>(
+        "select handle from sources where platform = 'wechat'",
+      );
+    } catch {
+      throw new Error("database_check_failed");
+    }
+    const client = await createProductionWechatGatewayClient();
+    return importWechatSources(data, {
+      existingWechatIds: new Set(existingRows.map((row) => row.handle)),
+      findExisting: async (wechatId) => Boolean((await sql.query<{ id: string }>(
+        "select id from sources where platform = 'wechat' and lower(handle) = lower($1) limit 1",
+        [wechatId],
+      ))[0]),
+      putSource: (source) => client.putSource(source),
+      insertSource: (source) => sql.query(
+        `insert into sources (
+           id, platform, name, handle, url, feed_url, interval_minutes, enabled, adapter, notes, status
+         ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [source.id, source.platform, source.name, source.handle, source.url, source.feed_url,
+          source.interval_minutes, source.enabled, source.adapter, source.notes, source.status],
+      ),
+    });
+  });
 
 export const scanSourceFn = createServerFn({ method: "POST" })
   .validator((input: { id: string }) => input)

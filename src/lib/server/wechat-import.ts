@@ -13,20 +13,36 @@ const MAX_DATA_ROWS = 1_000;
 
 export type CsvRecord = { line: number; fields: string[] };
 
+export type WechatImportValue = {
+  source_id: string;
+  name: string;
+  wechat_id: string;
+  sample_url: string;
+  primary_feed_url: string;
+  interval_minutes: 60;
+  priority: "normal" | "high";
+};
+
+export type WechatSourceInsert = {
+  id: string;
+  platform: "wechat";
+  name: string;
+  handle: string;
+  url: string;
+  feed_url: "";
+  interval_minutes: 60;
+  enabled: true;
+  adapter: "wechat_gateway";
+  notes: `priority:${"normal" | "high"}`;
+  status: "idle";
+};
+
 export type WechatImportPreview = {
   rows: Array<{
     line: number;
     status: "valid" | "duplicate" | "error";
     errors: string[];
-    value?: {
-      source_id: string;
-      name: string;
-      wechat_id: string;
-      sample_url: string;
-      primary_feed_url: string;
-      interval_minutes: 60;
-      priority: "normal" | "high";
-    };
+    value?: WechatImportValue;
   }>;
   valid: number;
   duplicate: number;
@@ -229,4 +245,112 @@ export function previewWechatImport(
     }
   }
   return preview;
+}
+
+const GATEWAY_IMPORT_ERRORS = new Set([
+  "wechat_gateway_timeout",
+  "wechat_gateway_unauthorized",
+  "wechat_gateway_source_rejected",
+  "wechat_gateway_http_error",
+  "wechat_gateway_invalid_response",
+  "wechat_gateway_response_too_large",
+  "wechat_gateway_unavailable",
+]);
+
+function gatewayImportError(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+  return GATEWAY_IMPORT_ERRORS.has(message) ? message : "wechat_gateway_unavailable";
+}
+
+export async function importWechatSources(
+  input: { csv: string; confirmed_lines: number[] },
+  dependencies: {
+    existingWechatIds: ReadonlySet<string>;
+    findExisting: (wechatId: string) => Promise<boolean>;
+    putSource: (source: WechatImportValue) => Promise<unknown>;
+    insertSource: (source: WechatSourceInsert) => Promise<unknown>;
+  },
+): Promise<{ created: number; skipped: number;
+  failed: Array<{ line: number; name: string; error: string }> }> {
+  if (typeof input?.csv !== "string" || !Array.isArray(input?.confirmed_lines) ||
+    input.confirmed_lines.length > MAX_DATA_ROWS || input.confirmed_lines.some((line) =>
+      !Number.isSafeInteger(line) || line < 2) ||
+    new Set(input.confirmed_lines).size !== input.confirmed_lines.length ||
+    Buffer.byteLength(input.csv, "utf8") > MAX_BYTES) {
+    throw new Error("wechat_import_invalid_input");
+  }
+  const preview = previewWechatImport(input.csv, dependencies.existingWechatIds);
+  if (preview.rows.length === 1 && preview.rows[0]?.line === 1 && preview.error === 1) {
+    throw new Error("wechat_import_invalid_input");
+  }
+  const selected = new Set(input.confirmed_lines);
+  const knownLines = new Set(preview.rows.map((row) => row.line));
+  if ([...selected].some((line) => !knownLines.has(line))) {
+    throw new Error("wechat_import_invalid_input");
+  }
+
+  const names = new Map(parseCsvRecords(input.csv).slice(1)
+    .map((record) => [record.line, record.fields[0]?.trim() ?? ""]));
+  let created = 0;
+  let skipped = 0;
+  const failed: Array<{ line: number; name: string; error: string }> = [];
+  for (const row of preview.rows) {
+    if (!selected.has(row.line)) continue;
+    const name = row.value?.name ?? names.get(row.line) ?? "";
+    if (row.status === "duplicate") {
+      skipped += 1;
+      continue;
+    }
+    if (row.status !== "valid" || !row.value) {
+      failed.push({ line: row.line, name, error: row.errors.join("；") || "wechat_import_invalid_row" });
+      continue;
+    }
+
+    let exists: boolean;
+    try {
+      exists = await dependencies.findExisting(row.value.wechat_id);
+    } catch {
+      failed.push({ line: row.line, name, error: "database_check_failed" });
+      continue;
+    }
+    if (exists) {
+      skipped += 1;
+      continue;
+    }
+    try {
+      await dependencies.putSource(row.value);
+    } catch (error) {
+      failed.push({ line: row.line, name, error: gatewayImportError(error) });
+      continue;
+    }
+
+    const source: WechatSourceInsert = {
+      id: row.value.source_id,
+      platform: "wechat",
+      name: row.value.name,
+      handle: row.value.wechat_id,
+      url: row.value.sample_url,
+      feed_url: "",
+      interval_minutes: 60,
+      enabled: true,
+      adapter: "wechat_gateway",
+      notes: `priority:${row.value.priority}`,
+      status: "idle",
+    };
+    try {
+      await dependencies.insertSource(source);
+      created += 1;
+    } catch {
+      try {
+        if (await dependencies.findExisting(row.value.wechat_id)) {
+          skipped += 1;
+        } else {
+          failed.push({ line: row.line, name, error: "database_insert_failed" });
+        }
+      } catch {
+        failed.push({ line: row.line, name, error: "database_check_failed" });
+      }
+    }
+  }
+  return { created, skipped, failed };
 }

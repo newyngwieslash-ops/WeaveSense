@@ -20,7 +20,7 @@
     "cron:start": "node scripts/cron-loop.mjs",
     "gateway:start": "node workers/wechat-gateway/server.mjs",
     "gateway:test": "node --test workers/wechat-gateway/*.test.mjs",
-    "test": "node --test scripts/cron-loop.test.mjs && node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/auth/gate-identity.test.ts src/lib/wechat-canonical.test.ts src/lib/server/wechat-import.test.ts src/lib/server/rss.test.ts src/lib/server/cron.test.ts src/lib/server/reconciliation-queue.test.ts src/lib/server/extract-targets.test.ts src/lib/server/scheduler.test.ts",
+    "test": "node --test scripts/cron-loop.test.mjs && node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/auth/gate-identity.test.ts src/lib/wechat-canonical.test.ts src/lib/server/wechat-gateway-client.test.ts src/lib/server/wechat-import.test.ts src/lib/server/rss.test.ts src/lib/server/cron.test.ts src/lib/server/reconciliation-queue.test.ts src/lib/server/extract-targets.test.ts src/lib/server/scheduler.test.ts",
     "lint": "eslint .",
     "pack:source": "node scripts/pack-source.mjs"
   },
