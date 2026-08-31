@@ -8,6 +8,7 @@ import {
   CRON_SERVER_BUDGET_MS,
   CRON_SOURCE_RESERVE_MS,
   CRON_SOURCE_CONCURRENCY,
+  WECHAT_GATEWAY_FEED_TIMEOUT_MS,
   parseCronTickLimit,
   reconciliationDue,
   requestWechatReconciliation,
@@ -25,6 +26,8 @@ test("cron reserves enough time to finish all four extraction targets", () => {
   assert.ok(CRON_SERVER_BUDGET_MS - CRON_INGEST_RESERVE_MS >= CRON_SOURCE_RESERVE_MS);
   assert.ok(CRON_SERVER_BUDGET_MS - CRON_INGEST_RESERVE_MS - CRON_GATEWAY_RESERVE_MS
     >= CRON_SOURCE_RESERVE_MS);
+  assert.equal(WECHAT_GATEWAY_FEED_TIMEOUT_MS, 95_000);
+  assert.ok(WECHAT_GATEWAY_FEED_TIMEOUT_MS < CRON_SOURCE_RESERVE_MS);
 });
 
 test("requires an exact non-empty bearer token", () => {

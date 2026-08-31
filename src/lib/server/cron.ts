@@ -20,6 +20,7 @@ export const CRON_INGEST_RESERVE_MS = 55_000;
 export const CRON_EXTRACT_RESERVE_MS = 460_000;
 export const CRON_GATEWAY_RESERVE_MS = 125_000;
 export const CRON_SOURCE_CONCURRENCY = 9;
+export const WECHAT_GATEWAY_FEED_TIMEOUT_MS = 95_000;
 
 export type CronBatchOptions = {
   deadlineMs?: number;

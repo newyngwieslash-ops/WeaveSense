@@ -10,7 +10,8 @@ import { XMLParser } from "fast-xml-parser";
 import { toAtom } from "./atom.mjs";
 import { createFixtureServer } from "./fixture-server.mjs";
 import { canonicalWechatId, fetchPrimary } from "./primary.mjs";
-import { authorize, createGateway, createGatewayServer, validateSourceInput } from "./server.mjs";
+import { authorize, createGateway, createGatewayServer, PAID_FEED_BUDGET_MS,
+  validateSourceInput } from "./server.mjs";
 import { shouldReconcile } from "./state-machine.mjs";
 import { openStore } from "./store.mjs";
 
@@ -1020,6 +1021,35 @@ test("reconciliation crossing midnight after the lock check makes no paid call",
   assert.deepEqual(store.getProviderUsage("2026-08-29", "dajiala"), { calls: 0, amount: 0 });
 });
 
+test("a pending detail crossing Shanghai midnight is deferred before provider spend", async (t) => {
+  const moments = [
+    new Date("2026-08-28T15:59:59.000Z"),
+    new Date("2026-08-28T16:00:00.000Z"),
+  ];
+  let clockReads = 0;
+  let details = 0;
+  const store = openStore(":memory:");
+  t.after(() => store.close());
+  store.upsertSource(integrationSource, "2026-08-28T00:00:00.000Z");
+  store.enqueueDetail(integrationSource.id, { ...paidListItem,
+    canonical_id: "wx:MzPaid:2:1", body_text: "", discovered_at: "2026-08-28T15:00:00.000Z" },
+  "2026-08-28T15:00:00.000Z");
+  const gateway = createGateway({ store, token: "gateway-test", primary: async () => [],
+    now: () => moments[Math.min(clockReads++, moments.length - 1)], paid: {
+      estimatedDetailCost: 0.045,
+      async listToday() { return { items: [], cost_money: 0.06 }; },
+      async enrichArticle(item) { details += 1; return { ...item, body_html: "正文" }; },
+    } });
+  const result = await (await gateway(new Request("http://gateway.local/v1/reconcile", {
+    method: "POST", headers: { authorization: "Bearer gateway-test" },
+  }))).json();
+  assert.equal(details, 0);
+  assert.equal(result.completed_details, 0);
+  assert.equal(result.pending_details, 1);
+  assert.deepEqual(store.getProviderUsage("2026-08-28", "dajiala"), { calls: 0, amount: 0 });
+  assert.deepEqual(store.getProviderUsage("2026-08-29", "dajiala"), { calls: 0, amount: 0 });
+});
+
 test("feed fallback reserves on the clock at the paid call, not request entry", async (t) => {
   let current = new Date("2026-08-28T15:59:59.000Z");
   const store = openStore(":memory:");
@@ -1090,6 +1120,97 @@ test("reconciliation stops starting paid detail and source calls at its cooperat
   assert.equal(result.budget_deferred, true);
   assert.equal(result.deferred, 1);
   assert.equal(result.deferred_paid_calls, 1);
+});
+
+test("feed fallback returns the paid list floor and queues details before its deadline", async (t) => {
+  let current = new Date("2026-08-28T12:00:00.000Z");
+  let details = 0;
+  const store = openStore(":memory:");
+  t.after(() => store.close());
+  store.upsertSource(integrationSource, "2026-08-28T00:00:00.000Z");
+  store.recordPrimaryFailure(integrationSource.id, "2026-08-28T11:00:00.000Z");
+  const gateway = createGateway({ store, token: "gateway-test", now: () => current,
+    feedBudgetMs: 45_000, primary: async () => { throw new Error("down"); }, paid: {
+      estimatedListCost: 0.08, estimatedDetailCost: 0.045,
+      async listToday() {
+        current = new Date(current.getTime() + 24_000);
+        return { items: [paidListItem], cost_money: 0.06 };
+      },
+      async enrichArticle(item) { details += 1; return { ...item, body_html: "正文" }; },
+    } });
+  const response = await gateway(new Request(`http://gateway.local/v1/feeds/${integrationSource.id}.atom`, {
+    headers: { authorization: "Bearer gateway-test" },
+  }));
+  assert.equal(response.status, 200);
+  assert.match(await response.text(), /付费文章/);
+  assert.equal(details, 0);
+  assert.equal(store.pendingDetailCount(), 1);
+  assert.deepEqual(store.listReconciliationOutbox(), [integrationSource.id]);
+});
+
+test("feed fallback stops starting later details and keeps their list floor", async (t) => {
+  let current = new Date("2026-08-28T12:00:00.000Z");
+  let details = 0;
+  const second = { ...paidListItem, title: "第二篇付费文章",
+    original_url: "https://mp.weixin.qq.com/s?__biz=MzPaid&mid=3&idx=1" };
+  const store = openStore(":memory:");
+  t.after(() => store.close());
+  store.upsertSource(integrationSource, "2026-08-28T00:00:00.000Z");
+  store.recordPrimaryFailure(integrationSource.id, "2026-08-28T11:00:00.000Z");
+  const gateway = createGateway({ store, token: "gateway-test", now: () => current,
+    feedBudgetMs: 70_000, primary: async () => { throw new Error("down"); }, paid: {
+      estimatedListCost: 0.08, estimatedDetailCost: 0.045,
+      async listToday() {
+        current = new Date(current.getTime() + 1_000);
+        return { items: [paidListItem, second], cost_money: 0.06 };
+      },
+      async enrichArticle(item) {
+        details += 1;
+        current = new Date(current.getTime() + 49_000);
+        return { ...item, body_html: "正文", cost_money: 0.04 };
+      },
+    } });
+  const response = await gateway(new Request(`http://gateway.local/v1/feeds/${integrationSource.id}.atom`, {
+    headers: { authorization: "Bearer gateway-test" },
+  }));
+  const xml = await response.text();
+  assert.equal(response.status, 200);
+  assert.match(xml, /第二篇付费文章/);
+  assert.equal(details, 1);
+  assert.equal(store.pendingDetailCount(), 1);
+});
+
+test("an aborted paid feed is replayed from the outbox until ACK", async (t) => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const store = openStore(":memory:");
+  t.after(() => store.close());
+  store.upsertSource(integrationSource, "2026-08-28T00:00:00.000Z");
+  store.recordPrimaryFailure(integrationSource.id, "2026-08-28T11:00:00.000Z");
+  const gateway = createGateway({ store, token: "gateway-test", now: () => new Date("2026-08-28T12:00:00Z"),
+    primary: async () => { throw new Error("down"); }, paid: { estimatedListCost: 0.08,
+      async listToday() { await gate; return { items: [], cost_money: 0.06 }; } } });
+  const controller = new AbortController();
+  const feed = gateway(new Request(`http://gateway.local/v1/feeds/${integrationSource.id}.atom`, {
+    headers: { authorization: "Bearer gateway-test" }, signal: controller.signal,
+  }));
+  await new Promise((resolve) => setImmediate(resolve));
+  controller.abort();
+  release();
+  assert.equal((await feed).status, 200);
+  const replay = await (await gateway(new Request("http://gateway.local/v1/reconcile", {
+    method: "POST", headers: { authorization: "Bearer gateway-test" },
+  }))).json();
+  assert.deepEqual(replay.outbox_source_ids, [integrationSource.id]);
+  const ack = await gateway(new Request("http://gateway.local/v1/reconcile/ack", { method: "POST",
+    headers: { authorization: "Bearer gateway-test" },
+    body: JSON.stringify({ source_ids: [integrationSource.id] }) }));
+  assert.equal(ack.status, 200);
+  assert.deepEqual(store.listReconciliationOutbox(), []);
+});
+
+test("the default paid feed deadline leaves an app response margin", () => {
+  assert.equal(PAID_FEED_BUDGET_MS, 90_000);
 });
 
 test("PUT rejects owner changes, serializes with feed, resets repaired mapping, and sanitizes JSON", async (t) => {

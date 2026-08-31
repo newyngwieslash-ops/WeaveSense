@@ -11,6 +11,7 @@ import { openStore } from "./store.mjs";
 const PROVIDER = "dajiala";
 const DAY_MS = 86_400_000;
 const DEFAULT_RECONCILIATION_BUDGET_MS = 100_000;
+export const PAID_FEED_BUDGET_MS = 90_000;
 const PAID_CALL_RESERVE_MS = 22_000;
 const SAFE_SOURCE_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 
@@ -102,9 +103,11 @@ function atom(source, items) {
 
 export function createGateway({ store, primary = fetchPrimary, paid = null, token, dailyBudget,
   now = () => new Date(), allowedFeedHosts,
-  reconciliationBudgetMs = DEFAULT_RECONCILIATION_BUDGET_MS }) {
+  reconciliationBudgetMs = DEFAULT_RECONCILIATION_BUDGET_MS,
+  feedBudgetMs = PAID_FEED_BUDGET_MS }) {
   if (!store) throw new TypeError("store is required");
   if (typeof primary !== "function") throw new TypeError("primary must be a function");
+  if (!Number.isFinite(feedBudgetMs) || feedBudgetMs < 0) throw new TypeError("feedBudgetMs is invalid");
   const budget = budgetOf(dailyBudget);
   // ponytail: single-process lock; replace with a SQLite claim before running gateway replicas.
   const sourceOperations = new Map();
@@ -238,7 +241,7 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
     const completed = current();
     store.upsertGatewayItems(source.source_id, items, completed.toISOString());
     store.recordPaidResult(source.source_id, "ok", null, "paid_fallback",
-      completed.toISOString(), listStarted.toISOString(), Boolean(reconciliationDay));
+      completed.toISOString(), listStarted.toISOString(), true);
     store.deleteGatewayItemsBefore(since(completed, 30));
     return { items: store.listGatewayItems(source.source_id, since(completed, 7)),
       spentDays: [...spentDays], deadlineDeferred, deferredPaidCalls };
@@ -253,9 +256,10 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
       store.recordPrimaryFailure(source.source_id, failedAt.toISOString());
       const failed = store.getSource(source.source_id);
       if (!paidDecision(failed, failedAt).allowed) return json(503, { error: "primary_feed_failed" });
-      const fallback = await runPaid(failed, () => clock(now));
+      const fallback = await runPaid(failed, () => clock(now), null, date.getTime() + feedBudgetMs);
       if (fallback.budgetExhausted) return json(429, { code: "paid_budget_exhausted" });
-      return fallback.response ?? atom(failed, fallback.items);
+      return fallback.response ?? atom(failed, fallback.items
+        ?? store.listGatewayItems(failed.source_id, since(clock(now), 7)));
     }
     const completed = clock(now);
     store.upsertGatewayItems(source.source_id,
@@ -289,6 +293,7 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
         const detailResult = await sourceLock(pending.source_id, "reconcile", async () => {
           const detailStarted = clock(now);
           if (detailStarted.getTime() + PAID_CALL_RESERVE_MS > deadlineMs) return "deferred";
+          if (shanghaiDay(detailStarted) !== day) return "deferred";
           if (Boolean(store.getGatewayItem(pending.source_id, pending.canonical_id)?.body_complete)) {
             store.removePendingDetail(pending.source_id, pending.canonical_id);
             return "completed";

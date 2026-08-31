@@ -5,6 +5,7 @@ import { fetchTelethonHistory, telethonReady } from "../telethon";
 import { prod, wechatGatewayConfigured } from "../config";
 import { fetchJson, fetchText } from "../http";
 import { parseFeedXml } from "../rss-parser";
+import { WECHAT_GATEWAY_FEED_TIMEOUT_MS } from "../cron";
 import type { CollectorAdapter, NormalizedItem, SourceRecord } from "./types";
 
 function youtubeFeedUrl(source: SourceRecord): string {
@@ -33,7 +34,7 @@ const wechatGatewayAdapter: CollectorAdapter = {
     if (!wechatGatewayConfigured()) throw new Error("微信公众号源网关未配置");
     const xml = await fetchText(
       `${prod.wechatGatewayUrl}/v1/feeds/${encodeURIComponent(source.id)}.atom`,
-      20000,
+      WECHAT_GATEWAY_FEED_TIMEOUT_MS,
       "application/atom+xml",
       { Authorization: `Bearer ${prod.wechatGatewayToken}` },
     );
