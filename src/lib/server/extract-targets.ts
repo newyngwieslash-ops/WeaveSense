@@ -25,27 +25,31 @@ export function extractTargetKey(target: ExtractTarget): string {
   return `url:${createHash("sha256").update(target.public_url || target.source_url).digest("hex")}`;
 }
 
-async function commitResult(sql: QuerySql, jobId: string, itemId: string, label: string,
+async function commitResult(sql: QuerySql, jobId: string, claimToken: string, itemId: string, label: string,
   result: Extracted): Promise<void> {
   const text = result.text.slice(0, 12000);
   if (!text) {
-    await sql.query(`update extract_jobs set status='ok', result_text='', model=$2,
-      finished_at=now(), error='' where id=$1`, [jobId, result.model]);
+    const rows = await sql.query(`update extract_jobs set status='ok', result_text='', model=$2,
+      finished_at=now(), error='', claim_token=''
+      where id=$1 and claim_token=$3 and status='running' returning id`,
+    [jobId, result.model, claimToken]);
+    if (rows.length !== 1) throw new Error("extraction claim lost");
     return;
   }
   const marker = `[${label}]`;
   const [row] = await sql.query<{ committed: number }>(`with finished as (
-      update extract_jobs set status='ok', result_text=$2, model=$3,
-        finished_at=now(), error=''
-      where id=$1 and exists (select 1 from items where id=$4)
+      update extract_jobs set status='ok', result_text=$3, model=$4,
+        finished_at=now(), error='', claim_token=''
+      where id=$1 and claim_token=$2 and status='running'
+        and exists (select 1 from items where id=$5)
       returning id
     ), appended as (
-      update items set body = body || case when body='' then '' else E'\n\n' end || $6
-      where id=$4 and exists (select 1 from finished) and position($5 in body)=0
+      update items set body = body || case when body='' then '' else E'\n\n' end || $7
+      where id=$5 and exists (select 1 from finished) and position($6 in body)=0
       returning id
     )
     select count(*)::int as committed from finished`,
-  [jobId, text, result.model, itemId, marker, `${marker}\n${text}`]);
+  [jobId, claimToken, text, result.model, itemId, marker, `${marker}\n${text}`]);
   if (row?.committed !== 1) throw new Error("extraction commit failed");
 }
 
@@ -65,26 +69,27 @@ export async function runExtractTargets({ sql, itemId, targets, load, ocr, asr }
   let lastError = "";
   for (const { target, kind, key } of eligible) {
     const jobId = randomUUID();
+    const claimToken = randomUUID();
     await sql.query(`insert into extract_jobs (id, item_id, media_id, target_key, kind, status)
       values ($1,$2,$3,$4,$5,'pending') on conflict (item_id, target_key) do nothing`,
     [jobId, itemId, target.id, key, kind]);
     const [claimed] = await sql.query<{ id: string }>(`update extract_jobs
-      set status='running', attempts=attempts+1, error='', finished_at=null, started_at=now()
+      set status='running', attempts=attempts+1, error='', finished_at=null, started_at=now(), claim_token=$3
       where item_id=$1 and target_key=$2 and attempts < 3
         and (status in ('pending','error')
           or (status='running' and (started_at is null or started_at <= now() - interval '15 minutes')))
-      returning id`, [itemId, key]);
+      returning id`, [itemId, key, claimToken]);
     if (!claimed) continue;
     try {
       const file = await load(target);
       const result = kind === "ocr" ? await ocr(file.bytes, file.contentType)
         : await asr(file.bytes, "media.mp4");
-      await commitResult(sql, claimed.id, itemId, `${kind.toUpperCase()}:${key.slice(0, 16)}`, result);
+      await commitResult(sql, claimed.id, claimToken, itemId, `${kind.toUpperCase()}:${key.slice(0, 16)}`, result);
       ran += 1;
     } catch (error) {
       lastError = error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300);
-      await sql.query("update extract_jobs set status='error', error=$2, finished_at=now() where id=$1",
-        [claimed.id, lastError]);
+      await sql.query(`update extract_jobs set status='error', error=$2, finished_at=now(), claim_token=''
+        where id=$1 and claim_token=$3 and status='running'`, [claimed.id, lastError, claimToken]);
     }
   }
   const states = await sql.query<{ status: string; attempts: number }>(

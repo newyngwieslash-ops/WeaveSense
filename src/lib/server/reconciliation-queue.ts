@@ -5,6 +5,8 @@ type QuerySql = Pick<Sql, "query">;
 
 type RunResult = { items_found: number; items_new: number; error: string };
 type SourceJobResult = RunResult & { source_id: string };
+const SAFE_SOURCE_ID = /^[A-Za-z0-9._:-]{1,128}$/;
+export const RECONCILIATION_QUEUE_CONCURRENCY = 2;
 
 function validCount(value: unknown): value is number {
   return Number.isSafeInteger(value) && Number(value) >= 0;
@@ -12,6 +14,7 @@ function validCount(value: unknown): value is number {
 
 export async function enqueueReconciliationSources(sql: QuerySql, sourceIds: readonly string[]): Promise<number> {
   const unique = [...new Set(sourceIds.map((value) => value.trim()).filter(Boolean))];
+  if (unique.some((sourceId) => !SAFE_SOURCE_ID.test(sourceId))) throw new TypeError("invalid source id");
   if (unique.length) await sql.query(
     `insert into reconciliation_queue (source_id)
      select source_id from unnest($1::text[]) as source_id
@@ -54,7 +57,7 @@ export async function processReconciliationQueue(
       );
     }
     return result;
-  }, budget);
+  }, { ...budget, concurrency: RECONCILIATION_QUEUE_CONCURRENCY });
   return {
     processed: results.length,
     succeeded: results.filter(({ error }) => !error).length,

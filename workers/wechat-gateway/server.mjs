@@ -87,6 +87,7 @@ function normalizeItem(item, source, date, provider = item?.provider ?? PROVIDER
     published_at: publishedAt,
     original_url: originalUrl,
     body_text: String(item?.body_text || bodyText(item?.body_html)),
+    body_complete: item?.body_complete === true,
     cover_url: String(item?.cover_url ?? ""),
     provider,
     discovered_at: String(item?.discovered_at ?? date.toISOString()),
@@ -198,7 +199,7 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
     for (const { raw, item: listedItem } of unique.values()) {
       let item = listedItem;
       const cachedItem = cached.get(listedItem.canonical_id);
-      if (!listedItem.body_text && !String(cachedItem?.body_text ?? "").trim()
+      if (!listedItem.body_complete && !Boolean(cachedItem?.body_complete)
         && typeof paid.enrichArticle === "function") {
         const detailEstimate = Number(paid.estimatedDetailCost ?? 0.045);
         const detailStarted = deadlineDeferred ? null : current();
@@ -211,6 +212,7 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
           continue;
         }
         if (reconciliationDay && shanghaiDay(detailStarted) !== reconciliationDay) {
+          store.enqueueDetail(source.source_id, listedItem, detailStarted.toISOString());
           items.push(item);
           continue;
         }
@@ -220,7 +222,7 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
           try {
             const detailed = await paid.enrichArticle(raw);
             store.adjustSpend(detailReservation, Number(detailed.cost_money ?? detailEstimate));
-            item = normalizeItem(detailed, source, current());
+            item = normalizeItem({ ...detailed, body_complete: true }, source, current());
           } catch (error) {
             store.adjustSpend(detailReservation, detailEstimate);
             if (error?.kind !== "mapping_error" && error?.retryable !== false) {
@@ -287,7 +289,7 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
         const detailResult = await sourceLock(pending.source_id, "reconcile", async () => {
           const detailStarted = clock(now);
           if (detailStarted.getTime() + PAID_CALL_RESERVE_MS > deadlineMs) return "deferred";
-          if (String(store.getGatewayItem(pending.source_id, pending.canonical_id)?.body_text ?? "").trim()) {
+          if (Boolean(store.getGatewayItem(pending.source_id, pending.canonical_id)?.body_complete)) {
             store.removePendingDetail(pending.source_id, pending.canonical_id);
             return "completed";
           }
@@ -303,7 +305,7 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
             settled = true;
             const completed = clock(now);
             store.completeDetail(source.source_id, pending.canonical_id,
-              normalizeItem(detailed, source, completed), completed.toISOString());
+              normalizeItem({ ...detailed, body_complete: true }, source, completed), completed.toISOString());
             return "completed";
           } catch (error) {
             if (!settled) store.adjustSpend(reservation, detailEstimate);

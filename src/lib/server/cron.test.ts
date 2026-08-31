@@ -18,6 +18,7 @@ import {
   runCronStages,
   runReconciledSourceJobs,
 } from "./cron.ts";
+import { RECONCILIATION_QUEUE_CONCURRENCY } from "./reconciliation-queue.ts";
 
 test("cron reserves enough time to finish all four extraction targets", () => {
   assert.equal(CRON_EXTRACT_RESERVE_MS, 460_000);
@@ -90,8 +91,11 @@ test("four half-hour slots give 100 due sources capacity without starving extrac
   const capacity = slots.filter((slot) => slot === "collect")
     .reduce((sum) => sum + cronDueQuotas(200).sources, 0);
   assert.ok(capacity >= 100);
-  assert.ok(Math.ceil(cronDueQuotas(200).sources / CRON_SOURCE_CONCURRENCY) * CRON_SOURCE_RESERVE_MS
-    + CRON_INGEST_RESERVE_MS + CRON_GATEWAY_RESERVE_MS <= CRON_SERVER_BUDGET_MS);
+  const worstCaseMs = Math.ceil(2 / RECONCILIATION_QUEUE_CONCURRENCY) * CRON_SOURCE_RESERVE_MS
+    + Math.ceil(cronDueQuotas(200).sources / CRON_SOURCE_CONCURRENCY) * CRON_SOURCE_RESERVE_MS
+    + CRON_INGEST_RESERVE_MS + CRON_GATEWAY_RESERVE_MS;
+  assert.equal(worstCaseMs, 680_000);
+  assert.ok(worstCaseMs <= CRON_SERVER_BUDGET_MS);
   assert.ok(CRON_SERVER_BUDGET_MS >= CRON_SOURCE_RESERVE_MS * 2
     + CRON_INGEST_RESERVE_MS + CRON_EXTRACT_RESERVE_MS);
 });
@@ -112,7 +116,7 @@ test("source batch concurrency is fixed and never fans out all due work", async 
     return value;
   }, { concurrency: CRON_SOURCE_CONCURRENCY });
   assert.equal(batch.results.length, 34);
-  assert.equal(peak, 7);
+  assert.equal(peak, 9);
 });
 
 test("rejects unknown reconciliation response fields", async () => {

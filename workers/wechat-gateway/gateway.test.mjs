@@ -136,7 +136,20 @@ test("migrates an existing source database with paid-success history", async (t)
     id integer primary key autoincrement, day text not null, provider text not null,
     estimate real not null, status text not null check (status in ('open', 'settled')),
     created_at text not null, settled_at text
-  )`);
+  );
+  create table gateway_items (
+    source_id text not null, canonical_id text not null, account_id text not null,
+    account_name text not null, title text not null, published_at text not null,
+    original_url text not null, body_text text not null default '', cover_url text not null default '',
+    provider text not null, providers_seen text not null default '[]', discovered_at text not null,
+    updated_at text not null, primary key (source_id, canonical_id)
+  );
+  insert into gateway_items
+    (source_id,canonical_id,account_id,account_name,title,published_at,original_url,body_text,
+      provider,discovered_at,updated_at)
+    values ('legacy','wx:legacy:1:1','gh_legacy','旧公众号','旧缓存','2026-08-28T01:00:00.000Z',
+      'https://mp.weixin.qq.com/s?__biz=legacy&mid=1&idx=1','旧摘要','primary',
+      '2026-08-28T01:01:00.000Z','2026-08-28T01:01:00.000Z')`);
   legacy.close();
   const store = openStore(path);
   const columns = new DatabaseSync(path, { readOnly: true });
@@ -149,9 +162,12 @@ test("migrates an existing source database with paid-success history", async (t)
     .some(({ name }) => name === "last_paid_ok_at"));
   assert.ok(columns.prepare("pragma table_info(provider_reservations)").all()
     .some(({ name }) => name === "actual"));
+  assert.ok(columns.prepare("pragma table_info(gateway_items)").all()
+    .some(({ name }) => name === "body_complete"));
   assert.match(columns.prepare("select sql from sqlite_master where name = 'provider_reservations'")
     .get().sql, /overrun/);
   assert.equal(store.getSource("legacy").last_paid_ok_at, "2026-08-28T02:00:00.000Z");
+  assert.equal(store.getGatewayItem("legacy", "wx:legacy:1:1").body_complete, 0);
 });
 
 test("rolls back a failed store migration and closes its database", async (t) => {
@@ -300,7 +316,7 @@ test("merges cached provider history without erasing article content", (t) => {
     canonical_id: "wx:MzA1:9:1", account_id: "gh_example", account_name: "示例号",
     title: "原始标题", published_at: "2026-08-28T08:00:00.000Z",
     original_url: "https://mp.weixin.qq.com/s?__biz=MzA1&mid=9&idx=1",
-    body_text: "完整正文", cover_url: "https://mmbiz.qpic.cn/cover.jpg",
+    body_text: "完整正文", body_complete: true, cover_url: "https://mmbiz.qpic.cn/cover.jpg",
     provider: "primary", discovered_at: "2026-08-28T09:00:00.000Z",
   };
   const source = {
@@ -314,13 +330,14 @@ test("merges cached provider history without erasing article content", (t) => {
     "2026-08-28T00:00:00.000Z");
   assert.throws(() => store.upsertGatewayItems("wx-other", [primary]), /account_id/);
   store.upsertGatewayItems("wx-1", [primary], "2026-08-28T09:00:00.000Z");
-  store.upsertGatewayItems("wx-1", [{ ...primary, title: "付费标题", body_text: "", cover_url: "",
-    provider: "dajiala", discovered_at: "2026-08-28T10:00:00.000Z" }],
+  store.upsertGatewayItems("wx-1", [{ ...primary, title: "付费标题", body_text: "降级摘要", cover_url: "",
+    body_complete: false, provider: "dajiala", discovered_at: "2026-08-28T10:00:00.000Z" }],
   "2026-08-28T10:00:00.000Z");
   const rows = store.listGatewayItems("wx-1", "2026-08-28T00:00:00.000Z");
   assert.equal(rows.length, 1);
   assert.equal(rows[0].title, "付费标题");
   assert.equal(rows[0].body_text, "完整正文");
+  assert.equal(rows[0].body_complete, 1);
   assert.equal(rows[0].cover_url, "https://mmbiz.qpic.cn/cover.jpg");
   assert.deepEqual(JSON.parse(rows[0].providers_seen), ["primary", "dajiala"]);
   assert.throws(() => store.upsertGatewayItems("wx-1", [
@@ -373,6 +390,25 @@ test("normalizes at most 24 valid primary entries", async (t) => {
   assert.equal(items[0].provider, "primary");
   assert.equal(items[0].discovered_at, "2026-08-28T09:00:00.000Z");
   assert.equal(items[0].cover_url, "https://mmbiz.qpic.cn/0.jpg");
+  assert.equal(items[0].body_complete, true);
+});
+
+test("primary marks trusted content complete and summaries incomplete", async (t) => {
+  const upstream = createServer((_req, res) => res.end(`<feed xmlns="http://www.w3.org/2005/Atom">
+    <entry><title>完整</title><published>2026-08-28T08:00:00Z</published>
+      <link href="https://mp.weixin.qq.com/s?__biz=MzA1&amp;mid=1&amp;idx=1"/><content>完整正文</content></entry>
+    <entry><title>摘要</title><published>2026-08-28T08:00:00Z</published>
+      <link href="https://mp.weixin.qq.com/s?__biz=MzA1&amp;mid=2&amp;idx=1"/><summary>摘要正文</summary></entry>
+    </feed>`)).listen(0, "127.0.0.1");
+  await once(upstream, "listening");
+  t.after(() => upstream.close());
+  const items = await fetchPrimary({ account_id: "gh_example", name: "示例号",
+    primary_feed_url: `http://127.0.0.1:${upstream.address().port}/feed` },
+  new Date("2026-08-28T09:00:00Z"), new Set(["127.0.0.1"]));
+  assert.deepEqual(items.map(({ body_text, body_complete }) => ({ body_text, body_complete })), [
+    { body_text: "完整正文", body_complete: true },
+    { body_text: "摘要正文", body_complete: false },
+  ]);
 });
 
 test("rejects invalid primary article fields", async (t) => {
@@ -462,15 +498,23 @@ test("serializes the required XML-safe Atom contract", () => {
     canonical_id: "wx:MzA1:9:1", account_id: "gh_example", account_name: "示例号",
     title: "标题 <&", published_at: "2026-08-28T08:00:00+08:00",
     original_url: "https://mp.weixin.qq.com/s?__biz=MzA1&mid=9&idx=1&sn=abc",
-    body_text: "正文 \u0001 ]]> 尾", cover_url: "https://mmbiz.qpic.cn/cover.jpg?a=1&b=2",
+    body_text: "正文 \u0001 ]]> 尾", body_complete: true,
+    cover_url: "https://mmbiz.qpic.cn/cover.jpg?a=1&b=2",
     provider: "primary", discovered_at: "2026-08-28T09:00:00Z",
   }]);
   assert.match(xml, /wx:MzA1:9:1/);
   assert.match(xml, /loom:provider>primary/);
+  assert.match(xml, /loom:body_complete>true<\/loom:body_complete>/);
   assert.match(xml, /media:thumbnail/);
   assert.match(xml, /]]]]><!\[CDATA\[>/);
   assert.equal(xml.includes("\u0001"), false);
   assert.doesNotThrow(() => new XMLParser().parse(xml));
+  assert.match(toAtom("wx-1", "示例", [{
+    canonical_id: "empty", title: "空", published_at: "2026-08-28T08:00:00Z",
+    discovered_at: "2026-08-28T08:00:00Z", original_url: "https://mp.weixin.qq.com/s/empty",
+    account_name: "示例", body_text: "非空摘要", body_complete: false,
+    cover_url: "", provider: "primary",
+  }]), /loom:body_complete>false<\/loom:body_complete>/);
 });
 
 test("serves authenticated source, health, and feed routes", async (t) => {
@@ -546,7 +590,7 @@ const primaryItem = {
   canonical_id: "wx:MzPrimary:1:1", account_id: "gh_integrated", account_name: "集成测试号",
   title: "自建文章", published_at: "2026-08-28T10:00:00.000Z",
   original_url: "https://mp.weixin.qq.com/s?__biz=MzPrimary&mid=1&idx=1",
-  body_text: "自建正文", cover_url: "https://mmbiz.qpic.cn/primary.jpg",
+  body_text: "自建正文", body_complete: true, cover_url: "https://mmbiz.qpic.cn/primary.jpg",
   provider: "primary", discovered_at: "2026-08-28T10:01:00.000Z",
 };
 const paidListItem = {
@@ -592,6 +636,41 @@ test("primary-first gateway caches a seven-day union and never pays on success",
   assert.equal(store.listGatewayItems(integrationSource.id, "2026-08-21T12:00:00.000Z").length, 2);
 });
 
+test("a cached primary summary is paid-enriched once and remains explicitly complete", async (t) => {
+  let lists = 0;
+  let details = 0;
+  const summary = { ...primaryItem, body_text: "主源摘要", body_complete: false };
+  const paidFloor = { ...paidListItem, original_url: primaryItem.original_url,
+    title: primaryItem.title, published_at: primaryItem.published_at };
+  const fixture = gatewayFixture(t, { primary: async () => [summary], paid: {
+    estimatedListCost: 0.08, estimatedDetailCost: 0.045,
+    async listToday() { lists += 1; return { items: [paidFloor], cost_money: 0.06 }; },
+    async enrichArticle(item) { details += 1; return { ...item, body_html: "<p>付费完整正文</p>",
+      cost_money: 0.04 }; },
+  } });
+  assert.equal((await fixture.request(`/v1/feeds/${integrationSource.id}.atom`)).status, 200);
+  let cached = fixture.store.getGatewayItem(integrationSource.id, primaryItem.canonical_id);
+  assert.equal(cached.body_text, "主源摘要");
+  assert.equal(cached.body_complete, 0);
+
+  fixture.setNow("2026-08-28T15:30:00.000Z");
+  const reconciled = await (await fixture.request("/v1/reconcile", { method: "POST" })).json();
+  assert.equal(reconciled.succeeded, 1);
+  assert.deepEqual(reconciled.outbox_source_ids, [integrationSource.id]);
+  cached = fixture.store.getGatewayItem(integrationSource.id, primaryItem.canonical_id);
+  assert.equal(cached.body_text, "付费完整正文");
+  assert.equal(cached.body_complete, 1);
+  assert.equal(lists, 1);
+  assert.equal(details, 1);
+
+  await fixture.request("/v1/reconcile", { method: "POST" });
+  const atom = await (await fixture.request(`/v1/feeds/${integrationSource.id}.atom`)).text();
+  assert.equal(lists, 1);
+  assert.equal(details, 1);
+  assert.match(atom, /付费完整正文/);
+  assert.match(atom, /loom:body_complete>true<\/loom:body_complete>/);
+});
+
 test("first primary failure is 503 without spend; second uses paid list and only missing-body detail", async (t) => {
   let listCalls = 0;
   const detailed = [];
@@ -605,7 +684,7 @@ test("first primary failure is 503 without spend; second uses paid list and only
   };
   const { store, request } = gatewayFixture(t, { primary: async () => { throw new Error("down"); }, paid });
   store.upsertGatewayItems(integrationSource.id, [{ ...paidListItem,
-    canonical_id: "wx:MzPaid:3:1", title: "已有正文", body_text: "缓存正文",
+    canonical_id: "wx:MzPaid:3:1", title: "已有正文", body_text: "缓存正文", body_complete: true,
     original_url: "https://mp.weixin.qq.com/s?__biz=MzPaid&mid=3&idx=1",
     discovered_at: "2026-08-28T11:01:00.000Z" }]);
   const first = await request(`/v1/feeds/${integrationSource.id}.atom`);
@@ -854,6 +933,7 @@ test("reconciliation isolates an invalid source and continues to the next source
 test("reconciliation crossing Shanghai midnight bills the old day, skips details, and stops", async (t) => {
   let current = new Date("2026-08-28T15:59:59.000Z");
   let detailCalls = 0;
+  let listCalls = 0;
   const store = openStore(":memory:");
   t.after(() => store.close());
   store.upsertSource({ ...integrationSource, priority: "high" }, "2026-08-28T00:00:00.000Z");
@@ -861,6 +941,7 @@ test("reconciliation crossing Shanghai midnight bills the old day, skips details
     "2026-08-28T00:00:00.000Z");
   const paid = { estimatedListCost: 0.08, estimatedDetailCost: 0.045,
     async listToday(source) {
+      listCalls += 1;
       current = new Date("2026-08-28T16:00:01.000Z");
       return { items: [{ ...paidListItem, account_id: source.account_id, account_name: source.name }],
         cost_money: 0.06 };
@@ -876,12 +957,21 @@ test("reconciliation crossing Shanghai midnight bills the old day, skips details
   assert.equal(result.day, "2026-08-28");
   assert.equal(result.attempted, 1);
   assert.equal(detailCalls, 0);
+  assert.equal(store.pendingDetailCount(), 1);
   assert.deepEqual(store.getProviderUsage("2026-08-28", "dajiala"), { calls: 1, amount: 0.06 });
   assert.deepEqual(store.getProviderUsage("2026-08-29", "dajiala"), { calls: 0, amount: 0 });
   assert.equal(store.getSource(integrationSource.id).last_paid_check_at, "2026-08-28T16:00:01.000Z");
   assert.equal(store.getSource(integrationSource.id).last_paid_ok_at, "2026-08-28T15:59:59.000Z");
   assert.equal(store.listGatewayItems(integrationSource.id, "2026-08-20T00:00:00.000Z")[0].discovered_at,
     "2026-08-28T16:00:01.000Z");
+  current = new Date("2026-08-29T02:00:00.000Z");
+  const resumed = await (await gateway(new Request("http://gateway.local/v1/reconcile", {
+    method: "POST", headers: { authorization: "Bearer gateway-test" },
+  }))).json();
+  assert.equal(resumed.completed_details, 1);
+  assert.equal(store.pendingDetailCount(), 0);
+  assert.equal(detailCalls, 1);
+  assert.equal(listCalls, 1);
 });
 
 test("a paid call begun before midnight remains eligible on the next Shanghai day", async (t) => {

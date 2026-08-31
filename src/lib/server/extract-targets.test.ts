@@ -7,7 +7,8 @@ import { runExtractTargets, type ExtractTarget } from "./extract-targets.ts";
 test("per-target extraction preserves all results, skips terminal empty text, and retries only failures", async () => {
   const pg = new PGlite();
   await pg.waitReady;
-  for (const migration of ["0002_schema.sql", "0004_production.sql", "0007_extract_target_state.sql"]) {
+  for (const migration of ["0002_schema.sql", "0004_production.sql", "0007_extract_target_state.sql",
+    "0009_extract_claim_fencing.sql"]) {
     await pg.exec(readFileSync(new URL(`../../../migrations/${migration}`, import.meta.url), "utf8"));
   }
   const sql = { async query<T = Record<string, unknown>>(text: string, params: unknown[] = []) {
@@ -68,7 +69,8 @@ test("per-target extraction preserves all results, skips terminal empty text, an
 test("two workers cannot claim the same fresh extraction target", async () => {
   const pg = new PGlite();
   await pg.waitReady;
-  for (const migration of ["0002_schema.sql", "0004_production.sql", "0007_extract_target_state.sql"]) {
+  for (const migration of ["0002_schema.sql", "0004_production.sql", "0007_extract_target_state.sql",
+    "0009_extract_claim_fencing.sql"]) {
     await pg.exec(readFileSync(new URL(`../../../migrations/${migration}`, import.meta.url), "utf8"));
   }
   await pg.query("insert into items (id,source_id,platform,external_id,media_urls) values ('race','s','wechat','race','[]')");
@@ -98,7 +100,8 @@ test("two workers cannot claim the same fresh extraction target", async () => {
 test("different target workers append atomically without truncating a long original body", async () => {
   const pg = new PGlite();
   await pg.waitReady;
-  for (const migration of ["0002_schema.sql", "0004_production.sql", "0007_extract_target_state.sql"]) {
+  for (const migration of ["0002_schema.sql", "0004_production.sql", "0007_extract_target_state.sql",
+    "0009_extract_claim_fencing.sql"]) {
     await pg.exec(readFileSync(new URL(`../../../migrations/${migration}`, import.meta.url), "utf8"));
   }
   const original = "长".repeat(20_000);
@@ -130,7 +133,8 @@ test("different target workers append atomically without truncating a long origi
 test("a commit-stage failure cannot leave an ok job without its body label", async () => {
   const pg = new PGlite();
   await pg.waitReady;
-  for (const migration of ["0002_schema.sql", "0004_production.sql", "0007_extract_target_state.sql"]) {
+  for (const migration of ["0002_schema.sql", "0004_production.sql", "0007_extract_target_state.sql",
+    "0009_extract_claim_fencing.sql"]) {
     await pg.exec(readFileSync(new URL(`../../../migrations/${migration}`, import.meta.url), "utf8"));
   }
   await pg.query("insert into items (id,source_id,platform,external_id,media_urls) values ('fault','s','wechat','fault','[]')");
@@ -150,5 +154,43 @@ test("a commit-stage failure cannot leave an ok job without its body label", asy
   const body = (await pg.query<{ body: string }>("select body from items where id='fault'" )).rows[0]?.body;
   assert.deepEqual(job, { status: "error", result_text: "" });
   assert.equal(body, "");
+  await pg.close();
+});
+
+test("a stale extraction worker cannot overwrite the reclaimed worker", async () => {
+  const pg = new PGlite();
+  await pg.waitReady;
+  for (const migration of ["0002_schema.sql", "0004_production.sql", "0007_extract_target_state.sql",
+    "0009_extract_claim_fencing.sql"]) {
+    await pg.exec(readFileSync(new URL(`../../../migrations/${migration}`, import.meta.url), "utf8"));
+  }
+  await pg.query("insert into items (id,source_id,platform,external_id,media_urls) values ('stale','s','wechat','stale','[]')");
+  const sql = { async query<T = Record<string, unknown>>(text: string, params: unknown[] = []) {
+    return (await pg.query<T>(text, params)).rows;
+  } };
+  const target: ExtractTarget = { id: "image", source_url: "https://media/image", object_key: "",
+    public_url: "", content_type: "image/jpeg", kind: "image" };
+  let calls = 0;
+  let releaseOld = () => {};
+  const oldGate = new Promise<void>((resolve) => { releaseOld = resolve; });
+  const run = () => runExtractTargets({ sql, itemId: "stale", targets: [target],
+    load: async () => ({ bytes: Buffer.from("image"), contentType: "image/jpeg" }),
+    ocr: async () => { calls += 1; if (calls === 1) { await oldGate; return { text: "旧结果", model: "old" }; }
+      return { text: "新结果", model: "new" }; },
+    asr: async () => ({ text: "", model: "stt" }) });
+  const oldWorker = run();
+  while (calls === 0) await new Promise((resolve) => setImmediate(resolve));
+  await pg.query("update extract_jobs set started_at=now()-interval '16 minutes' where item_id='stale'");
+  const newWorker = await run();
+  assert.equal(newWorker.ok, true);
+  releaseOld();
+  await oldWorker;
+  const job = (await pg.query<{ status: string; result_text: string; model: string; claim_token: string }>(
+    "select status,result_text,model,claim_token from extract_jobs where item_id='stale'" )).rows[0];
+  const body = (await pg.query<{ body: string }>("select body from items where id='stale'" )).rows[0]?.body;
+  assert.deepEqual(job, { status: "ok", result_text: "新结果", model: "new", claim_token: "" });
+  assert.match(body ?? "", /新结果/);
+  assert.doesNotMatch(body ?? "", /旧结果/);
+  assert.equal(calls, 2);
   await pg.close();
 });

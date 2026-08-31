@@ -19,7 +19,7 @@ export const CRON_SOURCE_RESERVE_MS = 100_000;
 export const CRON_INGEST_RESERVE_MS = 55_000;
 export const CRON_EXTRACT_RESERVE_MS = 460_000;
 export const CRON_GATEWAY_RESERVE_MS = 125_000;
-export const CRON_SOURCE_CONCURRENCY = 7;
+export const CRON_SOURCE_CONCURRENCY = 9;
 
 export type CronBatchOptions = {
   deadlineMs?: number;
@@ -32,7 +32,7 @@ export function cronHasBudget(deadlineMs: number, reserveMs: number, now: () => 
   return now() + reserveMs <= deadlineMs;
 }
 
-// ponytail: batches stay sequential; P3 can add bounded concurrency if measured 100-source throughput needs it.
+// ponytail: fixed worker pools bound fan-out; add adaptive pools only after production measurements.
 export async function runCronBatch<Item, Result>(
   items: readonly Item[],
   run: (item: Item) => Promise<Result>,

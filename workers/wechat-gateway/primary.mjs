@@ -86,7 +86,10 @@ function normalizeEntry(raw, source, discoveredAt) {
   const originalUrl = pickLink(raw.link) || textOf(raw.guid) || textOf(raw.id);
   normalizeWechatUrl(originalUrl);
   const publishedAt = isoDate(textOf(raw.pubDate ?? raw.published ?? raw.updated ?? raw["dc:date"]));
-  const rawBody = textOf(raw["content:encoded"] ?? raw.content ?? raw.description ?? raw.summary);
+  const completeBody = textOf(raw["content:encoded"] ?? raw.content);
+  const trustedBody = bodyText(completeBody);
+  const rawBody = trustedBody ? completeBody : textOf(raw.description ?? raw.summary);
+  const normalizedBody = bodyText(rawBody);
   return {
     account_id: source.account_id,
     account_name: source.name,
@@ -94,7 +97,8 @@ function normalizeEntry(raw, source, discoveredAt) {
     published_at: publishedAt,
     original_url: originalUrl,
     canonical_id: canonicalWechatId(originalUrl, source.account_id, title, publishedAt),
-    ...(rawBody ? { body_html: rawBody, body_text: bodyText(rawBody) } : {}),
+    ...(rawBody ? { body_html: rawBody, body_text: normalizedBody } : {}),
+    body_complete: Boolean(trustedBody),
     ...(pickCover(raw) ? { cover_url: pickCover(raw) } : {}),
     provider: "primary",
     discovered_at: discoveredAt,

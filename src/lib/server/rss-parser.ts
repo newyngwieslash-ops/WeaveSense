@@ -22,6 +22,7 @@ function textOf(value: unknown): string {
   if (value == null) return "";
   if (typeof value === "string") return value;
   if (typeof value === "number") return String(value);
+  if (typeof value === "boolean") return String(value);
   if (typeof value === "object") {
     const rec = value as Record<string, unknown>;
     if (typeof rec["#cdata"] === "string") return rec["#cdata"];
@@ -86,8 +87,10 @@ function loomExtra(item: Record<string, unknown>, platform: PlatformId): Record<
   const extra: Record<string, unknown> = { platform };
   const provider = textOf(item["loom:provider"]);
   const discoveredAt = textOf(item["loom:discovered_at"]);
+  const bodyComplete = textOf(item["loom:body_complete"]);
   if (provider) extra.provider = provider;
   if (discoveredAt) extra.discovered_at = discoveredAt;
+  if (bodyComplete === "true" || bodyComplete === "false") extra.body_complete = bodyComplete === "true";
   return extra;
 }
 
@@ -120,7 +123,10 @@ export function parseFeedXml(xml: string, sourceId: string, platform: PlatformId
     const media = enclosureUrl(raw);
     const id = textOf(raw.guid ?? raw.id) || url || `${sourceId}:${title}:${published ?? ""}`;
     const extra = loomExtra(raw, platform);
-    if (tooLarge) extra.body_error = "body_too_large";
+    if (tooLarge) {
+      extra.body_error = "body_too_large";
+      extra.body_complete = false;
+    }
     return {
       external_id: id.slice(0, 320),
       title,

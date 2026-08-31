@@ -22,7 +22,7 @@
 - Modify `src/routes/sources.tsx`: CSV mode, preview table, confirmed import, health badges.
 - Modify `workers/wechat-gateway/server.mjs`: aggregate health route and response metadata headers.
 - Modify `workers/wechat-gateway/gateway.test.mjs`: aggregate health and header checks.
-- Create `migrations/0005_wechat_job_provider.sql`: provider/attempt/paid-call job fields.
+- Create `migrations/0010_wechat_job_provider.sql`: provider/attempt/paid-call job fields.
 - Modify `src/lib/server/collectors/types.ts`: batch metadata contract.
 - Modify `src/lib/server/collectors/index.ts`: return batches from all adapters.
 - Modify `src/lib/server/rss-parser.ts`: parse provider history extensions.
@@ -265,7 +265,7 @@ git commit -m "feat: preview and import WeChat source CSV"
 - Modify: `workers/wechat-gateway/server.mjs`
 - Modify: `workers/wechat-gateway/atom.mjs`
 - Modify: `workers/wechat-gateway/gateway.test.mjs`
-- Create: `migrations/0005_wechat_job_provider.sql`
+- Create: `migrations/0010_wechat_job_provider.sql`
 - Modify: `src/lib/server/collectors/types.ts`
 - Modify: `src/lib/server/collectors/index.ts`
 - Modify: `src/lib/server/rss-parser.ts`
@@ -295,7 +295,7 @@ Also emit per-entry `<loom:providers_seen>` as a comma-separated value.
 - [ ] **Step 2: Add the main-database migration**
 
 ```sql
--- migrations/0005_wechat_job_provider.sql
+-- migrations/0010_wechat_job_provider.sql
 alter table jobs add column if not exists provider text not null default '';
 alter table jobs add column if not exists attempts jsonb not null default '[]'::jsonb;
 alter table jobs add column if not exists paid_call boolean not null default false;
@@ -379,7 +379,7 @@ Expected: source and job pages render on desktop/mobile with no uncaught errors.
 - [ ] **Step 9: Commit observability**
 
 ```bash
-git add workers/wechat-gateway/server.mjs workers/wechat-gateway/atom.mjs workers/wechat-gateway/gateway.test.mjs migrations/0005_wechat_job_provider.sql src/lib/server/collectors/types.ts src/lib/server/collectors/index.ts src/lib/server/rss-parser.ts src/lib/server/wechat-meta.ts src/lib/server/wechat-meta.test.ts src/lib/server/scheduler.ts src/lib/server/queries.ts src/lib/server/fns.ts src/lib/types.ts src/routes/sources.tsx src/routes/jobs.tsx
+git add workers/wechat-gateway/server.mjs workers/wechat-gateway/atom.mjs workers/wechat-gateway/gateway.test.mjs migrations/0010_wechat_job_provider.sql src/lib/server/collectors/types.ts src/lib/server/collectors/index.ts src/lib/server/rss-parser.ts src/lib/server/wechat-meta.ts src/lib/server/wechat-meta.test.ts src/lib/server/scheduler.ts src/lib/server/queries.ts src/lib/server/fns.ts src/lib/types.ts src/routes/sources.tsx src/routes/jobs.tsx
 git commit -m "feat: expose WeChat provider health and attempts"
 ```
 

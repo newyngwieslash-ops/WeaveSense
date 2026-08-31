@@ -16,6 +16,7 @@ export function toAtom(sourceId, sourceName, items) {
     <content type="html">${cdata(item.body_html ?? item.body_text ?? "")}</content>
 ${item.cover_url ? `    <media:thumbnail url="${escapeAttr(item.cover_url)}"/>\n` : ""}    <loom:provider>${escapeText(item.provider)}</loom:provider>
     <loom:discovered_at>${escapeText(item.discovered_at)}</loom:discovered_at>
+    <loom:body_complete>${String(Boolean(item.body_complete))}</loom:body_complete>
   </entry>`).join("\n");
   return `<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/" xmlns:loom="https://loom.local/ns">

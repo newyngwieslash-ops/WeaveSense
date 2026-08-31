@@ -144,9 +144,17 @@ export async function mergeExistingItem(sql: Queryable, itemId: string, item: {
   published_at: string | null;
   extra: Record<string, unknown>;
 }, matchedKeywords: string[]): Promise<void> {
+  const incomingComplete = item.extra.body_complete === true;
   await sql.query(`update items set
       title=coalesce(nullif(title,''),nullif($2,''),title),
-      body=coalesce(nullif(body,''),nullif($3,''),body),
+      body=case when $14::boolean and coalesce(extra->>'body_complete','false') <> 'true'
+          and nullif($3,'') is not null then $3 || case
+        when position('[OCR:' in body)>0 or position('[ASR:' in body)>0 then E'\n\n' || substring(body from case
+          when position('[OCR:' in body)=0 then position('[ASR:' in body)
+          when position('[ASR:' in body)=0 then position('[OCR:' in body)
+          else least(position('[OCR:' in body),position('[ASR:' in body)) end)
+        else '' end
+        else coalesce(nullif(body,''),nullif($3,''),body) end,
       author=coalesce(nullif(author,''),nullif($4,''),author),
       url=coalesce(nullif(url,''),nullif($5,''),url),
       media_type=coalesce(nullif(media_type,''),nullif($6,''),media_type),
@@ -154,11 +162,14 @@ export async function mergeExistingItem(sql: Queryable, itemId: string, item: {
         then $7::jsonb else media_urls end,
       thumbnail_url=coalesce(nullif(thumbnail_url,''),nullif($8,''),thumbnail_url),
       views=coalesce(views,$9), likes=coalesce(likes,$10),
-      published_at=coalesce(published_at,$11::timestamptz), extra=extra || $12::jsonb,
+      published_at=coalesce(published_at,$11::timestamptz),
+      extra=extra || $12::jsonb || case
+        when coalesce(extra->>'body_complete','false')='true' or $14::boolean
+        then '{"body_complete":true}'::jsonb else '{}'::jsonb end,
       matched_keywords=(select coalesce(jsonb_agg(keyword order by keyword),'[]'::jsonb)
         from (select distinct value as keyword
           from jsonb_array_elements_text(items.matched_keywords || $13::jsonb)) merged)
     where id=$1`, [itemId, item.title, item.body, item.author, item.url, item.media_type,
     JSON.stringify(item.media_urls), item.thumbnail_url, item.views, item.likes, item.published_at,
-    JSON.stringify(item.extra), JSON.stringify(matchedKeywords)]);
+    JSON.stringify(item.extra), JSON.stringify(matchedKeywords), incomingComplete]);
 }

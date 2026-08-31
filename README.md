@@ -107,11 +107,11 @@ docker compose up --build
 
 Compose 的 `scheduler` 会在浏览器关闭后继续按默认 30 分钟间隔调用受保护的定时入口，并等应用健康后才发起首轮。调度器也保持单副本，不要用 `--scale scheduler=...` 扩容；每轮服务端工作预算为 12 分钟，循环只在剩余预算足够覆盖下一项最坏外部超时时才启动，未执行项保留到下轮。发布时先停调度器，等待当前 JSON 结果（客户端最多 12 分 30 秒）后再重启应用与网关，最后启动调度器。
 
-网关把付费对账成功来源写入 SQLite outbox；应用先用一条 PostgreSQL 语句幂等写入重扫队列，成功后才 ACK。ACK 前中断会在下轮安全重放。付费正文因期限或临时错误未补齐时也会持久排队，技术错误按 5/15/60 分钟再按小时退避，映射错误不自动重试；后续重扫会更新同一文章而不是生成重复项。OCR/ASR 按最多四个媒体目标分别记终态，空文本也算成功；每四个半小时轮次安排三轮固定并发采集和一轮完整提取，100 个到期信源可在两小时容量窗口内处理，失败目标最多重试三次且不会重复调用已成功目标。
+网关把付费对账成功来源写入 SQLite outbox；应用先用一条 PostgreSQL 语句幂等写入重扫队列，成功后才 ACK。ACK 前中断会在下轮安全重放。付费正文因期限或临时错误未补齐时也会持久排队，技术错误按 5/15/60 分钟再按小时退避，映射错误不自动重试；后续重扫会更新同一文章而不是生成重复项。OCR/ASR 按最多四个媒体目标分别记终态，空文本也算成功；每四个半小时轮次安排三轮 9 路固定并发采集和一轮完整提取，对账重扫固定 2 路并发，最坏一轮预算为 680 秒，100 个到期信源可在两小时容量窗口内处理。失败目标最多重试三次且不会重复调用已成功目标。
 
 付费兜底默认每日 20 RMB 是硬上限，不是费用预测。按[极致了接口价格页](https://www.dajiala.com/main/interface?actnav=0)，列表查询约 0.06–0.08 RMB/信源调用，正文详情约 0.045 RMB/新文章；实际用量取决于主源失败率和新文章数。
 
-迁移：`migrations/0002_schema.sql`、`0003_keywords.sql`、`0004_production.sql`、`0005_scheduler_leases.sql`、`0006_reconciliation_queue.sql`、`0007_extract_target_state.sql`。
+迁移：`migrations/0002_schema.sql`、`0003_keywords.sql`、`0004_production.sql`、`0005_scheduler_leases.sql`、`0006_reconciliation_queue.sql`、`0007_extract_target_state.sql`、`0008_reconciliation_queue_retry.sql`、`0009_extract_claim_fencing.sql`。后续迁移从 `0010` 开始。
 
 ## 产品怎么用
 

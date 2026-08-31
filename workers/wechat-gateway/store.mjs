@@ -165,6 +165,7 @@ function initialize(db) {
       published_at text not null,
       original_url text not null,
       body_text text not null default '',
+      body_complete integer not null default 0,
       cover_url text not null default '',
       provider text not null,
       providers_seen text not null default '[]',
@@ -187,6 +188,10 @@ function initialize(db) {
       updated_at text not null,
       primary key (source_id, canonical_id)
     )`);
+    const itemColumns = db.prepare("pragma table_info(gateway_items)").all();
+    if (!itemColumns.some(({ name }) => name === "body_complete")) {
+      db.exec("alter table gateway_items add column body_complete integer not null default 0");
+    }
     migrateReservations(db);
     db.exec("commit");
   } catch (error) {
@@ -209,6 +214,17 @@ function preferNonEmpty(incoming, existing = "") {
   return value.trim() ? value : existing;
 }
 
+function mergedBody(existing, incoming) {
+  const existingComplete = Boolean(existing?.body_complete);
+  const incomingComplete = Boolean(incoming.body_complete);
+  return {
+    text: existingComplete ? existing.body_text
+      : incomingComplete ? preferNonEmpty(incoming.body_text, existing?.body_text)
+        : preferNonEmpty(existing?.body_text, incoming.body_text),
+    complete: Number(existingComplete || incomingComplete),
+  };
+}
+
 function validateGatewayItem(item) {
   if (!item || typeof item !== "object") throw new TypeError("item is required");
   const valid = { ...item };
@@ -219,6 +235,11 @@ function validateGatewayItem(item) {
   valid.discovered_at = iso(item.discovered_at, "discovered_at");
   valid.original_url = httpsUrl(item.original_url, "original_url", WECHAT_HOSTS);
   valid.cover_url = httpsUrl(item.cover_url, "cover_url", COVER_HOSTS, true);
+  valid.body_text = String(item.body_text ?? "");
+  if (item.body_complete !== undefined && typeof item.body_complete !== "boolean") {
+    throw new TypeError("body_complete must be boolean");
+  }
+  valid.body_complete = item.body_complete === true;
   return valid;
 }
 
@@ -264,16 +285,17 @@ function createStore(db) {
     from provider_reservations where id = ?`);
   const settleReservation = db.prepare(`update provider_reservations
     set status = ?, actual = ?, settled_at = ? where id = ? and status = 'open'`);
-  const getItem = db.prepare(`select account_id, provider, providers_seen, body_text, cover_url
+  const getItem = db.prepare(`select account_id, provider, providers_seen, body_text, body_complete, cover_url
     from gateway_items where source_id = ? and canonical_id = ?`);
   const upsertItem = db.prepare(`insert into gateway_items
     (source_id, canonical_id, account_id, account_name, title, published_at, original_url,
-      body_text, cover_url, provider, providers_seen, discovered_at, updated_at)
-    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      body_text, body_complete, cover_url, provider, providers_seen, discovered_at, updated_at)
+    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     on conflict(source_id, canonical_id) do update set
       account_name=excluded.account_name, title=excluded.title,
       published_at=excluded.published_at, original_url=excluded.original_url,
-      body_text=excluded.body_text, cover_url=excluded.cover_url, provider=excluded.provider,
+      body_text=excluded.body_text, body_complete=excluded.body_complete,
+      cover_url=excluded.cover_url, provider=excluded.provider,
       providers_seen=excluded.providers_seen, discovered_at=excluded.discovered_at,
       updated_at=excluded.updated_at`);
   const listItems = db.prepare(`select * from gateway_items
@@ -456,9 +478,9 @@ function createStore(db) {
         }
         for (const item of validItems) {
           const existing = getItem.get(sourceId, item.canonical_id);
+          const body = mergedBody(existing, item);
           upsertItem.run(sourceId, item.canonical_id, item.account_id, item.account_name, item.title,
-            item.published_at, item.original_url,
-            preferNonEmpty(item.body_text, existing?.body_text),
+            item.published_at, item.original_url, body.text, body.complete,
             preferNonEmpty(item.cover_url, existing?.cover_url), item.provider,
             providersSeen(existing, item.provider), item.discovered_at, now);
         }
@@ -514,8 +536,9 @@ function createStore(db) {
           throw new Error("detail does not match source");
         }
         const existing = getItem.get(sourceId, canonicalId);
+        const body = mergedBody(existing, valid);
         upsertItem.run(sourceId, canonicalId, valid.account_id, valid.account_name, valid.title,
-          valid.published_at, valid.original_url, preferNonEmpty(valid.body_text, existing?.body_text),
+          valid.published_at, valid.original_url, body.text, body.complete,
           preferNonEmpty(valid.cover_url, existing?.cover_url), valid.provider,
           providersSeen(existing, valid.provider), valid.discovered_at, now);
         deleteDetail.run(sourceId, canonicalId);
