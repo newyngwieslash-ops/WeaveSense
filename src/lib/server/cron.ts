@@ -8,11 +8,15 @@ const shanghaiClock = new Intl.DateTimeFormat("en-GB", {
 });
 const MAX_GATEWAY_BODY_BYTES = 1024 * 1024;
 const SAFE_SOURCE_ID = /^[A-Za-z0-9._:-]+$/;
+const GATEWAY_RECONCILIATION_KEYS = new Set([
+  "day", "attempted", "succeeded", "failed", "succeeded_source_ids", "budget_exhausted",
+  "deferred", "budget_deferred", "deferred_paid_calls",
+]);
 
 export const CRON_SERVER_BUDGET_MS = 600_000;
 export const CRON_SOURCE_RESERVE_MS = 100_000;
 export const CRON_INGEST_RESERVE_MS = 55_000;
-export const CRON_EXTRACT_RESERVE_MS = 115_000;
+export const CRON_EXTRACT_RESERVE_MS = 460_000;
 export const CRON_GATEWAY_RESERVE_MS = 125_000;
 
 export type CronBatchOptions = {
@@ -65,6 +69,9 @@ type GatewayReconciliation = {
   failed: number;
   succeeded_source_ids: string[];
   budget_exhausted: boolean;
+  deferred?: number;
+  budget_deferred?: boolean;
+  deferred_paid_calls?: number;
 };
 
 type ReconciliationRequestResult =
@@ -87,13 +94,19 @@ function validDay(value: unknown): value is string {
 function normalizePayload(payload: unknown): GatewayReconciliation | null {
   if (!payload || typeof payload !== "object") return null;
   const value = payload as Record<string, unknown>;
+  if (Object.keys(value).some((key) => !GATEWAY_RECONCILIATION_KEYS.has(key))) return null;
   const attempted = count(value.attempted);
   const succeeded = count(value.succeeded);
   const failed = count(value.failed);
+  const deferred = value.deferred === undefined ? undefined : count(value.deferred);
+  const deferredPaidCalls = value.deferred_paid_calls === undefined
+    ? undefined : count(value.deferred_paid_calls);
   if (!validDay(value.day) || attempted === null || succeeded === null || failed === null
     || attempted !== succeeded + failed || !Array.isArray(value.succeeded_source_ids)
     || value.succeeded_source_ids.length !== succeeded || value.succeeded_source_ids.length > 500
-    || typeof value.budget_exhausted !== "boolean") return null;
+    || typeof value.budget_exhausted !== "boolean"
+    || deferred === null || deferredPaidCalls === null
+    || (value.budget_deferred !== undefined && typeof value.budget_deferred !== "boolean")) return null;
   const seen = new Set<string>();
   const sourceIds: string[] = [];
   for (const rawSourceId of value.succeeded_source_ids) {
@@ -104,7 +117,10 @@ function normalizePayload(payload: unknown): GatewayReconciliation | null {
     sourceIds.push(sourceId);
   }
   return { day: value.day, attempted, succeeded, failed,
-    succeeded_source_ids: sourceIds, budget_exhausted: value.budget_exhausted };
+    succeeded_source_ids: sourceIds, budget_exhausted: value.budget_exhausted,
+    ...(deferred === undefined ? {} : { deferred }),
+    ...(value.budget_deferred === undefined ? {} : { budget_deferred: value.budget_deferred }),
+    ...(deferredPaidCalls === undefined ? {} : { deferred_paid_calls: deferredPaidCalls }) };
 }
 
 function reconciliationUrl(base: string): string | null {

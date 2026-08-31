@@ -114,7 +114,7 @@ export async function runProductionTick({ deadlineMs, now = Date.now }: {
   const ingest = runIngest ? await ingestPending(bounded ? 1 : 8) : { stored: 0, errors: 0 };
   const runExtract = prod.extractAuto
     && (!bounded || cronHasBudget(deadlineMs, CRON_EXTRACT_RESERVE_MS, now));
-  const extract = runExtract ? await extractPending(bounded ? 1 : 2, bounded ? 1 : 4) : { ran: 0, errors: 0 };
+  const extract = runExtract ? await extractPending(bounded ? 1 : 2) : { ran: 0, errors: 0 };
   return {
     stored: ingest.stored,
     extracted: extract.ran,

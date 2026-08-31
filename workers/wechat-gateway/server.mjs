@@ -10,6 +10,8 @@ import { openStore } from "./store.mjs";
 
 const PROVIDER = "dajiala";
 const DAY_MS = 86_400_000;
+const DEFAULT_RECONCILIATION_BUDGET_MS = 100_000;
+const PAID_CALL_RESERVE_MS = 22_000;
 
 class BodyTooLargeError extends Error {}
 
@@ -97,7 +99,8 @@ function atom(source, items) {
 }
 
 export function createGateway({ store, primary = fetchPrimary, paid = null, token, dailyBudget,
-  now = () => new Date(), allowedFeedHosts }) {
+  now = () => new Date(), allowedFeedHosts,
+  reconciliationBudgetMs = DEFAULT_RECONCILIATION_BUDGET_MS }) {
   if (!store) throw new TypeError("store is required");
   if (typeof primary !== "function") throw new TypeError("primary must be a function");
   const budget = budgetOf(dailyBudget);
@@ -151,10 +154,13 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
     };
   }
 
-  async function runPaid(source, current, reconciliationDay = null) {
+  async function runPaid(source, current, reconciliationDay = null, deadlineMs = null) {
     if (!paid) return { response: json(503, { error: "paid_fallback_unavailable" }) };
     const listEstimate = Number(paid.estimatedListCost ?? 0.08);
     const listStarted = current();
+    if (deadlineMs !== null && listStarted.getTime() + PAID_CALL_RESERVE_MS > deadlineMs) {
+      return { deadlineDeferred: true, deferredPaidCalls: 1, spentDays: [] };
+    }
     if (reconciliationDay && shanghaiDay(listStarted) !== reconciliationDay) {
       return { batchExpired: true, spentDays: [] };
     }
@@ -186,12 +192,21 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
       if (!unique.has(item.canonical_id)) unique.set(item.canonical_id, { raw, item });
     }
     const items = [];
+    let deadlineDeferred = false;
+    let deferredPaidCalls = 0;
     for (const { raw, item: listedItem } of unique.values()) {
       let item = listedItem;
       if (!cached.has(listedItem.canonical_id) && !listedItem.body_text
         && typeof paid.enrichArticle === "function") {
         const detailEstimate = Number(paid.estimatedDetailCost ?? 0.045);
-        const detailStarted = current();
+        const detailStarted = deadlineDeferred ? null : current();
+        if (!detailStarted || (deadlineMs !== null
+          && detailStarted.getTime() + PAID_CALL_RESERVE_MS > deadlineMs)) {
+          deadlineDeferred = true;
+          deferredPaidCalls += 1;
+          items.push(item);
+          continue;
+        }
         if (reconciliationDay && shanghaiDay(detailStarted) !== reconciliationDay) {
           items.push(item);
           continue;
@@ -216,7 +231,7 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
       completed.toISOString(), listStarted.toISOString());
     store.deleteGatewayItemsBefore(since(completed, 30));
     return { items: store.listGatewayItems(source.source_id, since(completed, 7)),
-      spentDays: [...spentDays] };
+      spentDays: [...spentDays], deadlineDeferred, deferredPaidCalls };
   }
 
   async function feed(source, date) {
@@ -254,6 +269,7 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
 
   async function reconcile(date) {
     const day = shanghaiDay(date);
+    const deadlineMs = date.getTime() + reconciliationBudgetMs;
     const result = { day, attempted: 0, succeeded: 0, failed: 0,
       succeeded_source_ids: [], budget_exhausted: false };
     if (!paid) return result;
@@ -262,17 +278,21 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
     const candidates = store.listSources().filter((source) => shouldReconcile(source, date))
       .sort((a, b) => a.priority === b.priority ? successTime(a) - successTime(b)
         : a.priority === "high" ? -1 : 1);
-    for (const source of candidates) {
+    for (let index = 0; index < candidates.length; index += 1) {
+      const source = candidates[index];
       let paidResult;
       try {
         paidResult = await sourceLock(source.source_id, "reconcile", async () => {
           const operationNow = clock(now);
           if (shanghaiDay(operationNow) !== day) return { batchExpired: true };
+          if (operationNow.getTime() + PAID_CALL_RESERVE_MS > deadlineMs) {
+            return { deadlineDeferred: true, deferredPaidCalls: 1 };
+          }
           const fresh = store.getSource(source.source_id);
           if (!fresh || !shouldReconcile(fresh, operationNow)) return { skipped: true };
           if (store.getProviderBudgetState(day, PROVIDER, budget.rmb, budget.calls)
             === "budget_exhausted") return { budgetExhausted: true };
-          return runPaid(fresh, () => clock(now), day);
+          return runPaid(fresh, () => clock(now), day, deadlineMs);
         });
       } catch {
         result.attempted += 1;
@@ -288,6 +308,12 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
       }
       if (paidResult.batchExpired) break;
       if (paidResult.skipped) continue;
+      if (paidResult.deadlineDeferred && !paidResult.items) {
+        result.budget_deferred = true;
+        result.deferred = candidates.length - index;
+        result.deferred_paid_calls = paidResult.deferredPaidCalls ?? 1;
+        break;
+      }
       if (paidResult.budgetExhausted) {
         result.budget_exhausted = true;
         break;
@@ -297,6 +323,12 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
         result.succeeded += 1;
         result.succeeded_source_ids.push(source.source_id);
       } else result.failed += 1;
+      if (paidResult.deadlineDeferred) {
+        result.budget_deferred = true;
+        result.deferred = candidates.length - index - 1;
+        result.deferred_paid_calls = paidResult.deferredPaidCalls ?? 0;
+        break;
+      }
       if ((paidResult.spentDays ?? [day]).some((spentDay) => store.getProviderBudgetState(
         spentDay, PROVIDER, budget.rmb, budget.calls) === "budget_exhausted")) {
         result.budget_exhausted = true;

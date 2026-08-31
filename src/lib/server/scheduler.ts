@@ -263,7 +263,6 @@ export async function runSourceJob(
        where id = $1`,
       [jobId, fetched.length, itemsNew],
     );
-    for (const p of phrases) void recountKeywordHits(p.phrase);
     return { items_found: fetched.length, items_new: itemsNew, error: "" };
   } catch (err) {
     const message = errMessage(err);

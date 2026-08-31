@@ -969,6 +969,37 @@ test("duplicate paid list items buy detail once after canonical de-duplication",
   assert.deepEqual(fixture.store.getProviderUsage("2026-08-28", "dajiala"), { calls: 2, amount: 0.10 });
 });
 
+test("reconciliation stops starting paid detail and source calls at its cooperative deadline", async (t) => {
+  let current = new Date("2026-08-28T15:30:00.000Z");
+  let listCalls = 0;
+  let detailCalls = 0;
+  const store = openStore(":memory:");
+  t.after(() => store.close());
+  store.upsertSource(integrationSource, "2026-08-28T00:00:00.000Z");
+  store.upsertSource({ ...integrationSource, id: "wx-second", account_id: "gh_second" },
+    "2026-08-28T00:00:00.000Z");
+  const gateway = createGateway({ store, token: "gateway-test", now: () => current,
+    reconciliationBudgetMs: 45_000, primary: async () => [], paid: {
+      estimatedListCost: 0.08, estimatedDetailCost: 0.045,
+      async listToday(source) {
+        listCalls += 1;
+        current = new Date(current.getTime() + 24_000);
+        return { items: [{ ...paidListItem, account_id: source.account_id, account_name: source.name }],
+          cost_money: 0.06 };
+      },
+      async enrichArticle(item) { detailCalls += 1; return { ...item, body_html: "正文" }; },
+    } });
+  const result = await (await gateway(new Request("http://gateway.local/v1/reconcile", {
+    method: "POST", headers: { authorization: "Bearer gateway-test" },
+  }))).json();
+  assert.equal(listCalls, 1);
+  assert.equal(detailCalls, 0);
+  assert.equal(result.succeeded, 1);
+  assert.equal(result.budget_deferred, true);
+  assert.equal(result.deferred, 1);
+  assert.equal(result.deferred_paid_calls, 1);
+});
+
 test("PUT rejects owner changes, serializes with feed, resets repaired mapping, and sanitizes JSON", async (t) => {
   let release;
   const gate = new Promise((resolve) => { release = resolve; });

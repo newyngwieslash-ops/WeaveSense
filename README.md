@@ -109,7 +109,7 @@ Compose 的 `scheduler` 会在浏览器关闭后继续按默认 30 分钟间隔�
 
 付费兜底默认每日 20 RMB 是硬上限，不是费用预测。按[极致了接口价格页](https://www.dajiala.com/main/interface?actnav=0)，列表查询约 0.06–0.08 RMB/信源调用，正文详情约 0.045 RMB/新文章；实际用量取决于主源失败率和新文章数。
 
-迁移：`migrations/0002_schema.sql`、`0003_keywords.sql`、`0004_production.sql`、`0005_scheduler_leases.sql`。
+迁移：`migrations/0002_schema.sql`、`0003_keywords.sql`、`0004_production.sql`、`0005_scheduler_leases.sql`、`0006_reconciliation_queue.sql`。
 
 ## 产品怎么用
 

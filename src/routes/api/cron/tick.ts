@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import {
   authorizeCron,
   cronHasBudget,
-  CRON_EXTRACT_RESERVE_MS,
   CRON_GATEWAY_RESERVE_MS,
   CRON_INGEST_RESERVE_MS,
   CRON_SERVER_BUDGET_MS,
@@ -10,11 +9,15 @@ import {
   reconciliationDue,
   requestWechatReconciliation,
   runCronStages,
-  runReconciledSourceJobs,
 } from "@/lib/server/cron";
 import { prod } from "@/lib/server/config";
+import { getSql } from "@/lib/db";
 import { runProductionTick } from "@/lib/server/nodes";
 import { runSourceJob, tickDueSources } from "@/lib/server/scheduler";
+import {
+  enqueueReconciliationSources,
+  processReconciliationQueue,
+} from "@/lib/server/reconciliation-queue";
 
 export const Route = createFileRoute("/api/cron/tick")({
   server: {
@@ -29,20 +32,39 @@ export const Route = createFileRoute("/api/cron/tick")({
         const deadlineMs = startedAt + CRON_SERVER_BUDGET_MS;
         const reconciliationConfigured = reconciliationDue(new Date(startedAt))
           && Boolean(prod.wechatGatewayUrl && prod.wechatGatewayToken);
-        const productionReserve = CRON_INGEST_RESERVE_MS
-          + (prod.extractAuto ? CRON_EXTRACT_RESERVE_MS : 0);
-        const reconciliationReserve = reconciliationConfigured
-          ? CRON_GATEWAY_RESERVE_MS + CRON_SOURCE_RESERVE_MS
-          : 0;
-        return Response.json(await runCronStages({
-          collection: () => tickDueSources(prod.cronTickLimit, {
-            deadlineMs: deadlineMs - productionReserve - reconciliationReserve,
-            reserveMs: CRON_SOURCE_RESERVE_MS,
-          }),
-          production: () => runProductionTick({ deadlineMs: deadlineMs - reconciliationReserve }),
+        const gatewayReserve = reconciliationConfigured ? CRON_GATEWAY_RESERVE_MS : 0;
+        const queue = { processed: 0, succeeded: 0, failed: 0, deferred: 0,
+          results: [] as Array<{ source_id: string; items_found: number; items_new: number; error: string }> };
+        let queueError = false;
+        const drainQueue = async (queueDeadlineMs: number) => {
+          try {
+            const batch = await processReconciliationQueue(await getSql(),
+              (sourceId) => runSourceJob(sourceId, "reconcile"),
+              { deadlineMs: queueDeadlineMs, reserveMs: CRON_SOURCE_RESERVE_MS });
+            queue.processed += batch.processed;
+            queue.succeeded += batch.succeeded;
+            queue.failed += batch.failed;
+            queue.deferred = batch.deferred;
+            queue.results.push(...batch.results);
+            return batch;
+          } catch {
+            queueError = true;
+            return null;
+          }
+        };
+        const stages = await runCronStages({
+          collection: async () => {
+            await drainQueue(deadlineMs - gatewayReserve);
+            return tickDueSources(prod.cronTickLimit, {
+              // Extraction is optional in a bounded tick; reserve ingest + gateway so collection cannot starve.
+              deadlineMs: deadlineMs - CRON_INGEST_RESERVE_MS - gatewayReserve,
+              reserveMs: CRON_SOURCE_RESERVE_MS,
+            });
+          },
+          production: () => runProductionTick({ deadlineMs: deadlineMs - gatewayReserve }),
           reconciliation: async () => {
             if (!reconciliationConfigured) return null;
-            if (!cronHasBudget(deadlineMs, CRON_GATEWAY_RESERVE_MS + CRON_SOURCE_RESERVE_MS)) {
+            if (!cronHasBudget(deadlineMs, CRON_GATEWAY_RESERVE_MS)) {
               return { ok: false, error: "reconciliation_deferred" };
             }
             const gateway = await requestWechatReconciliation({
@@ -50,18 +72,21 @@ export const Route = createFileRoute("/api/cron/tick")({
               token: prod.wechatGatewayToken,
             });
             if (!gateway.ok) return gateway;
-            const sourceResults = await runReconciledSourceJobs(
-              gateway.value.succeeded_source_ids,
-              (sourceId) => runSourceJob(sourceId, "reconcile"),
-              { deadlineMs, reserveMs: CRON_SOURCE_RESERVE_MS },
+            queue.deferred = await enqueueReconciliationSources(
+              await getSql(), gateway.value.succeeded_source_ids,
             );
             return {
               ...gateway.value,
-              source_results: sourceResults,
-              deferred_source_count: gateway.value.succeeded_source_ids.length - sourceResults.length,
+              queued_source_count: gateway.value.succeeded_source_ids.length,
+              source_results: [],
+              deferred_source_count: queue.deferred,
             };
           },
-        }));
+        });
+        return Response.json({ ...stages, reconciliation_queue: {
+          ...queue,
+          ...(queueError ? { error: "queue_failed" } : {}),
+        } });
       },
     },
   },

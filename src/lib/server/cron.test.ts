@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   authorizeCron,
+  CRON_EXTRACT_RESERVE_MS,
+  CRON_GATEWAY_RESERVE_MS,
+  CRON_INGEST_RESERVE_MS,
+  CRON_SERVER_BUDGET_MS,
+  CRON_SOURCE_RESERVE_MS,
   parseCronTickLimit,
   reconciliationDue,
   requestWechatReconciliation,
@@ -9,6 +14,13 @@ import {
   runCronStages,
   runReconciledSourceJobs,
 } from "./cron.ts";
+
+test("cron reserves enough time to finish all four extraction targets", () => {
+  assert.equal(CRON_EXTRACT_RESERVE_MS, 460_000);
+  assert.ok(CRON_SERVER_BUDGET_MS - CRON_INGEST_RESERVE_MS >= CRON_SOURCE_RESERVE_MS);
+  assert.ok(CRON_SERVER_BUDGET_MS - CRON_INGEST_RESERVE_MS - CRON_GATEWAY_RESERVE_MS
+    >= CRON_SOURCE_RESERVE_MS);
+});
 
 test("requires an exact non-empty bearer token", () => {
   assert.equal(authorizeCron("Bearer cron-test", "cron-test"), true);
@@ -37,11 +49,23 @@ test("normalizes successful reconciliation IDs in first-seen order", async () =>
       assert.equal(new Headers(init?.headers).get("authorization"), "Bearer gateway-test");
       assert.ok(init?.signal instanceof AbortSignal);
       return Response.json({ day: "2026-08-28", attempted: 4, succeeded: 2, failed: 2,
-        succeeded_source_ids: [" wx-2 ", "wx-1"], budget_exhausted: false });
+        succeeded_source_ids: [" wx-2 ", "wx-1"], budget_exhausted: false,
+        deferred: 3, budget_deferred: true, deferred_paid_calls: 2 });
     },
   });
   assert.deepEqual(result, { ok: true, value: { day: "2026-08-28", attempted: 4,
-    succeeded: 2, failed: 2, succeeded_source_ids: ["wx-2", "wx-1"], budget_exhausted: false } });
+    succeeded: 2, failed: 2, succeeded_source_ids: ["wx-2", "wx-1"], budget_exhausted: false,
+    deferred: 3, budget_deferred: true, deferred_paid_calls: 2 } });
+});
+
+test("rejects unknown reconciliation response fields", async () => {
+  const result = await requestWechatReconciliation({
+    url: "https://gateway.internal",
+    token: "gateway-test",
+    fetchImpl: async () => Response.json({ day: "2026-08-28", attempted: 0, succeeded: 0,
+      failed: 0, succeeded_source_ids: [], budget_exhausted: false, unexpected: true }),
+  });
+  assert.deepEqual(result, { ok: false, error: "wechat_gateway_invalid_response" });
 });
 
 test("rejects unsafe gateway URLs before fetch", async () => {

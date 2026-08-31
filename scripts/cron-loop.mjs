@@ -17,6 +17,7 @@ function summarize(status, payload) {
   const collection = payload?.collection;
   const production = payload?.production;
   const reconciliation = payload?.reconciliation;
+  const reconciliationQueue = payload?.reconciliation_queue;
   const scanErrors = Array.isArray(reconciliation?.source_results)
     ? reconciliation.source_results.filter((result) => result?.error).length
     : 0;
@@ -31,7 +32,9 @@ function summarize(status, payload) {
       + scanErrors
       + failedStage(collection)
       + failedStage(production)
-      + failedStage(reconciliation),
+      + failedStage(reconciliation)
+      + count(reconciliationQueue?.failed)
+      + (reconciliationQueue?.error ? 1 : 0),
   };
 }
 
