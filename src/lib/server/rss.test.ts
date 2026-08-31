@@ -16,6 +16,7 @@ function atomEntry(body: string, thumbnail = "https://cdn.example.com/cover.jpg"
       <content type="html"><![CDATA[${body}]]></content>
       ${thumbnail ? `<media:thumbnail url="${thumbnail}" />` : ""}
       <loom:provider>primary</loom:provider>
+      <loom:providers_seen>primary,dajiala,primary</loom:providers_seen>
       <loom:discovered_at>2026-08-29T08:05:00.000Z</loom:discovered_at>
       <loom:body_complete>${bodyComplete}</loom:body_complete>
     </entry>
@@ -34,6 +35,7 @@ describe("parseFeedXml", () => {
     assert.deepEqual(item.extra, {
       platform: "wechat",
       provider: "primary",
+      providers_seen: ["primary", "dajiala"],
       discovered_at: "2026-08-29T08:05:00.000Z",
       body_complete: true,
     });
@@ -53,6 +55,7 @@ describe("parseFeedXml", () => {
     assert.deepEqual(item.extra, {
       platform: "wechat",
       provider: "primary",
+      providers_seen: ["primary", "dajiala"],
       discovered_at: "2026-08-29T08:05:00.000Z",
       body_complete: false,
       body_error: "body_too_large",

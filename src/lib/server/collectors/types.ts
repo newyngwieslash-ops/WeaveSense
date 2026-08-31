@@ -26,7 +26,27 @@ export type NormalizedItem = {
   extra: Record<string, unknown>;
 };
 
+export type CollectorMeta = {
+  provider: "" | "primary" | "dajiala" | "mixed";
+  attempts: string[];
+  paid_call: boolean;
+};
+
+export type CollectorBatch = { items: NormalizedItem[]; meta: CollectorMeta };
+
+export class CollectorBatchError extends Error {
+  constructor(message: string, readonly meta: CollectorMeta) {
+    super(message);
+    this.name = "CollectorBatchError";
+  }
+}
+
+export function collectorMeta(error: unknown): CollectorMeta {
+  return error instanceof CollectorBatchError
+    ? error.meta : { provider: "", attempts: [], paid_call: false };
+}
+
 export type CollectorAdapter = {
   id: string;
-  fetch(source: SourceRecord): Promise<NormalizedItem[]>;
+  fetch(source: SourceRecord): Promise<CollectorBatch>;
 };

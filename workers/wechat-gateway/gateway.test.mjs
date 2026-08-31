@@ -501,10 +501,12 @@ test("serializes the required XML-safe Atom contract", () => {
     original_url: "https://mp.weixin.qq.com/s?__biz=MzA1&mid=9&idx=1&sn=abc",
     body_text: "正文 \u0001 ]]> 尾", body_complete: true,
     cover_url: "https://mmbiz.qpic.cn/cover.jpg?a=1&b=2",
-    provider: "primary", discovered_at: "2026-08-28T09:00:00Z",
+    provider: "primary", providers_seen: '["primary","dajiala"]',
+    discovered_at: "2026-08-28T09:00:00Z",
   }]);
   assert.match(xml, /wx:MzA1:9:1/);
   assert.match(xml, /loom:provider>primary/);
+  assert.match(xml, /loom:providers_seen>primary,dajiala<\/loom:providers_seen>/);
   assert.match(xml, /loom:body_complete>true<\/loom:body_complete>/);
   assert.match(xml, /media:thumbnail/);
   assert.match(xml, /]]]]><!\[CDATA\[>/);
@@ -630,6 +632,9 @@ test("primary-first gateway caches a seven-day union and never pays on success",
   const response = await request(`/v1/feeds/${integrationSource.id}.atom`);
   const xml = await response.text();
   assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-loom-provider"), "mixed");
+  assert.equal(response.headers.get("x-loom-attempts"), "primary");
+  assert.equal(response.headers.get("x-loom-paid-call"), "false");
   assert.match(xml, /loom:provider>primary/);
   assert.match(xml, /自建文章/);
   assert.match(xml, /付费文章/);
@@ -690,9 +695,14 @@ test("first primary failure is 503 without spend; second uses paid list and only
     discovered_at: "2026-08-28T11:01:00.000Z" }]);
   const first = await request(`/v1/feeds/${integrationSource.id}.atom`);
   assert.equal(first.status, 503);
+  assert.equal(first.headers.get("x-loom-attempts"), "primary");
+  assert.equal(first.headers.get("x-loom-paid-call"), "false");
   assert.deepEqual(store.getProviderUsage("2026-08-28", "dajiala"), { calls: 0, amount: 0 });
   const second = await request(`/v1/feeds/${integrationSource.id}.atom`);
   assert.equal(second.status, 200);
+  assert.equal(second.headers.get("x-loom-provider"), "dajiala");
+  assert.equal(second.headers.get("x-loom-attempts"), "primary,dajiala");
+  assert.equal(second.headers.get("x-loom-paid-call"), "true");
   assert.match(await second.text(), /loom:provider>dajiala/);
   assert.equal(listCalls, 1);
   assert.deepEqual(detailed, ["付费文章"]);
@@ -783,8 +793,39 @@ test("gateway health exposes paid configuration and capped daily usage", async (
   assert.deepEqual(await response.json(), {
     source_id: integrationSource.id, alert_state: "normal", last_primary_ok_at: null,
     consecutive_primary_failures: 0, last_paid_check_at: null, last_paid_result: "",
-    next_retry_at: null, paid_configured: true, paid_day_amount: 0.06,
+    recent_error_type: "", next_retry_at: null, paid_configured: true, paid_day_amount: 0.06,
     paid_daily_budget: 20, paid_day_calls: 1, paid_daily_call_limit: 250,
+  });
+});
+
+test("aggregate health is bearer-protected and returns source, usage, and limit state", async (t) => {
+  const { store, request } = gatewayFixture(t, { paid: {
+    estimatedListCost: 0.08, listToday: async () => ({ items: [] }),
+  } });
+  store.recordPrimaryFailure(integrationSource.id, "2026-08-28T11:00:00.000Z");
+  const reservation = store.tryReserveSpend("2026-08-28", "dajiala", 0.08, 20, 250);
+  store.adjustSpend(reservation, 0.06);
+  const unauthorized = createGateway({ store, token: "gateway-test",
+    now: () => new Date("2026-08-28T12:00:00.000Z") });
+  assert.equal((await unauthorized(new Request("http://gateway.local/v1/health"))).status, 401);
+  assert.deepEqual(await (await request("/v1/health")).json(), {
+    sources: [{
+      source_id: integrationSource.id,
+      alert_state: "degraded",
+      last_primary_ok_at: null,
+      consecutive_primary_failures: 1,
+      last_paid_check_at: null,
+      last_paid_result: "",
+      recent_error_type: "primary_feed_failed",
+      next_retry_at: null,
+      paid_configured: true,
+      paid_day_amount: 0.06,
+      paid_daily_budget: 20,
+      paid_day_calls: 1,
+      paid_daily_call_limit: 250,
+    }],
+    usage: { today: "2026-08-28", day: "2026-08-28", calls: 1, amount: 0.06 },
+    limits: { daily_calls: 250, daily_rmb: 20, paid_configured: true },
   });
 });
 
@@ -793,15 +834,23 @@ test("health projects unresolved paid hard errors until a later primary success"
   const path = `/v1/sources/${integrationSource.id}/health`;
   fixture.store.recordPaidResult(integrationSource.id, "mapping_error", null, "alert",
     "2026-08-28T12:01:00.000Z");
-  assert.equal((await (await fixture.request(path)).json()).alert_state, "alert");
+  let health = await (await fixture.request(path)).json();
+  assert.equal(health.alert_state, "alert");
+  assert.equal(health.recent_error_type, "mapping_error");
   fixture.store.recordPrimarySuccess(integrationSource.id, "2026-08-28T12:01:00.000Z");
-  assert.equal((await (await fixture.request(path)).json()).alert_state, "normal");
+  health = await (await fixture.request(path)).json();
+  assert.equal(health.alert_state, "normal");
+  assert.equal(health.recent_error_type, "");
 
   fixture.store.recordPaidResult(integrationSource.id, "technical_error", "2026-08-28T12:10:00.000Z",
     "degraded", "2026-08-28T12:05:00.000Z");
-  assert.equal((await (await fixture.request(path)).json()).alert_state, "degraded");
+  health = await (await fixture.request(path)).json();
+  assert.equal(health.alert_state, "degraded");
+  assert.equal(health.recent_error_type, "technical_error");
   fixture.store.recordPrimarySuccess(integrationSource.id, "2026-08-28T12:06:00.000Z");
-  assert.equal((await (await fixture.request(path)).json()).alert_state, "normal");
+  health = await (await fixture.request(path)).json();
+  assert.equal(health.alert_state, "normal");
+  assert.equal(health.recent_error_type, "");
 });
 
 test("health keeps a 24-hour alert above a newer unresolved technical error", async (t) => {

@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getSql } from "@/lib/db";
 import { parseKeywordList, parsePlatformList } from "@/lib/keyword";
 import { defaultAdapter } from "./collectors";
-import { prod } from "./config";
+import { prod, wechatGatewayConfigured } from "./config";
 import { parseTelegramHandles, telethonHealth } from "./telethon";
 import { analyzeItem, askKnowledge, generateBriefing } from "./analyze";
 import { extractItem, extractPending } from "./extract";
@@ -72,6 +72,23 @@ export const tickFn = createServerFn({ method: "POST" }).handler(async () => {
 export const listSourcesFn = createServerFn({ method: "GET" }).handler(async () => {
   await ensureSeeded();
   return listSources();
+});
+
+export const listWechatHealthFn = createServerFn({ method: "GET" }).handler(async () => {
+  if (!wechatGatewayConfigured()) {
+    return { available: false, error: "wechat_gateway_unconfigured",
+      sources: [], usage: null, limits: null };
+  }
+  try {
+    const health = await (await createProductionWechatGatewayClient()).listHealth();
+    return { available: true, error: "", ...health };
+  } catch (error) {
+    const code = error instanceof Error && [
+      "wechat_gateway_timeout", "wechat_gateway_unauthorized", "wechat_gateway_http_error",
+      "wechat_gateway_invalid_response", "wechat_gateway_response_too_large", "wechat_gateway_unavailable",
+    ].includes(error.message) ? error.message : "wechat_gateway_unavailable";
+    return { available: false, error: code, sources: [], usage: null, limits: null };
+  }
 });
 
 export const previewWechatImportFn = createServerFn({ method: "POST" })

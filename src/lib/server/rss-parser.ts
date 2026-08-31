@@ -86,9 +86,12 @@ function authorOf(item: Record<string, unknown>): string {
 function loomExtra(item: Record<string, unknown>, platform: PlatformId): Record<string, unknown> {
   const extra: Record<string, unknown> = { platform };
   const provider = textOf(item["loom:provider"]);
+  const providersSeen = textOf(item["loom:providers_seen"]);
   const discoveredAt = textOf(item["loom:discovered_at"]);
   const bodyComplete = textOf(item["loom:body_complete"]);
   if (provider) extra.provider = provider;
+  if (providersSeen) extra.providers_seen = [...new Set(providersSeen.split(",")
+    .map((value) => value.trim()).filter(Boolean))];
   if (discoveredAt) extra.discovered_at = discoveredAt;
   if (bodyComplete === "true" || bodyComplete === "false") extra.body_complete = bodyComplete === "true";
   return extra;

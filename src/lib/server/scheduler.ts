@@ -2,10 +2,11 @@ import { getSql } from "@/lib/db";
 import { itemMatchesPhrase, RADAR_SOURCE_ID } from "@/lib/keyword";
 import { isPlatform, type PlatformId } from "@/lib/platforms";
 import { shortId } from "@/lib/utils";
+import { normalizeWechatUrl } from "@/lib/wechat-canonical";
 import type { TickResult } from "@/lib/types";
 import { collectSource } from "./collectors";
 import { collectKeyword } from "./collectors/keyword";
-import type { NormalizedItem, SourceRecord } from "./collectors/types";
+import { collectorMeta, type CollectorMeta, type NormalizedItem, type SourceRecord } from "./collectors/types";
 import { cronDueQuotas, CRON_SOURCE_CONCURRENCY, runCronBatch, type CronBatchOptions } from "./cron";
 import { enqueueItemMedia } from "./media";
 import { mapKeyword, mapSource } from "./queries";
@@ -16,6 +17,7 @@ import {
   completeSourceClaim,
   failKeywordClaim,
   failSourceClaim,
+  finishSourceJob,
   finishItemInsert,
   mergeExistingItem,
   SCHEDULER_LEASE_LOST,
@@ -23,6 +25,7 @@ import {
 } from "./scheduler-atomic";
 import { ensureRadarSource, ensureSeeded } from "./seed";
 import { asJson } from "./serialize";
+import { mergeProvidersSeen } from "./wechat-meta";
 
 function pickCursor(items: NormalizedItem[]): NormalizedItem | undefined {
   if (!items.length) return undefined;
@@ -181,6 +184,7 @@ export async function runSourceJob(
   const source = mapSource(raw);
 
   let jobCreated = false;
+  let meta: CollectorMeta = { provider: "", attempts: [], paid_call: false };
   try {
     await sql.query(
       `insert into jobs (id, source_id, platform, status, kind) values ($1,$2,$3,'running',$4)`,
@@ -197,12 +201,23 @@ export async function runSourceJob(
       adapter: source.adapter,
       last_external_id: source.last_external_id,
     };
-    const fetched = await collectSource(record);
-    const existing = await sql.query<{ id: string; external_id: string }>(
-      "select id, external_id from items where source_id = $1",
+    const collected = await collectSource(record);
+    const fetched = collected.items;
+    meta = collected.meta;
+    const existing = await sql.query<{ id: string; external_id: string; url: string; extra: unknown }>(
+      "select id, external_id, url, extra from items where source_id = $1",
       [source.id],
     );
-    const existingByExternalId = new Map(existing.map((row) => [row.external_id, row.id]));
+    const existingByExternalId = new Map(existing.map((row) => [row.external_id, row]));
+    const normalizedUrl = (url: string) => {
+      if (source.platform !== "wechat" || !url) return "";
+      try { return normalizeWechatUrl(url); } catch { return ""; }
+    };
+    const existingByUrl = new Map<string, (typeof existing)[number]>();
+    for (const row of existing) {
+      const url = normalizedUrl(row.url);
+      if (url) existingByUrl.set(url, row);
+    }
     const phrases = await enabledPhrases();
     let itemsNew = 0;
 
@@ -213,9 +228,18 @@ export async function runSourceJob(
       const matched = phrases
         .filter((p) => itemMatchesPhrase(it.title, it.body, it.author, p.phrase))
         .map((p) => p.phrase);
-      const existingId = existingByExternalId.get(it.external_id);
-      if (existingId) {
-        await mergeExistingItem(sql, existingId, { ...it, published_at: publishedIso }, matched);
+      const existingItem = existingByExternalId.get(it.external_id)
+        ?? existingByUrl.get(normalizedUrl(it.url));
+      const existingExtra = asJson<Record<string, unknown>>(existingItem?.extra, {});
+      const providerHistory = mergeProvidersSeen(existingExtra, it.extra.providers_seen);
+      const itemExtra = source.platform === "wechat"
+        ? mergeProvidersSeen(existingItem
+          ? { ...providerHistory, ...it.extra, providers_seen: providerHistory.providers_seen }
+          : it.extra, it.extra.provider ?? meta.provider)
+        : it.extra;
+      if (existingItem) {
+        await mergeExistingItem(sql, existingItem.id,
+          { ...it, extra: itemExtra, published_at: publishedIso }, matched);
         continue;
       }
       const id = shortId();
@@ -241,11 +265,18 @@ export async function runSourceJob(
           it.views,
           it.likes,
           publishedIso,
-          JSON.stringify(it.extra ?? {}),
+          JSON.stringify(itemExtra ?? {}),
           JSON.stringify(matched),
         ],
       );
-      if (await finishItemInsert(inserted, it.media_urls, it.media_type, enqueueItemMedia)) itemsNew += 1;
+      if (await finishItemInsert(inserted, it.media_urls, it.media_type, enqueueItemMedia)) {
+        itemsNew += 1;
+        const saved = { id, external_id: it.external_id.slice(0, 320),
+          url: it.url.slice(0, 1000), extra: itemExtra };
+        existingByExternalId.set(saved.external_id, saved);
+        const savedUrl = normalizedUrl(saved.url);
+        if (savedUrl) existingByUrl.set(savedUrl, saved);
+      }
     }
 
     const latest = pickCursor(fetched);
@@ -257,27 +288,19 @@ export async function runSourceJob(
       latest?.published_at ?? null,
     );
     if (!completed) {
-      await sql.query(
-        `update jobs set status = 'error', finished_at = now(), error = $2 where id = $1`,
-        [jobId, SCHEDULER_LEASE_LOST],
-      );
+      await finishSourceJob(sql, jobId, "error", SCHEDULER_LEASE_LOST, 0, 0, meta);
       return { items_found: 0, items_new: 0, error: SCHEDULER_LEASE_LOST };
     }
-    await sql.query(
-      `update jobs set status = 'ok', finished_at = now(), items_found = $2, items_new = $3, error = ''
-       where id = $1`,
-      [jobId, fetched.length, itemsNew],
-    );
+    await finishSourceJob(sql, jobId, "ok", "", fetched.length, itemsNew, meta);
     return { items_found: fetched.length, items_new: itemsNew, error: "" };
   } catch (err) {
+    const failedMeta = collectorMeta(err);
+    if (failedMeta.attempts.length) meta = failedMeta;
     const message = errMessage(err);
     const released = await failSourceClaim(sql, source.id, jobId, message);
     const jobError = released ? message : SCHEDULER_LEASE_LOST;
     if (jobCreated) {
-      await sql.query(
-        `update jobs set status = 'error', finished_at = now(), error = $2 where id = $1`,
-        [jobId, jobError],
-      );
+      await finishSourceJob(sql, jobId, "error", jobError, 0, 0, meta);
     }
     return { items_found: 0, items_new: 0, error: jobError };
   }

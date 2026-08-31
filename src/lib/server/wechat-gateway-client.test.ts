@@ -12,6 +12,20 @@ const SOURCE = {
   interval_minutes: 60 as const,
   priority: "normal" as const,
 };
+const HEALTH = {
+  sources: [{
+    source_id: SOURCE.source_id,
+    last_primary_ok_at: "2026-08-28T08:00:00.000Z",
+    consecutive_primary_failures: 0,
+    recent_error_type: "",
+    last_paid_check_at: null,
+    last_paid_result: "",
+    alert_state: "normal",
+    next_retry_at: null,
+  }],
+  usage: { today: "2026-08-28", day: "2026-08-28", calls: 2, amount: 0.12 },
+  limits: { daily_calls: 250, daily_rmb: 20, paid_configured: true },
+};
 
 describe("createWechatGatewayClient", () => {
   it("provisions the exact gateway source contract with bearer auth", async () => {
@@ -42,7 +56,7 @@ describe("createWechatGatewayClient", () => {
 
   it("reads aggregate health with the same auth", async () => {
     let request: { url: string; init?: RequestInit } | undefined;
-    const health = { sources: [], usage: { calls: 0 }, limits: { calls: 250 } };
+    const health = HEALTH;
     const client = createWechatGatewayClient({ baseUrl: "http://gateway:8790", token: TOKEN,
       fetchImpl: async (input, init) => {
         request = { url: String(input), init };
@@ -66,7 +80,7 @@ describe("createWechatGatewayClient", () => {
         fetchImpl: async () => Response.json({ ok: true }) });
       await client.putSource(SOURCE);
       const healthClient = createWechatGatewayClient({ baseUrl: "https://gateway.example", token: TOKEN,
-        fetchImpl: async () => Response.json({ sources: [], usage: {}, limits: {} }) });
+        fetchImpl: async () => Response.json(HEALTH) });
       await healthClient.listHealth();
       assert.deepEqual(seen, [20_000, 30_000]);
     } finally {
@@ -109,8 +123,26 @@ describe("createWechatGatewayClient", () => {
     await assert.rejects(created.putSource(SOURCE), /wechat_gateway_http_error/);
 
     const noContentHealth = createWechatGatewayClient({ baseUrl: "https://gateway.example", token: TOKEN,
-      fetchImpl: async () => Response.json({ sources: [], usage: {}, limits: {} }, { status: 202 }) });
-    assert.deepEqual(await noContentHealth.listHealth(), { sources: [], usage: {}, limits: {} });
+      fetchImpl: async () => Response.json(HEALTH, { status: 202 }) });
+    assert.deepEqual(await noContentHealth.listHealth(), HEALTH);
+  });
+
+  it("strictly rejects unsafe, oversized, and malformed aggregate health shapes", async () => {
+    const invalid = [
+      { ...HEALTH, sources: Array.from({ length: 1_001 }, () => HEALTH.sources[0]) },
+      { ...HEALTH, sources: [{ ...HEALTH.sources[0], alert_state: "secret-upstream-state" }] },
+      { ...HEALTH, sources: [{ ...HEALTH.sources[0], source_id: "../unsafe" }] },
+      { ...HEALTH, sources: [{ ...HEALTH.sources[0], last_primary_ok_at: "2026" }] },
+      { ...HEALTH, sources: [{ ...HEALTH.sources[0], last_primary_ok_at: "2026-02-30T08:00:00.000Z" }] },
+      { ...HEALTH, usage: { ...HEALTH.usage, calls: -1 } },
+      { ...HEALTH, usage: { ...HEALTH.usage, today: "2026-02-30" } },
+      { ...HEALTH, limits: { ...HEALTH.limits, paid_configured: "yes" } },
+    ];
+    for (const body of invalid) {
+      const client = createWechatGatewayClient({ baseUrl: "https://gateway.example", token: TOKEN,
+        fetchImpl: async () => Response.json(body) });
+      await assert.rejects(client.listHealth(), /wechat_gateway_invalid_response/);
+    }
   });
 
   it("rejects unsafe base URLs without issuing a request", async () => {

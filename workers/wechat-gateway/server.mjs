@@ -95,9 +95,32 @@ function normalizeItem(item, source, date, provider = item?.provider ?? PROVIDER
   };
 }
 
-function atom(source, items) {
+function feedProvider(items, fallback = "") {
+  const providers = new Set(items.map((item) => item.provider)
+    .filter((provider) => provider === "primary" || provider === "dajiala"));
+  return providers.size === 2 ? "mixed" : [...providers][0] ?? fallback;
+}
+
+function feedHeaders(provider, attempts, paidCall) {
+  return {
+    "X-Loom-Provider": provider,
+    "X-Loom-Attempts": attempts.join(","),
+    "X-Loom-Paid-Call": String(paidCall),
+  };
+}
+
+function withFeedMeta(response, provider, attempts, paidCall) {
+  const headers = new Headers(response.headers);
+  for (const [name, value] of Object.entries(feedHeaders(provider, attempts, paidCall))) {
+    headers.set(name, value);
+  }
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
+function atom(source, items, { provider = "", attempts = ["primary"], paidCall = false } = {}) {
   return new Response(toAtom(source.source_id, source.name, items), {
-    headers: { "content-type": "application/atom+xml; charset=utf-8" },
+    headers: { "content-type": "application/atom+xml; charset=utf-8",
+      ...feedHeaders(feedProvider(items, provider), attempts, paidCall) },
   });
 }
 
@@ -150,6 +173,9 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
       consecutive_primary_failures: source.consecutive_primary_failures,
       last_paid_check_at: source.last_paid_check_at,
       last_paid_result: source.last_paid_result,
+      recent_error_type: unresolvedPaidError && source.last_paid_result === "mapping_error" ? "mapping_error"
+        : unresolvedPaidError && source.last_paid_result === "technical_error" ? "technical_error"
+          : source.consecutive_primary_failures > 0 ? "primary_feed_failed" : "",
       next_retry_at: source.next_retry_at,
       paid_configured: Boolean(paid),
       paid_day_amount: paidUsage.amount,
@@ -160,18 +186,18 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
   }
 
   async function runPaid(source, current, reconciliationDay = null, deadlineMs = null) {
-    if (!paid) return { response: json(503, { error: "paid_fallback_unavailable" }) };
+    if (!paid) return { response: json(503, { error: "paid_fallback_unavailable" }), paidCall: false };
     const listEstimate = Number(paid.estimatedListCost ?? 0.08);
     const listStarted = current();
     if (deadlineMs !== null && listStarted.getTime() + PAID_CALL_RESERVE_MS > deadlineMs) {
-      return { deadlineDeferred: true, deferredPaidCalls: 1, spentDays: [] };
+      return { deadlineDeferred: true, deferredPaidCalls: 1, spentDays: [], paidCall: false };
     }
     if (reconciliationDay && shanghaiDay(listStarted) !== reconciliationDay) {
-      return { batchExpired: true, spentDays: [] };
+      return { batchExpired: true, spentDays: [], paidCall: false };
     }
     const spentDays = new Set([shanghaiDay(listStarted)]);
     const listReservation = reserve(listStarted, listEstimate);
-    if (!listReservation) return { budgetExhausted: true, spentDays: [...spentDays] };
+    if (!listReservation) return { budgetExhausted: true, spentDays: [...spentDays], paidCall: false };
     let listed;
     try {
       listed = await paid.listToday(source);
@@ -185,7 +211,7 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
       store.recordPaidResult(source.source_id, result, retry,
         result === "mapping_error" ? "alert" : "degraded", completed.toISOString());
       return { response: json(503, { error: result === "mapping_error"
-        ? "paid_mapping_failed" : "paid_provider_failed" }), spentDays: [...spentDays] };
+        ? "paid_mapping_failed" : "paid_provider_failed" }), spentDays: [...spentDays], paidCall: true };
     }
 
     const listedAt = current();
@@ -244,7 +270,7 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
       completed.toISOString(), listStarted.toISOString(), true);
     store.deleteGatewayItemsBefore(since(completed, 30));
     return { items: store.listGatewayItems(source.source_id, since(completed, 7)),
-      spentDays: [...spentDays], deadlineDeferred, deferredPaidCalls };
+      spentDays: [...spentDays], deadlineDeferred, deferredPaidCalls, paidCall: true };
   }
 
   async function feed(source, date) {
@@ -255,18 +281,28 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
       const failedAt = clock(now);
       store.recordPrimaryFailure(source.source_id, failedAt.toISOString());
       const failed = store.getSource(source.source_id);
-      if (!paidDecision(failed, failedAt).allowed) return json(503, { error: "primary_feed_failed" });
+      if (!paidDecision(failed, failedAt).allowed) {
+        return withFeedMeta(json(503, { error: "primary_feed_failed" }), "", ["primary"], false);
+      }
       const fallback = await runPaid(failed, () => clock(now), null, date.getTime() + feedBudgetMs);
-      if (fallback.budgetExhausted) return json(429, { code: "paid_budget_exhausted" });
-      return fallback.response ?? atom(failed, fallback.items
-        ?? store.listGatewayItems(failed.source_id, since(clock(now), 7)));
+      const attempts = fallback.paidCall ? ["primary", "dajiala"] : ["primary"];
+      if (fallback.budgetExhausted) {
+        return withFeedMeta(json(429, { code: "paid_budget_exhausted" }), "", attempts, false);
+      }
+      if (fallback.response) return withFeedMeta(fallback.response, "", attempts, Boolean(fallback.paidCall));
+      return atom(failed, fallback.items
+        ?? store.listGatewayItems(failed.source_id, since(clock(now), 7)), {
+        provider: "dajiala", attempts, paidCall: Boolean(fallback.paidCall),
+      });
     }
     const completed = clock(now);
     store.upsertGatewayItems(source.source_id,
       primaryItems.map((item) => normalizeItem(item, source, completed, "primary")), completed.toISOString());
     store.recordPrimarySuccess(source.source_id, completed.toISOString());
     store.deleteGatewayItemsBefore(since(completed, 30));
-    return atom(source, store.listGatewayItems(source.source_id, since(completed, 7)));
+    return atom(source, store.listGatewayItems(source.source_id, since(completed, 7)), {
+      provider: "primary", attempts: ["primary"], paidCall: false,
+    });
   }
 
   async function lockedFeed(source, date) {
@@ -274,7 +310,9 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
     const response = await sourceLock(source.source_id, "feed", async () => {
       const fresh = store.getSource(source.source_id);
       if (fresh.last_paid_result === "ok" && fresh.last_paid_check_at !== observedPaidAt) {
-        return atom(fresh, store.listGatewayItems(fresh.source_id, since(clock(now), 7)));
+        return atom(fresh, store.listGatewayItems(fresh.source_id, since(clock(now), 7)), {
+          provider: "dajiala", attempts: ["primary", "dajiala"], paidCall: false,
+        });
       }
       return feed(fresh, date);
     });
@@ -432,6 +470,16 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
       if (request.method === "GET" && match) {
         const source = store.getSource(decodeURIComponent(match[1]));
         return source ? json(200, health(source, clock(now))) : json(404, { error: "source not found" });
+      }
+      if (request.method === "GET" && url.pathname === "/v1/health") {
+        const date = clock(now);
+        const day = shanghaiDay(date);
+        const paidUsage = usage(day);
+        return json(200, {
+          sources: store.listSources().map((source) => health(source, date)),
+          usage: { today: day, day, calls: paidUsage.calls, amount: paidUsage.amount },
+          limits: { daily_calls: budget.calls, daily_rmb: budget.rmb, paid_configured: Boolean(paid) },
+        });
       }
       match = url.pathname.match(/^\/v1\/feeds\/([^/]+)\.atom$/);
       if (request.method === "GET" && match) {

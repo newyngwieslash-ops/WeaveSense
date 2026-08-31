@@ -1,4 +1,4 @@
-import { isPlatform, type PlatformId } from "./platforms";
+import { isPlatform, type PlatformId } from "./platforms.ts";
 
 export function parseKeywordList(raw: string): string[] {
   const seen = new Set<string>();

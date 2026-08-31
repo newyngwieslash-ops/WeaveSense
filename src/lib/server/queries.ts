@@ -1,7 +1,7 @@
-import { getSql } from "@/lib/db";
-import { parsePlatformList } from "@/lib/keyword";
-import type { PlatformId } from "@/lib/platforms";
-import { isPlatform } from "@/lib/platforms";
+import { getSql } from "../db.ts";
+import { parsePlatformList } from "../keyword.ts";
+import type { PlatformId } from "../platforms.ts";
+import { isPlatform } from "../platforms.ts";
 import type {
   AnalysisRow,
   ExtractJobView,
@@ -14,8 +14,8 @@ import type {
   Overview,
   PlatformStat,
   SourceRow,
-} from "@/lib/types";
-import { asBool, asInt, asJson, iso } from "./serialize";
+} from "../types.ts";
+import { asBool, asInt, asJson, iso } from "./serialize.ts";
 
 function platformOf(value: unknown): PlatformId {
   const s = String(value);
@@ -101,6 +101,8 @@ export function mapItem(row: Record<string, unknown>): ItemRow {
 }
 
 export function mapJob(row: Record<string, unknown>): JobRow {
+  const provider = String(row.provider ?? "");
+  const attempts = asJson<unknown>(row.attempts, []);
   return {
     id: String(row.id),
     source_id: String(row.source_id),
@@ -112,6 +114,11 @@ export function mapJob(row: Record<string, unknown>): JobRow {
     items_new: asInt(row.items_new) ?? 0,
     error: String(row.error ?? ""),
     kind: String(row.kind ?? "incremental"),
+    provider: (["", "primary", "dajiala", "mixed"].includes(provider) ? provider : "") as JobRow["provider"],
+    attempts: (Array.isArray(attempts) ? attempts : [])
+      .filter((attempt): attempt is string => typeof attempt === "string")
+      .map((attempt) => attempt.slice(0, 80)).slice(0, 8),
+    paid_call: asBool(row.paid_call),
     keyword_id: row.keyword_id ? String(row.keyword_id) : "",
     source_name: row.source_name ? String(row.source_name) : undefined,
   };

@@ -1,4 +1,8 @@
+import type { WechatHealthLimits, WechatHealthRow, WechatHealthUsage } from "../types.ts";
+
 const MAX_RESPONSE_BYTES = 1024 * 1024;
+const MAX_HEALTH_SOURCES = 1_000;
+const SAFE_SOURCE_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 
 export type WechatGatewaySource = {
   source_id: string;
@@ -65,6 +69,79 @@ function httpError(status: number): never {
   return fail("wechat_gateway_http_error");
 }
 
+function record(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) fail("wechat_gateway_invalid_response");
+  return value as Record<string, unknown>;
+}
+
+function day(value: unknown): string {
+  const parsed = typeof value === "string" ? Date.parse(`${value}T00:00:00.000Z`) : Number.NaN;
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value) ||
+    !Number.isFinite(parsed) || new Date(parsed).toISOString().slice(0, 10) !== value) {
+    fail("wechat_gateway_invalid_response");
+  }
+  return value;
+}
+
+function timestamp(value: unknown): string | null {
+  if (value === null) return null;
+  if (typeof value !== "string" || value.length > 40 ||
+    !/^\d{4}-\d{2}-\d{2}T/.test(value) || !Number.isFinite(Date.parse(value))) {
+    fail("wechat_gateway_invalid_response");
+  }
+  day(value.slice(0, 10));
+  return value;
+}
+
+function nonNegative(value: unknown, integer = false): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 ||
+    (integer && !Number.isSafeInteger(value))) fail("wechat_gateway_invalid_response");
+  return value;
+}
+
+function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T {
+  if (typeof value !== "string" || !allowed.includes(value as T)) fail("wechat_gateway_invalid_response");
+  return value as T;
+}
+
+function healthOverview(value: unknown): {
+  sources: WechatHealthRow[]; usage: WechatHealthUsage; limits: WechatHealthLimits;
+} {
+  const root = record(value);
+  if (!Array.isArray(root.sources) || root.sources.length > MAX_HEALTH_SOURCES) {
+    fail("wechat_gateway_invalid_response");
+  }
+  const sources = root.sources.map((raw): WechatHealthRow => {
+    const source = record(raw);
+    if (typeof source.source_id !== "string" || !SAFE_SOURCE_ID.test(source.source_id)) {
+      fail("wechat_gateway_invalid_response");
+    }
+    return {
+      source_id: source.source_id,
+      last_primary_ok_at: timestamp(source.last_primary_ok_at),
+      consecutive_primary_failures: nonNegative(source.consecutive_primary_failures, true),
+      recent_error_type: oneOf(source.recent_error_type,
+        ["", "primary_feed_failed", "technical_error", "mapping_error"] as const),
+      last_paid_check_at: timestamp(source.last_paid_check_at),
+      last_paid_result: oneOf(source.last_paid_result,
+        ["", "ok", "technical_error", "mapping_error"] as const),
+      alert_state: oneOf(source.alert_state,
+        ["normal", "degraded", "paid_fallback", "alert"] as const),
+      next_retry_at: timestamp(source.next_retry_at),
+    };
+  });
+  const usage = record(root.usage);
+  const limits = record(root.limits);
+  if (typeof limits.paid_configured !== "boolean") fail("wechat_gateway_invalid_response");
+  return {
+    sources,
+    usage: { today: day(usage.today), day: day(usage.day),
+      calls: nonNegative(usage.calls, true), amount: nonNegative(usage.amount) },
+    limits: { daily_calls: nonNegative(limits.daily_calls, true),
+      daily_rmb: nonNegative(limits.daily_rmb), paid_configured: limits.paid_configured },
+  };
+}
+
 export function createWechatGatewayClient({ baseUrl, token, fetchImpl = fetch }: {
   baseUrl: string;
   token: string;
@@ -119,12 +196,11 @@ export function createWechatGatewayClient({ baseUrl, token, fetchImpl = fetch }:
       return { ok: true };
     },
 
-    async listHealth(): Promise<Record<string, unknown>> {
+    async listHealth(): Promise<{
+      sources: WechatHealthRow[]; usage: WechatHealthUsage; limits: WechatHealthLimits;
+    }> {
       const value = await request("/v1/health", 30_000, { method: "GET" });
-      if (!value || typeof value !== "object" || Array.isArray(value)) {
-        fail("wechat_gateway_invalid_response");
-      }
-      return value as Record<string, unknown>;
+      return healthOverview(value);
     },
   };
 }

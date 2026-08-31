@@ -4,6 +4,19 @@ const escapeText = (value) => xmlText(value)
 const escapeAttr = (value) => escapeText(value).replaceAll('"', "&quot;").replaceAll("'", "&apos;");
 const cdata = (value) => `<![CDATA[${xmlText(value).replaceAll("]]>", "]]]]><![CDATA[>")}]]>`;
 
+function providersSeen(item) {
+  let seen = [];
+  try {
+    const parsed = typeof item.providers_seen === "string"
+      ? JSON.parse(item.providers_seen) : item.providers_seen;
+    if (Array.isArray(parsed)) seen = parsed;
+  } catch {
+    seen = String(item.providers_seen ?? "").split(",");
+  }
+  return [...new Set([...seen, item.provider]
+    .map((provider) => String(provider ?? "").trim()).filter(Boolean))].join(",");
+}
+
 export function toAtom(sourceId, sourceName, items) {
   const updated = items[0]?.discovered_at ?? items[0]?.published_at ?? new Date(0).toISOString();
   const entries = items.map((item) => `  <entry>
@@ -15,6 +28,7 @@ export function toAtom(sourceId, sourceName, items) {
     <author><name>${escapeText(item.account_name)}</name></author>
     <content type="html">${cdata(item.body_html ?? item.body_text ?? "")}</content>
 ${item.cover_url ? `    <media:thumbnail url="${escapeAttr(item.cover_url)}"/>\n` : ""}    <loom:provider>${escapeText(item.provider)}</loom:provider>
+    <loom:providers_seen>${escapeText(providersSeen(item))}</loom:providers_seen>
     <loom:discovered_at>${escapeText(item.discovered_at)}</loom:discovered_at>
     <loom:body_complete>${String(Boolean(item.body_complete))}</loom:body_complete>
   </entry>`).join("\n");

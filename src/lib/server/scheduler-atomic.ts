@@ -131,6 +131,21 @@ export async function finishItemInsert(
   return true;
 }
 
+export async function finishSourceJob(
+  sql: Queryable,
+  jobId: string,
+  status: "ok" | "error",
+  error: string,
+  itemsFound: number,
+  itemsNew: number,
+  meta: { provider: "" | "primary" | "dajiala" | "mixed"; attempts: string[]; paid_call: boolean },
+): Promise<void> {
+  await sql.query(`update jobs set status = $2, finished_at = now(), error = $3,
+      items_found = $4, items_new = $5, provider = $6, attempts = $7::jsonb, paid_call = $8
+    where id = $1`, [jobId, status, error, itemsFound, itemsNew, meta.provider,
+    JSON.stringify(meta.attempts), meta.paid_call]);
+}
+
 export async function mergeExistingItem(sql: Queryable, itemId: string, item: {
   title: string;
   body: string;

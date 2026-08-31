@@ -1,4 +1,4 @@
-import type { AdapterId, MediaType, PlatformId } from "./platforms";
+import type { AdapterId, MediaType, PlatformId } from "./platforms.ts";
 
 export type SourceRow = {
   id: string;
@@ -69,8 +69,43 @@ export type JobRow = {
   items_new: number;
   error: string;
   kind: string;
+  provider: "" | "primary" | "dajiala" | "mixed";
+  attempts: string[];
+  paid_call: boolean;
   keyword_id?: string;
   source_name?: string;
+};
+
+export type WechatHealthRow = {
+  source_id: string;
+  last_primary_ok_at: string | null;
+  consecutive_primary_failures: number;
+  recent_error_type: "" | "primary_feed_failed" | "technical_error" | "mapping_error";
+  last_paid_check_at: string | null;
+  last_paid_result: "" | "ok" | "technical_error" | "mapping_error";
+  alert_state: "normal" | "degraded" | "paid_fallback" | "alert";
+  next_retry_at: string | null;
+};
+
+export type WechatHealthUsage = {
+  today: string;
+  day: string;
+  calls: number;
+  amount: number;
+};
+
+export type WechatHealthLimits = {
+  daily_calls: number;
+  daily_rmb: number;
+  paid_configured: boolean;
+};
+
+export type WechatHealthOverview = {
+  available: boolean;
+  error: string;
+  sources: WechatHealthRow[];
+  usage: WechatHealthUsage | null;
+  limits: WechatHealthLimits | null;
 };
 
 export type AnalysisRow = {

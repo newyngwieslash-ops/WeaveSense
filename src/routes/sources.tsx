@@ -12,6 +12,7 @@ import {
   addTelegramChannelsFn,
   importWechatSourcesFn,
   listSourcesFn,
+  listWechatHealthFn,
   previewWechatImportFn,
   scanSourceFn,
   toggleSourceFn,
@@ -28,6 +29,10 @@ function SourcesPage() {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const sources = useQuery({ queryKey: ["sources"], queryFn: () => listSourcesFn() });
+  const hasWechatSources = Boolean(sources.data?.some((source) =>
+    source.platform === "wechat" && source.id !== RADAR_SOURCE_ID));
+  const wechatHealth = useQuery({ queryKey: ["wechat-health"], queryFn: () => listWechatHealthFn(),
+    enabled: hasWechatSources });
   const scan = useMutation({
     mutationFn: (id: string) => scanSourceFn({ data: { id } }),
     onSuccess: (r) => {
@@ -45,6 +50,8 @@ function SourcesPage() {
     platform: p,
     rows: (sources.data ?? []).filter((s) => s.platform === p.id && s.id !== RADAR_SOURCE_ID),
   }));
+  const healthBySource = new Map(wechatHealth.data?.sources.map((row) => [row.source_id, row]) ?? []);
+  const healthLabel = { normal: "正常", degraded: "降级", paid_fallback: "付费兜底", alert: "告警" } as const;
 
   return (
     <AppShell
@@ -63,17 +70,26 @@ function SourcesPage() {
       <div className="mt-6 space-y-8">
         {grouped.map(({ platform, rows }) => (
           <section key={platform.id}>
-            <div className="mb-3 flex items-center gap-2">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
               <platform.icon className="size-4 text-muted" />
               <h2 className="font-display text-xl tracking-tight">{platform.name}</h2>
               <span className="font-mono text-[11px] text-faint">{platform.foundation}</span>
+              {platform.id === "wechat" && rows.length ? (
+                <span className="text-xs text-muted sm:ml-auto">
+                  {wechatHealth.data?.available && wechatHealth.data.usage
+                    ? `今日付费 ${wechatHealth.data.usage.calls} 次 · ¥${wechatHealth.data.usage.amount.toFixed(2)}`
+                    : wechatHealth.data && !wechatHealth.data.available
+                      ? `网关健康不可用 · ${wechatHealth.data.error}` : "正在读取网关健康"}
+                </span>
+              ) : null}
             </div>
             {rows.length === 0 ? (
               <p className="text-sm text-muted">尚未接入</p>
             ) : (
               <div className="divide-y divide-border rounded-lg bg-surface shadow-[var(--shadow-border)]">
-                {rows.map((s) => (
-                  <div key={s.id} className="flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-center">
+                {rows.map((s) => {
+                  const health = platform.id === "wechat" ? healthBySource.get(s.id) : undefined;
+                  return <div key={s.id} className="flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-center">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-medium">{s.name}</p>
@@ -81,6 +97,10 @@ function SourcesPage() {
                           {s.status}
                         </Badge>
                         {!s.enabled ? <Badge>停用</Badge> : null}
+                        {health ? <Badge tone={health.alert_state === "normal" ? "live"
+                          : health.alert_state === "alert" ? "danger" : "warn"}>
+                          {healthLabel[health.alert_state]}
+                        </Badge> : null}
                       </div>
                       <p className="mt-1 font-mono text-[11px] text-faint">
                         {s.handle || s.feed_url || s.url} · 每 {s.interval_minutes} 分钟 · {s.item_count ?? 0} 条 ·{" "}
@@ -91,6 +111,14 @@ function SourcesPage() {
                       ) : (
                         <p className="mt-1 text-xs text-muted">{s.notes}</p>
                       )}
+                      {health ? (
+                        <div className="mt-1 space-y-0.5 text-xs text-muted">
+                          <p>Primary 最近成功 {formatRelative(health.last_primary_ok_at)} · 连续失败 {health.consecutive_primary_failures}</p>
+                          <p>付费最近检查 {formatRelative(health.last_paid_check_at)} · {health.last_paid_result || "未调用"}</p>
+                        </div>
+                      ) : platform.id === "wechat" && wechatHealth.data?.available ? (
+                        <p className="mt-1 text-xs text-muted">暂无网关健康数据</p>
+                      ) : null}
                     </div>
                     <div className="flex gap-2">
                       <Button
@@ -110,8 +138,8 @@ function SourcesPage() {
                         {s.enabled ? "停用" : "启用"}
                       </Button>
                     </div>
-                  </div>
-                ))}
+                  </div>;
+                })}
               </div>
             )}
           </section>

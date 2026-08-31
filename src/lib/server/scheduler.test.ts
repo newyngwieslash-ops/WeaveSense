@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
-import { claimSource, completeSourceClaim, finishItemInsert } from "./scheduler-atomic.ts";
+import { claimSource, completeSourceClaim, finishItemInsert, finishSourceJob,
+  mergeExistingItem } from "./scheduler-atomic.ts";
 
 async function sourceDb() {
   const pg = new PGlite();
@@ -83,4 +84,57 @@ test("a conflicted item insert never enqueues media", async () => {
   });
   assert.equal(inserted, false);
   assert.equal(enqueued, 0);
+});
+
+test("source job completion persists successful and failed provider attempts", async () => {
+  const pg = new PGlite();
+  await pg.waitReady;
+  await pg.exec(`create table jobs (
+    id text primary key, status text not null, finished_at timestamptz,
+    items_found integer not null default 0, items_new integer not null default 0,
+    error text not null default '', provider text not null default '',
+    attempts jsonb not null default '[]'::jsonb, paid_call boolean not null default false
+  )`);
+  const sql = { async query<T = Record<string, unknown>>(text: string, params: unknown[] = []) {
+    return (await pg.query<T>(text, params)).rows;
+  } };
+  await pg.exec("insert into jobs (id,status) values ('ok','running'),('failed','running')");
+  await finishSourceJob(sql, "ok", "ok", "", 0, 0,
+    { provider: "dajiala", attempts: ["primary", "dajiala"], paid_call: true });
+  await finishSourceJob(sql, "failed", "error", "wechat_gateway_http_503", 0, 0,
+    { provider: "", attempts: ["primary", "dajiala"], paid_call: true });
+  const rows = await pg.query("select id,status,items_found,items_new,error,provider,attempts,paid_call from jobs order by id");
+  assert.deepEqual(rows.rows, [
+    { id: "failed", status: "error", items_found: 0, items_new: 0,
+      error: "wechat_gateway_http_503", provider: "", attempts: ["primary", "dajiala"], paid_call: true },
+    { id: "ok", status: "ok", items_found: 0, items_new: 0,
+      error: "", provider: "dajiala", attempts: ["primary", "dajiala"], paid_call: true },
+  ]);
+  await pg.close();
+});
+
+test("duplicate merge preserves body and cover while extending provider history", async () => {
+  const pg = new PGlite();
+  await pg.waitReady;
+  await pg.exec(`create table items (
+    id text primary key, title text, body text, author text, url text, media_type text,
+    media_urls jsonb not null default '[]', thumbnail_url text, views integer, likes integer,
+    published_at timestamptz, extra jsonb not null default '{}', matched_keywords jsonb not null default '[]'
+  ); insert into items values ('item','旧标题','完整正文','作者','https://mp.weixin.qq.com/s/a',
+    'article','[]','https://mmbiz.qpic.cn/cover.jpg',null,null,null,
+    '{"body_complete":true,"providers_seen":["primary"]}','[]')`);
+  const sql = { async query<T = Record<string, unknown>>(text: string, params: unknown[] = []) {
+    return (await pg.query<T>(text, params)).rows;
+  } };
+  await mergeExistingItem(sql, "item", {
+    title: "付费标题", body: "", author: "", url: "", media_type: "article", media_urls: [],
+    thumbnail_url: "", views: null, likes: null, published_at: null,
+    extra: { provider: "dajiala", providers_seen: ["primary", "dajiala"], body_complete: false },
+  }, []);
+  const result = await pg.query<{ body: string; thumbnail_url: string;
+    extra: { providers_seen?: string[] } }>("select body,thumbnail_url,extra from items where id='item'");
+  assert.equal(result.rows[0]?.body, "完整正文");
+  assert.equal(result.rows[0]?.thumbnail_url, "https://mmbiz.qpic.cn/cover.jpg");
+  assert.deepEqual(result.rows[0]?.extra.providers_seen, ["primary", "dajiala"]);
+  await pg.close();
 });
