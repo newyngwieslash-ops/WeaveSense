@@ -26,6 +26,12 @@ function hash32(value: string): string {
   return createHash("sha256").update(value).digest("hex").slice(0, 32);
 }
 
+export function wechatSourceId(wechatId: string): string {
+  const normalized = wechatId.trim().toLowerCase();
+  if (!normalized) throw new Error("wechat_id 不能为空");
+  return `wx-${hash32(normalized).slice(0, 20)}`;
+}
+
 function hashWechatUrl(url: string): string {
   return `wx:url:${hash32(url)}`;
 }
@@ -48,7 +54,8 @@ export function normalizeWechatUrl(raw: string): string {
     throw new Error("需要微信原文链接");
   }
 
-  if (url.protocol !== "https:" || url.hostname !== "mp.weixin.qq.com") {
+  if (url.protocol !== "https:" || url.hostname !== "mp.weixin.qq.com" ||
+    url.username || url.password) {
     throw new Error("需要微信原文链接");
   }
 

@@ -3,7 +3,19 @@ import assert from "node:assert/strict";
 import {
   canonicalWechatId,
   normalizeWechatUrl,
+  wechatSourceId,
 } from "./wechat-canonical.ts";
+
+describe("wechatSourceId", () => {
+  it("creates the same safe source id for the same normalized WeChat id", () => {
+    assert.equal(wechatSourceId("gh_example"), wechatSourceId(" GH_EXAMPLE "));
+    assert.match(wechatSourceId("gh_example"), /^wx-[a-f0-9]{20}$/);
+  });
+
+  it("rejects an empty WeChat id", () => {
+    assert.throws(() => wechatSourceId("  "), /wechat_id/);
+  });
+});
 
 describe("normalizeWechatUrl", () => {
   it("strips tracking parameters and hash while keeping content parameters sorted", () => {
