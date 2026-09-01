@@ -77,7 +77,7 @@ export const listSourcesFn = createServerFn({ method: "GET" }).handler(async () 
 export const listWechatHealthFn = createServerFn({ method: "GET" }).handler(async () => {
   if (!wechatGatewayConfigured()) {
     return { available: false, error: "wechat_gateway_unconfigured",
-      sources: [], usage: null, limits: null };
+      as_of: null, sources: [], usage: null, limits: null };
   }
   try {
     const health = await (await createProductionWechatGatewayClient()).listHealth();
@@ -87,7 +87,7 @@ export const listWechatHealthFn = createServerFn({ method: "GET" }).handler(asyn
       "wechat_gateway_timeout", "wechat_gateway_unauthorized", "wechat_gateway_http_error",
       "wechat_gateway_invalid_response", "wechat_gateway_response_too_large", "wechat_gateway_unavailable",
     ].includes(error.message) ? error.message : "wechat_gateway_unavailable";
-    return { available: false, error: code, sources: [], usage: null, limits: null };
+    return { available: false, error: code, as_of: null, sources: [], usage: null, limits: null };
   }
 });
 

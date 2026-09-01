@@ -1,0 +1,11 @@
+canonical_id,account_id,account_name,title,published_at,original_url,provider_known
+wx:fixture:a:1:1,gh_fixture_a,验收样例甲号,甲号样例文章一,2026-08-28T01:00:00.000Z,https://mp.weixin.qq.com/s/fixture-a-1,true
+wx:fixture:a:2:1,gh_fixture_a,验收样例甲号,甲号样例文章二,2026-08-28T03:00:00.000Z,https://mp.weixin.qq.com/s/fixture-a-2,true
+wx:fixture:a:3:1,gh_fixture_a,验收样例甲号,甲号样例文章三,2026-08-28T05:00:00.000Z,https://mp.weixin.qq.com/s/fixture-a-3,false
+wx:fixture:b:1:1,gh_fixture_b,验收样例乙号,乙号样例文章一,2026-08-28T07:00:00.000Z,https://mp.weixin.qq.com/s/fixture-b-1,true
+wx:fixture:b:2:1,gh_fixture_b,验收样例乙号,乙号样例文章二,2026-08-28T09:00:00.000Z,https://mp.weixin.qq.com/s/fixture-b-2,false
+wx:fixture:b:3:1,gh_fixture_b,验收样例乙号,乙号样例文章三,2026-08-28T11:00:00.000Z,https://mp.weixin.qq.com/s/fixture-b-3,true
+wx:fixture:c:1:1,gh_fixture_c,验收样例丙号,丙号样例文章一,2026-08-28T13:00:00.000Z,https://mp.weixin.qq.com/s/fixture-c-1,false
+wx:fixture:c:2:1,gh_fixture_c,验收样例丙号,丙号样例文章二,2026-08-28T15:00:00.000Z,https://mp.weixin.qq.com/s/fixture-c-2,true
+wx:fixture:c:3:1,gh_fixture_c,验收样例丙号,丙号样例文章三,2026-08-28T18:00:00.000Z,https://mp.weixin.qq.com/s/fixture-c-3,false
+,gh_fixture_c,验收样例丙号,丙号样例文章四,2026-08-28T21:00:00.000Z,https://mp.weixin.qq.com/s/fixture-c-4?mid=10&scene=1&__biz=fixture,true

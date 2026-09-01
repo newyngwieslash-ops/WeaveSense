@@ -13,6 +13,7 @@ const SOURCE = {
   priority: "normal" as const,
 };
 const HEALTH = {
+  as_of: "2026-08-28T12:00:00.000Z",
   sources: [{
     source_id: SOURCE.source_id,
     last_primary_ok_at: "2026-08-28T08:00:00.000Z",
@@ -23,7 +24,8 @@ const HEALTH = {
     alert_state: "normal",
     next_retry_at: null,
   }],
-  usage: { today: "2026-08-28", day: "2026-08-28", calls: 2, amount: 0.12 },
+  usage: { today: "2026-08-28", day: "2026-08-28", calls: 2, amount: 0.12,
+    days: [{ day: "2026-08-28", calls: 2, amount: 0.12 }] },
   limits: { daily_calls: 250, daily_rmb: 20, paid_configured: true },
 };
 
@@ -66,6 +68,8 @@ describe("createWechatGatewayClient", () => {
     assert.equal(request?.url, "http://gateway:8790/v1/health");
     assert.equal(request?.init?.method, "GET");
     assert.equal(new Headers(request?.init?.headers).get("authorization"), `Bearer ${TOKEN}`);
+    await client.listHealth({ from: "2026-08-28", to: "2026-08-29" });
+    assert.equal(request?.url, "http://gateway:8790/v1/health?from=2026-08-28&to=2026-08-29");
   });
 
   it("uses 20-second provisioning and 30-second health timeouts", async () => {
@@ -136,6 +140,14 @@ describe("createWechatGatewayClient", () => {
       { ...HEALTH, sources: [{ ...HEALTH.sources[0], last_primary_ok_at: "2026-02-30T08:00:00.000Z" }] },
       { ...HEALTH, usage: { ...HEALTH.usage, calls: -1 } },
       { ...HEALTH, usage: { ...HEALTH.usage, today: "2026-02-30" } },
+      { ...HEALTH, as_of: "not-a-time" },
+      { ...HEALTH, sources: [{ ...HEALTH.sources[0],
+        last_primary_ok_at: "2026-08-28T12:00:00.001Z" }] },
+      { ...HEALTH, sources: [{ ...HEALTH.sources[0],
+        last_paid_check_at: "2026-08-28T12:00:00.001Z" }] },
+      { ...HEALTH, usage: { ...HEALTH.usage, days: [] } },
+      { ...HEALTH, usage: { ...HEALTH.usage, days: [HEALTH.usage.days[0], HEALTH.usage.days[0]] } },
+      { ...HEALTH, usage: { ...HEALTH.usage, calls: 3 } },
       { ...HEALTH, limits: { ...HEALTH.limits, paid_configured: "yes" } },
     ];
     for (const body of invalid) {

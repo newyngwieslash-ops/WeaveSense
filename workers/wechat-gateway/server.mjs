@@ -14,6 +14,7 @@ const DEFAULT_RECONCILIATION_BUDGET_MS = 100_000;
 export const PAID_FEED_BUDGET_MS = 90_000;
 const PAID_CALL_RESERVE_MS = 22_000;
 const SAFE_SOURCE_ID = /^[A-Za-z0-9._:-]{1,128}$/;
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 class BodyTooLargeError extends Error {}
 
@@ -47,6 +48,29 @@ export function validateSourceInput(input, allowedFeedHosts) {
 
 const json = (status, body) => Response.json(body, { status });
 const since = (date, days) => new Date(date.getTime() - days * DAY_MS).toISOString();
+
+function nextDay(day, count = 1) {
+  return new Date(Date.parse(`${day}T00:00:00.000Z`) + count * DAY_MS).toISOString().slice(0, 10);
+}
+
+function usageRange(url, date) {
+  const keys = [...url.searchParams.keys()];
+  if (!keys.length) {
+    const day = shanghaiDay(date);
+    return { from: day, to: nextDay(day), legacy: true };
+  }
+  if (keys.length !== 2 || new Set(keys).size !== 2 || !keys.includes("from") || !keys.includes("to")) {
+    throw new TypeError("invalid usage range");
+  }
+  const from = url.searchParams.get("from");
+  const to = url.searchParams.get("to");
+  const valid = (value) => DAY.test(value ?? "") &&
+    new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) === value;
+  if (!valid(from) || !valid(to)) throw new TypeError("invalid usage range");
+  const days = (Date.parse(`${to}T00:00:00.000Z`) - Date.parse(`${from}T00:00:00.000Z`)) / DAY_MS;
+  if (!Number.isInteger(days) || days < 1 || days > 31) throw new TypeError("invalid usage range");
+  return { from, to, legacy: false };
+}
 
 function clock(now) {
   const value = typeof now === "function" ? now() : now ?? new Date();
@@ -474,10 +498,22 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
       if (request.method === "GET" && url.pathname === "/v1/health") {
         const date = clock(now);
         const day = shanghaiDay(date);
-        const paidUsage = usage(day);
+        let range;
+        try { range = usageRange(url, date); }
+        catch { return json(422, { error: "invalid usage range" }); }
+        const stored = new Map(store.listProviderUsage(range.from, range.to, PROVIDER)
+          .map((row) => [row.day, row]));
+        const days = [];
+        for (let current = range.from; current < range.to; current = nextDay(current)) {
+          days.push(stored.get(current) ?? { day: current, calls: 0, amount: 0 });
+        }
+        const paidUsage = days.reduce((total, row) => ({
+          calls: total.calls + row.calls, amount: Number((total.amount + row.amount).toFixed(6)),
+        }), { calls: 0, amount: 0 });
         return json(200, {
+          as_of: date.toISOString(),
           sources: store.listSources().map((source) => health(source, date)),
-          usage: { today: day, day, calls: paidUsage.calls, amount: paidUsage.amount },
+          usage: { today: day, day, calls: paidUsage.calls, amount: paidUsage.amount, days },
           limits: { daily_calls: budget.calls, daily_rmb: budget.rmb, paid_configured: Boolean(paid) },
         });
       }

@@ -25,7 +25,9 @@ function endpoint(baseUrl: string, path: string): string {
     const url = new URL(baseUrl);
     if (!(["http:", "https:"] as string[]).includes(url.protocol) || url.username || url.password ||
       url.search || url.hash) fail("wechat_gateway_unavailable");
-    url.pathname = `${url.pathname.replace(/\/+$/, "")}${path}`;
+    const [pathname, search = ""] = path.split("?", 2);
+    url.pathname = `${url.pathname.replace(/\/+$/, "")}${pathname}`;
+    url.search = search ? `?${search}` : "";
     return url.toString();
   } catch {
     return fail("wechat_gateway_unavailable");
@@ -105,9 +107,11 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T {
 }
 
 function healthOverview(value: unknown): {
-  sources: WechatHealthRow[]; usage: WechatHealthUsage; limits: WechatHealthLimits;
+  as_of: string; sources: WechatHealthRow[]; usage: WechatHealthUsage; limits: WechatHealthLimits;
 } {
   const root = record(value);
+  const asOf = timestamp(root.as_of);
+  if (asOf === null) fail("wechat_gateway_invalid_response");
   if (!Array.isArray(root.sources) || root.sources.length > MAX_HEALTH_SOURCES) {
     fail("wechat_gateway_invalid_response");
   }
@@ -116,13 +120,17 @@ function healthOverview(value: unknown): {
     if (typeof source.source_id !== "string" || !SAFE_SOURCE_ID.test(source.source_id)) {
       fail("wechat_gateway_invalid_response");
     }
+    const lastPrimaryOkAt = timestamp(source.last_primary_ok_at);
+    const lastPaidCheckAt = timestamp(source.last_paid_check_at);
+    if ([lastPrimaryOkAt, lastPaidCheckAt].some((value) => value !== null &&
+      Date.parse(value) > Date.parse(asOf))) fail("wechat_gateway_invalid_response");
     return {
       source_id: source.source_id,
-      last_primary_ok_at: timestamp(source.last_primary_ok_at),
+      last_primary_ok_at: lastPrimaryOkAt,
       consecutive_primary_failures: nonNegative(source.consecutive_primary_failures, true),
       recent_error_type: oneOf(source.recent_error_type,
         ["", "primary_feed_failed", "technical_error", "mapping_error"] as const),
-      last_paid_check_at: timestamp(source.last_paid_check_at),
+      last_paid_check_at: lastPaidCheckAt,
       last_paid_result: oneOf(source.last_paid_result,
         ["", "ok", "technical_error", "mapping_error"] as const),
       alert_state: oneOf(source.alert_state,
@@ -131,12 +139,35 @@ function healthOverview(value: unknown): {
     };
   });
   const usage = record(root.usage);
+  if (!Array.isArray(usage.days) || usage.days.length < 1 || usage.days.length > 31) {
+    fail("wechat_gateway_invalid_response");
+  }
+  const seenDays = new Set<string>();
+  const days = usage.days.map((raw) => {
+    const row = record(raw);
+    const value = day(row.day);
+    if (seenDays.has(value)) fail("wechat_gateway_invalid_response");
+    seenDays.add(value);
+    return { day: value, calls: nonNegative(row.calls, true), amount: nonNegative(row.amount) };
+  });
+  for (let index = 1; index < days.length; index += 1) {
+    const expected = new Date(Date.parse(`${days[index - 1].day}T00:00:00.000Z`) + 86_400_000)
+      .toISOString().slice(0, 10);
+    if (days[index].day !== expected) fail("wechat_gateway_invalid_response");
+  }
   const limits = record(root.limits);
   if (typeof limits.paid_configured !== "boolean") fail("wechat_gateway_invalid_response");
+  const calls = nonNegative(usage.calls, true);
+  const amount = nonNegative(usage.amount);
+  if (calls !== days.reduce((sum, row) => sum + row.calls, 0) ||
+    Math.abs(amount - days.reduce((sum, row) => sum + row.amount, 0)) > 1e-9) {
+    fail("wechat_gateway_invalid_response");
+  }
   return {
+    as_of: asOf,
     sources,
     usage: { today: day(usage.today), day: day(usage.day),
-      calls: nonNegative(usage.calls, true), amount: nonNegative(usage.amount) },
+      calls, amount, days },
     limits: { daily_calls: nonNegative(limits.daily_calls, true),
       daily_rmb: nonNegative(limits.daily_rmb), paid_configured: limits.paid_configured },
   };
@@ -196,10 +227,16 @@ export function createWechatGatewayClient({ baseUrl, token, fetchImpl = fetch }:
       return { ok: true };
     },
 
-    async listHealth(): Promise<{
-      sources: WechatHealthRow[]; usage: WechatHealthUsage; limits: WechatHealthLimits;
+    async listHealth(range?: { from: string; to: string }): Promise<{
+      as_of: string; sources: WechatHealthRow[]; usage: WechatHealthUsage; limits: WechatHealthLimits;
     }> {
-      const value = await request("/v1/health", 30_000, { method: "GET" });
+      let path = "/v1/health";
+      if (range) {
+        const from = day(range.from);
+        const to = day(range.to);
+        path += `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+      }
+      const value = await request(path, 30_000, { method: "GET" });
       return healthOverview(value);
     },
   };

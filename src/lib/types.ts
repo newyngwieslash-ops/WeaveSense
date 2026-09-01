@@ -92,6 +92,7 @@ export type WechatHealthUsage = {
   day: string;
   calls: number;
   amount: number;
+  days: Array<{ day: string; calls: number; amount: number }>;
 };
 
 export type WechatHealthLimits = {
@@ -103,6 +104,7 @@ export type WechatHealthLimits = {
 export type WechatHealthOverview = {
   available: boolean;
   error: string;
+  as_of: string | null;
   sources: WechatHealthRow[];
   usage: WechatHealthUsage | null;
   limits: WechatHealthLimits | null;

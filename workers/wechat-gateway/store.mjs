@@ -273,6 +273,8 @@ function createStore(db) {
     order by created_at, source_id limit 500`);
   const ackOutbox = db.prepare("delete from reconciliation_outbox where source_id = ?");
   const getUsage = db.prepare("select calls, amount from provider_usage where day = ? and provider = ?");
+  const listUsage = db.prepare(`select day, calls, amount from provider_usage
+    where day >= ? and day < ? and provider = ? order by day limit 32`);
   const reserveUsage = db.prepare(`insert into provider_usage (day, provider, calls, amount, updated_at)
     values (?, ?, 1, ?, ?)
     on conflict(day, provider) do update set
@@ -451,6 +453,14 @@ function createStore(db) {
       }
     },
     getProviderUsage: providerUsage,
+    listProviderUsage(fromDay, toDay, provider) {
+      fromDay = key(fromDay, "fromDay");
+      toDay = key(toDay, "toDay");
+      provider = key(provider, "provider");
+      return listUsage.all(fromDay, toDay, provider).map((row) => ({
+        day: String(row.day), calls: Number(row.calls), amount: money(Number(row.amount)),
+      }));
+    },
     getProviderBudgetState(day, provider, dailyRmbCap, dailyCallCap) {
       dailyRmbCap = money(dailyRmbCap, "dailyRmbCap");
       dailyCallCap = callCap(dailyCallCap);

@@ -1,0 +1,31 @@
+{
+  "generated_at": "2026-08-29T00:00:00.000Z",
+  "as_of": "2026-08-29T00:00:00.000Z",
+  "window": { "from": "2026-08-28T00:00:00.000Z", "to": "2026-08-29T00:00:00.000Z" },
+  "items": [
+    { "canonical_id": "wx:fixture:a:1:1", "account_id": "gh_fixture_a", "account_name": "验收样例甲号", "title": "甲号样例文章一", "published_at": "2026-08-28T01:00:00.000Z", "collected_at": "2026-08-28T01:15:00.000Z", "original_url": "https://mp.weixin.qq.com/s/fixture-a-1", "body": "工程夹具正文一", "cover_url": "https://fixture.invalid/cover-1.jpg", "providers_seen": ["primary"] },
+    { "canonical_id": "wx:fixture:a:2:1", "account_id": "gh_fixture_a", "account_name": "验收样例甲号", "title": "甲号样例文章二", "published_at": "2026-08-28T03:00:00.000Z", "collected_at": "2026-08-28T03:20:00.000Z", "original_url": "https://mp.weixin.qq.com/s/fixture-a-2", "body": "工程夹具正文二", "cover_url": "https://fixture.invalid/cover-2.jpg", "providers_seen": ["primary", "dajiala"] },
+    { "canonical_id": "wx:fixture:a:3:1", "account_id": "gh_fixture_a", "account_name": "验收样例甲号", "title": "甲号样例文章三", "published_at": "2026-08-28T05:00:00.000Z", "collected_at": "2026-08-28T05:45:00.000Z", "original_url": "https://mp.weixin.qq.com/s/fixture-a-3", "body": "工程夹具正文三", "cover_url": "https://fixture.invalid/cover-3.jpg", "providers_seen": ["dajiala"] },
+    { "canonical_id": "wx:fixture:b:1:1", "account_id": "gh_fixture_b", "account_name": "验收样例乙号", "title": "乙号样例文章一", "published_at": "2026-08-28T07:00:00.000Z", "collected_at": "2026-08-28T08:00:00.000Z", "original_url": "https://mp.weixin.qq.com/s/fixture-b-1", "body": "工程夹具正文四", "cover_url": "https://fixture.invalid/cover-4.jpg", "providers_seen": ["primary"] },
+    { "canonical_id": "wx:fixture:b:2:1", "account_id": "gh_fixture_b", "account_name": "验收样例乙号", "title": "乙号样例文章二", "published_at": "2026-08-28T09:00:00.000Z", "collected_at": "2026-08-28T10:30:00.000Z", "original_url": "https://mp.weixin.qq.com/s/fixture-b-2", "body": "工程夹具正文五", "cover_url": "https://fixture.invalid/cover-5.jpg", "providers_seen": ["primary", "dajiala", "primary"] },
+    { "canonical_id": "wx:fixture:b:3:1", "account_id": "gh_fixture_b", "account_name": "验收样例乙号", "title": "乙号样例文章三", "published_at": "2026-08-28T11:00:00.000Z", "collected_at": "2026-08-28T13:00:00.000Z", "original_url": "https://mp.weixin.qq.com/s/fixture-b-3", "body": "工程夹具正文六", "cover_url": "https://fixture.invalid/cover-6.jpg", "providers_seen": ["dajiala"] },
+    { "canonical_id": "wx:fixture:c:1:1", "account_id": "gh_fixture_c", "account_name": "验收样例丙号", "title": "丙号样例文章一", "published_at": "2026-08-28T13:00:00.000Z", "collected_at": "2026-08-28T14:10:00.000Z", "original_url": "https://mp.weixin.qq.com/s/fixture-c-1", "body": "工程夹具正文七", "cover_url": "https://fixture.invalid/cover-7.jpg", "providers_seen": ["primary"] },
+    { "canonical_id": "wx:fixture:c:2:1", "account_id": "gh_fixture_c", "account_name": "验收样例丙号", "title": "丙号样例文章二", "published_at": "2026-08-28T15:00:00.000Z", "collected_at": "2026-08-28T16:30:00.000Z", "original_url": "https://mp.weixin.qq.com/s/fixture-c-2", "body": "工程夹具正文八", "cover_url": "https://fixture.invalid/cover-8.jpg", "providers_seen": ["primary", "dajiala"] },
+    { "canonical_id": "wx:fixture:c:3:1", "account_id": "gh_fixture_c", "account_name": "验收样例丙号", "title": "丙号样例文章三", "published_at": "2026-08-28T18:00:00.000Z", "collected_at": "2026-08-28T19:00:00.000Z", "original_url": "https://mp.weixin.qq.com/s/fixture-c-3", "body": "", "cover_url": "https://fixture.invalid/cover-9.jpg", "providers_seen": ["primary"] },
+    { "canonical_id": "", "account_id": "gh_fixture_c", "account_name": "验收样例丙号", "title": "丙号样例文章四", "published_at": "2026-08-28T21:00:00.000Z", "collected_at": "2026-08-28T23:00:00.000Z", "original_url": "https://mp.weixin.qq.com/s/fixture-c-4?__biz=fixture&mid=10&from=fixture#tracking", "body": "", "cover_url": "", "providers_seen": ["dajiala"] }
+  ],
+  "jobs": [
+    { "id": "fixture-job-1", "provider": "primary", "attempts": ["primary"], "paid_call": false },
+    { "id": "fixture-job-2", "provider": "mixed", "attempts": ["primary", "dajiala"], "paid_call": true }
+  ],
+  "health": [
+    { "source_id": "wx-fixture-a", "last_primary_ok_at": "2026-08-28T23:30:00.000Z", "alert_state": "normal" },
+    { "source_id": "wx-fixture-b", "last_primary_ok_at": "2026-08-28T18:00:00.000Z", "alert_state": "paid_fallback" },
+    { "source_id": "wx-fixture-c", "last_primary_ok_at": "2026-08-28T00:00:00.000Z", "alert_state": "alert" }
+  ],
+  "usage": { "day": "2026-08-28", "calls": 250, "amount": 20, "days": [
+    { "day": "2026-08-28", "calls": 250, "amount": 20 },
+    { "day": "2026-08-29", "calls": 0, "amount": 0 }
+  ] },
+  "limits": { "daily_calls": 250, "daily_rmb": 20 }
+}

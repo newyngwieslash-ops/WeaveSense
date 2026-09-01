@@ -240,6 +240,9 @@ test("reserves and adjusts provider spend atomically within both daily caps", (t
   assert.throws(() => store.adjustSpend(overrun, 0.08), /conflict/);
   assert.throws(() => store.adjustSpend("999999", 0.01), /reservation not found/);
   assert.deepEqual(store.getProviderUsage("empty", "dajiala"), { calls: 0, amount: 0 });
+  assert.deepEqual(store.listProviderUsage("2026-08-28", "2026-08-30", "dajiala"), [{
+    day: "2026-08-28", calls: 2, amount: 0.06,
+  }]);
 });
 
 test("records paid checks without losing the last paid success", (t) => {
@@ -809,6 +812,7 @@ test("aggregate health is bearer-protected and returns source, usage, and limit 
     now: () => new Date("2026-08-28T12:00:00.000Z") });
   assert.equal((await unauthorized(new Request("http://gateway.local/v1/health"))).status, 401);
   assert.deepEqual(await (await request("/v1/health")).json(), {
+    as_of: "2026-08-28T12:00:00.000Z",
     sources: [{
       source_id: integrationSource.id,
       alert_state: "degraded",
@@ -824,9 +828,34 @@ test("aggregate health is bearer-protected and returns source, usage, and limit 
       paid_day_calls: 1,
       paid_daily_call_limit: 250,
     }],
-    usage: { today: "2026-08-28", day: "2026-08-28", calls: 1, amount: 0.06 },
+    usage: { today: "2026-08-28", day: "2026-08-28", calls: 1, amount: 0.06,
+      days: [{ day: "2026-08-28", calls: 1, amount: 0.06 }] },
     limits: { daily_calls: 250, daily_rmb: 20, paid_configured: true },
   });
+});
+
+test("aggregate health returns a bounded Shanghai-day usage range with zero-filled days", async (t) => {
+  const { store, request } = gatewayFixture(t);
+  const reservation = store.tryReserveSpend("2026-08-29", "dajiala", 0.08, 20, 250);
+  store.adjustSpend(reservation, 0.06);
+  const response = await request("/v1/health?from=2026-08-28&to=2026-08-31");
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.as_of, "2026-08-28T12:00:00.000Z");
+  assert.deepEqual(body.usage, {
+    today: "2026-08-28", day: "2026-08-28", calls: 1, amount: 0.06,
+    days: [
+      { day: "2026-08-28", calls: 0, amount: 0 },
+      { day: "2026-08-29", calls: 1, amount: 0.06 },
+      { day: "2026-08-30", calls: 0, amount: 0 },
+    ],
+  });
+  for (const path of [
+    "/v1/health?from=2026-08-28", "/v1/health?from=2026-02-30&to=2026-03-01",
+    "/v1/health?from=2026-08-28&to=2026-08-28",
+    "/v1/health?from=2026-08-01&to=2026-09-02", "/v1/health?from=x&to=2026-08-29",
+    "/v1/health?from=2026-08-28&to=2026-08-29&extra=1",
+  ]) assert.equal((await request(path)).status, 422, path);
 });
 
 test("health projects unresolved paid hard errors until a later primary success", async (t) => {
