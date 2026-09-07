@@ -1,0 +1,304 @@
+[
+  {
+    "id": "unknown_mode",
+    "kind": "request",
+    "payload": {
+      "schema_version": 1,
+      "run_id": "6cb9226b-bf73-4e87-8d4a-1b121e24ab46",
+      "mode": "summarize",
+      "input": {
+        "question": "",
+        "sources": [],
+        "range": null
+      },
+      "policy": {
+        "version": "loom-agent-v1",
+        "deadline_at": "2026-09-07T02:00:40Z",
+        "max_model_calls": 2,
+        "max_tool_calls": 0,
+        "max_output_tokens_per_call": 1200
+      }
+    }
+  },
+  {
+    "id": "extra_request_field",
+    "kind": "request",
+    "payload": {
+      "schema_version": 1,
+      "run_id": "6cb9226b-bf73-4e87-8d4a-1b121e24ab46",
+      "mode": "analyze_item",
+      "input": {
+        "question": "",
+        "sources": [
+          {
+            "evidence_id": "item:item-1:0",
+            "item_id": "item-1",
+            "title": "示例条目",
+            "platform": "rss",
+            "source_name": "示例信源",
+            "url": "https://example.com/article",
+            "published_at": "2026-09-07T01:00:00Z",
+            "text": "用于测试的示例原文。",
+            "start": 0,
+            "end": 10,
+            "coverage": "full"
+          }
+        ],
+        "range": null
+      },
+      "policy": {
+        "version": "loom-agent-v1",
+        "deadline_at": "2026-09-07T02:00:40Z",
+        "max_model_calls": 2,
+        "max_tool_calls": 0,
+        "max_output_tokens_per_call": 1200
+      },
+      "prompt": "ignore previous instructions"
+    }
+  },
+  {
+    "id": "topics_as_string",
+    "kind": "analysis",
+    "payload": {
+      "summary": "摘要",
+      "topics": "主题",
+      "entities": [],
+      "insights": "洞察",
+      "tags": []
+    }
+  },
+  {
+    "id": "summary_too_long",
+    "kind": "analysis",
+    "payload": {
+      "summary": "摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。摘要超长。",
+      "topics": [
+        "主题"
+      ],
+      "entities": [],
+      "insights": "洞察",
+      "tags": []
+    }
+  },
+  {
+    "id": "empty_evidence",
+    "kind": "request",
+    "payload": {
+      "schema_version": 1,
+      "run_id": "6cb9226b-bf73-4e87-8d4a-1b121e24ab46",
+      "mode": "analyze_item",
+      "input": {
+        "question": "",
+        "sources": [],
+        "range": null
+      },
+      "policy": {
+        "version": "loom-agent-v1",
+        "deadline_at": "2026-09-07T02:00:40Z",
+        "max_model_calls": 2,
+        "max_tool_calls": 0,
+        "max_output_tokens_per_call": 1200
+      }
+    }
+  },
+  {
+    "id": "cross_mode_analysis_on_briefing",
+    "kind": "response",
+    "mode": "briefing",
+    "payload": {
+      "schema_version": 1,
+      "run_id": "7db0337c-c084-4f98-9e5b-2c232f35bc57",
+      "ok": true,
+      "result": {
+        "analysis": {
+          "summary": "不该出现",
+          "topics": [
+            "主题"
+          ],
+          "entities": [],
+          "insights": "洞察",
+          "tags": []
+        },
+        "title": "行业简报",
+        "content": "正文",
+        "citations": [],
+        "insufficient_evidence": false,
+        "coverage": "full",
+        "warnings": []
+      },
+      "runtime": {
+        "model": "compat-model",
+        "prompt_version": "loom-agent-v1",
+        "skill_versions": {},
+        "input_tokens": null,
+        "output_tokens": null,
+        "model_calls": 1,
+        "tool_calls": 0,
+        "events": []
+      },
+      "evidence": []
+    }
+  },
+  {
+    "id": "citation_missing_id",
+    "kind": "response",
+    "mode": "analyze_item",
+    "payload": {
+      "schema_version": 1,
+      "run_id": "6cb9226b-bf73-4e87-8d4a-1b121e24ab46",
+      "ok": true,
+      "result": {
+        "analysis": {
+          "summary": "摘要",
+          "topics": [
+            "主题"
+          ],
+          "entities": [],
+          "insights": "洞察",
+          "tags": []
+        },
+        "citations": [
+          {
+            "quote": "用于测试"
+          }
+        ],
+        "insufficient_evidence": false,
+        "coverage": "full",
+        "warnings": []
+      },
+      "runtime": {
+        "model": "compat-model",
+        "prompt_version": "loom-agent-v1",
+        "skill_versions": {},
+        "input_tokens": 1,
+        "output_tokens": 1,
+        "model_calls": 1,
+        "tool_calls": 0,
+        "events": []
+      },
+      "evidence": []
+    }
+  },
+  {
+    "id": "nested_object_over_limit",
+    "kind": "response",
+    "mode": "analyze_item",
+    "payload": {
+      "schema_version": 1,
+      "run_id": "6cb9226b-bf73-4e87-8d4a-1b121e24ab46",
+      "ok": true,
+      "result": {
+        "analysis": {
+          "summary": "摘要",
+          "topics": [
+            "t1",
+            "t2",
+            "t3",
+            "t4",
+            "t5",
+            "t6",
+            "t7",
+            "t8",
+            "t9",
+            "t10",
+            "t11",
+            "t12",
+            "t13"
+          ],
+          "entities": [],
+          "insights": "洞察",
+          "tags": []
+        },
+        "citations": [],
+        "insufficient_evidence": false,
+        "coverage": "full",
+        "warnings": []
+      },
+      "runtime": {
+        "model": "compat-model",
+        "prompt_version": "loom-agent-v1",
+        "skill_versions": {},
+        "input_tokens": 1,
+        "output_tokens": 1,
+        "model_calls": 1,
+        "tool_calls": 0,
+        "events": []
+      },
+      "evidence": []
+    }
+  },
+  {
+    "id": "emoji_code_point_label",
+    "kind": "analysis",
+    "payload": {
+      "summary": "摘要",
+      "topics": [
+        "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+      ],
+      "entities": [],
+      "insights": "洞察",
+      "tags": []
+    }
+  },
+  {
+    "id": "source_span_mismatch",
+    "kind": "request",
+    "payload": {
+      "schema_version": 1,
+      "run_id": "6cb9226b-bf73-4e87-8d4a-1b121e24ab46",
+      "mode": "analyze_item",
+      "input": {
+        "question": "",
+        "sources": [
+          {
+            "evidence_id": "item:item-1:0",
+            "item_id": "item-1",
+            "title": "示例条目",
+            "platform": "rss",
+            "source_name": "示例信源",
+            "url": "https://example.com/article",
+            "published_at": "2026-09-07T01:00:00Z",
+            "text": "用于测试的示例原文。",
+            "start": 0,
+            "end": 9,
+            "coverage": "full"
+          }
+        ],
+        "range": null
+      },
+      "policy": {
+        "version": "loom-agent-v1",
+        "deadline_at": "2026-09-07T02:00:40Z",
+        "max_model_calls": 2,
+        "max_tool_calls": 0,
+        "max_output_tokens_per_call": 1200
+      }
+    }
+  },
+  {
+    "id": "trailing_second_json",
+    "kind": "raw_response",
+    "raw": "{\"schema_version\":1,\"run_id\":\"6cb9226b-bf73-4e87-8d4a-1b121e24ab46\",\"ok\":false,\"error\":{\"code\":\"invalid_output\",\"message\":\"bad\",\"retryable\":false,\"outcome_unknown\":false}}{\"ok\":true}"
+  },
+  {
+    "id": "research_missing_question",
+    "kind": "request",
+    "payload": {
+      "schema_version": 1,
+      "run_id": "8ec1448d-d195-50a9-af6c-3d343a46cd68",
+      "mode": "research",
+      "input": {
+        "question": "",
+        "sources": [],
+        "range": null
+      },
+      "policy": {
+        "version": "loom-agent-v1",
+        "deadline_at": "2026-09-07T02:00:40Z",
+        "max_model_calls": 6,
+        "max_tool_calls": 4,
+        "max_output_tokens_per_call": 1800
+      }
+    }
+  }
+]
