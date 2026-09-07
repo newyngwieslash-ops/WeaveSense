@@ -70,6 +70,11 @@ Final locked direct modules after `go mod tidy`:
 - MCP example config is disabled. Empty `allowed_tools` exposes no tools.
 - Skills are versioned by a stable hash of allowed files. Fork/model/agent overrides are rejected.
 
+## Host test notes
+
+- `go test ./internal/agent -run TestHTTP` PASS on Windows with `CGO_ENABLED=0`.
+- `go test -race` is not available on this host: `go: -race requires cgo; enable cgo by setting CGO_ENABLED=1`. Re-run race tests in the Linux Docker/QA image.
+
 ## Unverified
 
 - Real xAI / OpenAI-compatible tool calling, JSON mode, and usage
