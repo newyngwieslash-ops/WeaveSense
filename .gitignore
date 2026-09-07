@@ -16,6 +16,10 @@
 /screenshots/*.json
 /artifacts/
 /attachments/
+/docs/handoffs/
+/docs/comet/changes/
+/handoff.md
+/0901手动测试文档.md
 **/__pycache__/
 *.pyc
 
