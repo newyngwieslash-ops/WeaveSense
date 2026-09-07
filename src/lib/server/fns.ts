@@ -4,7 +4,8 @@ import { parseKeywordList, parsePlatformList } from "@/lib/keyword";
 import { defaultAdapter } from "./collectors";
 import { prod, wechatGatewayConfigured } from "./config";
 import { parseTelegramHandles, telethonHealth } from "./telethon";
-import { analyzeItem, askKnowledge, generateBriefing } from "./analyze";
+import { analyzeInput, askInput, briefingInput } from "../agent-contract.ts";
+import { analyzeItemWith, askKnowledgeWith, generateBriefingWith } from "./analyze";
 import { extractItem, extractPending } from "./extract";
 import { ingestPending } from "./media";
 import { getNodesStatus, runProductionTick } from "./nodes";
@@ -357,7 +358,11 @@ export const getItemFn = createServerFn({ method: "GET" })
     );
     if (!row) return { item: null, analysis: null, media: [], extracts: [] };
     const [analysis] = await sql.query<Record<string, unknown>>(
-      "select * from analyses where item_id = $1 order by created_at desc limit 1",
+      `select a.*, r.response_json
+       from analyses a
+       left join ai_runs r on r.id = a.run_id
+       where a.item_id = $1
+       order by a.created_at desc limit 1`,
       [data.id],
     );
     let media: ReturnType<typeof mapMediaObject>[] = [];
@@ -402,24 +407,33 @@ export const listJobsFn = createServerFn({ method: "GET" }).handler(async () => 
 });
 
 export const analyzeItemFn = createServerFn({ method: "POST" })
-  .validator((input: { id: string }) => input)
-  .handler(async ({ data }) => analyzeItem(data.id));
+  .validator((input: unknown) => analyzeInput.parse(input ?? {}))
+  .handler(async ({ data }) => analyzeItemWith({ sql: await getSql(), itemId: data.id, requestId: data.request_id }));
 
-export const briefingFn = createServerFn({ method: "POST" }).handler(async () => generateBriefing());
+export const briefingFn = createServerFn({ method: "POST" })
+  .validator((input: unknown) => briefingInput.parse(input && typeof input === "object" ? input : {}))
+  .handler(async ({ data }) => generateBriefingWith({
+    sql: await getSql(), requestId: data.request_id, from: data.from, to: data.to,
+  }));
 
 export const askFn = createServerFn({ method: "POST" })
-  .validator((input: { question: string }) => input)
-  .handler(async ({ data }) => askKnowledge(data.question));
+  .validator((input: unknown) => askInput.parse(input ?? {}))
+  .handler(async ({ data }) => askKnowledgeWith({ sql: await getSql(), question: data.question, requestId: data.request_id }));
 
 export const listKnowledgeFn = createServerFn({ method: "GET" }).handler(async () => {
   await ensureSeeded();
   const sql = await getSql();
   const notes = await sql.query<Record<string, unknown>>(
-    "select * from knowledge_notes order by created_at desc limit 30",
+    `select n.*, r.response_json
+     from knowledge_notes n
+     left join ai_runs r on r.id = n.run_id
+     order by n.created_at desc limit 30`,
   );
   const analyses = await sql.query<Record<string, unknown>>(
-    `select a.*, i.title as item_title, i.platform as item_platform
-     from analyses a join items i on i.id = a.item_id
+    `select a.*, i.title as item_title, i.platform as item_platform, r.response_json
+     from analyses a
+     join items i on i.id = a.item_id
+     left join ai_runs r on r.id = a.run_id
      order by a.created_at desc
      limit 20`,
   );

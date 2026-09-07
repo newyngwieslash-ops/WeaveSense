@@ -227,3 +227,122 @@ export async function failRun(sql: Queryable, input: {
   );
   return rows.length === 1;
 }
+
+export async function finishAnalyzeAtomically(sql: Queryable, input: {
+  runId: string;
+  claimToken: string;
+  itemId: string;
+  title: string;
+  body: string;
+  author: string;
+  url: string;
+  platform: string;
+  analysisId: string;
+  summary: string;
+  topics: string[];
+  entities: string[];
+  insights: string;
+  tags: string[];
+  model: string;
+  promptVersion: string;
+  skillVersions: Record<string, string>;
+  responseJson: unknown;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  modelCalls: number;
+  toolCalls: number;
+}): Promise<"ok" | "input_changed" | "persist_failed"> {
+  const rows = await sql.query<{ analysis_id: string }>(
+    `with claimed as (
+       select id from ai_runs
+       where id = $1 and status = 'running' and claim_token = $2 and expires_at > now()
+     ), matched as (
+       select id from items
+       where id = $3 and title = $4 and body = $5 and author = $6 and url = $7 and platform = $8
+     ), updated as (
+       update ai_runs r
+       set status = 'succeeded',
+           response_json = $9::jsonb,
+           model = $10,
+           prompt_version = $11,
+           skill_versions = $12::jsonb,
+           input_tokens = $13,
+           output_tokens = $14,
+           model_calls = $15,
+           tool_calls = $16,
+           finished_at = now()
+       from claimed c, matched m
+       where r.id = c.id
+       returning r.id
+     ), ins as (
+       insert into analyses (id, item_id, summary, topics, entities, insights, tags, model, run_id)
+       select $17, $3, $18, $19::jsonb, $20::jsonb, $21, $22::jsonb, $10, updated.id
+       from updated
+       returning id
+     )
+     update items set pipeline_status = 'analyzed'
+     where id = $3 and exists (select 1 from ins)
+     returning (select id from ins) as analysis_id`,
+    [
+      input.runId, input.claimToken, input.itemId, input.title, input.body, input.author, input.url, input.platform,
+      JSON.stringify(input.responseJson), input.model, input.promptVersion, JSON.stringify(input.skillVersions),
+      input.inputTokens, input.outputTokens, input.modelCalls, input.toolCalls,
+      input.analysisId, input.summary, JSON.stringify(input.topics), JSON.stringify(input.entities),
+      input.insights, JSON.stringify(input.tags),
+    ],
+  );
+  if (rows.length === 1) return "ok";
+  const [run] = await sql.query<{ status: string }>("select status from ai_runs where id = $1", [input.runId]);
+  if (run?.status === "running") return "input_changed";
+  return "persist_failed";
+}
+
+export async function finishNoteAtomically(sql: Queryable, input: {
+  runId: string;
+  claimToken: string;
+  noteId: string;
+  title: string;
+  content: string;
+  kind: "briefing" | "answer";
+  itemIds: string[];
+  model: string;
+  promptVersion: string;
+  skillVersions: Record<string, string>;
+  responseJson: unknown;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  modelCalls: number;
+  toolCalls: number;
+}): Promise<boolean> {
+  const rows = await sql.query<{ id: string }>(
+    `with claimed as (
+       select id from ai_runs
+       where id = $1 and status = 'running' and claim_token = $2 and expires_at > now()
+     ), updated as (
+       update ai_runs r
+       set status = 'succeeded',
+           response_json = $3::jsonb,
+           model = $4,
+           prompt_version = $5,
+           skill_versions = $6::jsonb,
+           input_tokens = $7,
+           output_tokens = $8,
+           model_calls = $9,
+           tool_calls = $10,
+           finished_at = now()
+       from claimed c
+       where r.id = c.id
+       returning r.id
+     )
+     insert into knowledge_notes (id, title, content, kind, item_ids, run_id)
+     select $11, $12, $13, $14, $15::jsonb, updated.id
+     from updated
+     returning id`,
+    [
+      input.runId, input.claimToken, JSON.stringify(input.responseJson), input.model, input.promptVersion,
+      JSON.stringify(input.skillVersions), input.inputTokens, input.outputTokens, input.modelCalls, input.toolCalls,
+      input.noteId, input.title, input.content, input.kind, JSON.stringify(input.itemIds),
+    ],
+  );
+  return rows.length === 1;
+}

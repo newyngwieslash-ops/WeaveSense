@@ -124,7 +124,20 @@ export function mapJob(row: Record<string, unknown>): JobRow {
   };
 }
 
+function runMeta(row: Record<string, unknown>): { run_id: string | null; coverage: "full" | "partial" | "unknown"; warnings: string[] } {
+  const runId = row.run_id == null || row.run_id === "" ? null : String(row.run_id);
+  const response = asJson<Record<string, unknown>>(row.response_json, {});
+  const result = asJson<Record<string, unknown>>(response.result, {});
+  const coverage = result.coverage === "full" || result.coverage === "partial" ? result.coverage : runId ? "unknown" : "unknown";
+  return {
+    run_id: runId,
+    coverage: runId ? coverage : "unknown",
+    warnings: asJson<string[]>(result.warnings, []),
+  };
+}
+
 export function mapAnalysis(row: Record<string, unknown>): AnalysisRow {
+  const meta = runMeta(row);
   return {
     id: String(row.id),
     item_id: String(row.item_id),
@@ -135,10 +148,16 @@ export function mapAnalysis(row: Record<string, unknown>): AnalysisRow {
     tags: asJson<string[]>(row.tags, []),
     model: String(row.model ?? "grok-4.5"),
     created_at: iso(row.created_at) ?? new Date().toISOString(),
+    run_id: meta.run_id,
+    coverage: meta.coverage,
+    warnings: meta.warnings,
   };
 }
 
 export function mapNote(row: Record<string, unknown>): KnowledgeNote {
+  const meta = runMeta(row);
+  const response = asJson<Record<string, unknown>>(row.response_json, {});
+  const result = asJson<Record<string, unknown>>(response.result, {});
   return {
     id: String(row.id),
     title: String(row.title),
@@ -146,6 +165,10 @@ export function mapNote(row: Record<string, unknown>): KnowledgeNote {
     kind: (row.kind as KnowledgeNote["kind"]) ?? "briefing",
     item_ids: asJson<string[]>(row.item_ids, []),
     created_at: iso(row.created_at) ?? new Date().toISOString(),
+    run_id: meta.run_id,
+    coverage: meta.coverage,
+    warnings: meta.warnings,
+    insufficient_evidence: Boolean(result.insufficient_evidence),
   };
 }
 
