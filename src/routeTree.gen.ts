@@ -21,6 +21,7 @@ import { Route as PrdRouteImport } from './routes/prd'
 import { Route as SourcesRouteImport } from './routes/sources'
 import { Route as InboxItemIdRouteImport } from './routes/inbox.$itemId'
 import { Route as ApiCronTickRouteImport } from './routes/api/cron/tick'
+import { Route as ApiInternalAgentDataRouteImport } from './routes/api/internal/agent-data'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -82,6 +83,11 @@ const ApiCronTickRoute = ApiCronTickRouteImport.update({
   path: '/api/cron/tick',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiInternalAgentDataRoute = ApiInternalAgentDataRouteImport.update({
+  id: '/api/internal/agent-data',
+  path: '/api/internal/agent-data',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -96,6 +102,7 @@ export interface FileRoutesByFullPath {
   '/sources': typeof SourcesRoute
   '/inbox/$itemId': typeof InboxItemIdRoute
   '/api/cron/tick': typeof ApiCronTickRoute
+  '/api/internal/agent-data': typeof ApiInternalAgentDataRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -110,6 +117,7 @@ export interface FileRoutesByTo {
   '/sources': typeof SourcesRoute
   '/inbox/$itemId': typeof InboxItemIdRoute
   '/api/cron/tick': typeof ApiCronTickRoute
+  '/api/internal/agent-data': typeof ApiInternalAgentDataRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -125,6 +133,7 @@ export interface FileRoutesById {
   '/sources': typeof SourcesRoute
   '/inbox/$itemId': typeof InboxItemIdRoute
   '/api/cron/tick': typeof ApiCronTickRoute
+  '/api/internal/agent-data': typeof ApiInternalAgentDataRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -141,6 +150,7 @@ export interface FileRouteTypes {
     | '/sources'
     | '/inbox/$itemId'
     | '/api/cron/tick'
+    | '/api/internal/agent-data'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -155,6 +165,7 @@ export interface FileRouteTypes {
     | '/sources'
     | '/inbox/$itemId'
     | '/api/cron/tick'
+    | '/api/internal/agent-data'
   id:
     | '__root__'
     | '/'
@@ -169,6 +180,7 @@ export interface FileRouteTypes {
     | '/sources'
     | '/inbox/$itemId'
     | '/api/cron/tick'
+    | '/api/internal/agent-data'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -183,6 +195,7 @@ export interface RootRouteChildren {
   PrdRoute: typeof PrdRoute
   SourcesRoute: typeof SourcesRoute
   ApiCronTickRoute: typeof ApiCronTickRoute
+  ApiInternalAgentDataRoute: typeof ApiInternalAgentDataRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -271,6 +284,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCronTickRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/internal/agent-data': {
+      id: '/api/internal/agent-data'
+      path: '/api/internal/agent-data'
+      fullPath: '/api/internal/agent-data'
+      preLoaderRoute: typeof ApiInternalAgentDataRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -296,6 +316,7 @@ const rootRouteChildren: RootRouteChildren = {
   PrdRoute: PrdRoute,
   SourcesRoute: SourcesRoute,
   ApiCronTickRoute: ApiCronTickRoute,
+  ApiInternalAgentDataRoute: ApiInternalAgentDataRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

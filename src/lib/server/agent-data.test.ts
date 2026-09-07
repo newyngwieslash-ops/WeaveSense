@@ -33,9 +33,9 @@ const token = "data-token";
 test("missing or empty service token is rejected before data access", async () => {
   const { pg, sql, runId, runToken } = await setup();
   let queries = 0;
-  const counting = { query: async (text: string, params?: unknown[]) => {
+  const counting = { async query<T = Record<string, unknown>>(text: string, params?: unknown[]) {
     if (text.includes("from items")) queries += 1;
-    return sql.query(text, params);
+    return sql.query<T>(text, params);
   } };
   const denied = await handleAgentData({
     sql: counting, serviceToken: token, providedServiceToken: "", runToken, runId,

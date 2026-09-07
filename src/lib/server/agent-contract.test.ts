@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { analysisSchema, parseExecuteRequest, parseExecuteResponse } from "../agent-contract.ts";
+import { analysisSchema, parseExecuteRequest, parseExecuteResponse, type ExecuteMode } from "../agent-contract.ts";
 
 const fixtures = new URL("../../../validation/agent/contracts/", import.meta.url);
 
@@ -63,7 +63,7 @@ test("invalid fixtures are rejected on both sides of the contract", () => {
       continue;
     }
     if (item.kind === "response") {
-      const parsed = parseExecuteResponse(JSON.stringify(item.payload), item.mode ?? "analyze_item");
+      const parsed = parseExecuteResponse(JSON.stringify(item.payload), (item.mode ?? "analyze_item") as ExecuteMode);
       assert.equal(parsed.ok, false, item.id);
       continue;
     }

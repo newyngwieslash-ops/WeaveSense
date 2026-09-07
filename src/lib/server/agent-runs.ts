@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
-import type { Sql } from "../db.ts";
 
-type Queryable = Pick<Sql, "query">;
+type Queryable = { query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<T[]> };
 
 export type AgentMode = "analyze_item" | "briefing" | "research";
 export type AgentProvider = "legacy" | "eino";
