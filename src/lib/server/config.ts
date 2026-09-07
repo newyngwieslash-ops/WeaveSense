@@ -20,7 +20,16 @@ export const prod = {
   minioForcePathStyle: read("MINIO_FORCE_PATH_STYLE", "true") !== "false",
   tickLimit: Math.min(40, Math.max(1, Number(read("TICK_LIMIT", "5")) || 5)),
   extractAuto: read("EXTRACT_AUTO", "false") === "true",
+  aiEngine: parseEngine(read("AI_ENGINE", "legacy")),
+  agentServiceUrl: read("AGENT_SERVICE_URL").replace(/\/$/, ""),
+  agentServiceToken: read("AGENT_SERVICE_TOKEN"),
+  agentDataToken: read("AGENT_DATA_TOKEN"),
 };
+
+function parseEngine(value: string): "legacy" | "eino" {
+  if (value === "legacy" || value === "eino") return value;
+  throw new Error("agent_unconfigured");
+}
 
 export function minioConfigured(): boolean {
   return Boolean(prod.minioEndpoint && prod.minioAccessKey && prod.minioSecretKey);
