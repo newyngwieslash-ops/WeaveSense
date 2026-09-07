@@ -1,9 +1,69 @@
-import { getSql } from "@/lib/db";
-import { shortId } from "@/lib/utils";
-import { mapItem } from "./queries";
-import type { AskResult } from "@/lib/types";
+import { randomBytes, randomUUID } from "node:crypto";
+import { hashRunToken } from "./agent-data.ts";
+import { shortId } from "../utils.ts";
+import type { AskResult } from "../types.ts";
+import type { PlatformId } from "../platforms.ts";
+import type { ExecuteRequest, ExecuteResponse } from "../agent-contract.ts";
+import { parseExecuteResponse } from "../agent-contract.ts";
+import { AgentClientError, agentClientConfig, executeAgent } from "./agent-client.ts";
+import {
+  evidenceMap,
+  materialFingerprint,
+  rankRetrievedItems,
+  selectAnalyzeSources,
+  selectBriefingSources,
+  selectResearchSeeds,
+  shanghaiDayRange,
+  splitQueryTerms,
+  validateCitations,
+  type EvidenceSource,
+} from "./agent-context.ts";
+import { enqueueResearchJob } from "./agent-queue.ts";
+import { beginRun, failRun, finishAnalyzeAtomically, finishNoteAtomically, hashCanonical, type AgentProvider } from "./agent-runs.ts";
+import type { ItemRow } from "../types.ts";
+import { isPlatform } from "../platforms.ts";
+
+function mapItem(row: Record<string, unknown>): ItemRow {
+  return {
+    id: String(row.id),
+    source_id: String(row.source_id),
+    platform: isPlatform(String(row.platform)) ? String(row.platform) as ItemRow["platform"] : "rss",
+    external_id: String(row.external_id),
+    title: String(row.title ?? ""),
+    body: String(row.body ?? ""),
+    author: String(row.author ?? ""),
+    url: String(row.url ?? ""),
+    media_type: (row.media_type as ItemRow["media_type"]) ?? "article",
+    media_urls: [],
+    thumbnail_url: "",
+    views: null,
+    likes: null,
+    published_at: row.published_at ? new Date(String(row.published_at)).toISOString() : null,
+    collected_at: row.collected_at ? new Date(String(row.collected_at)).toISOString() : new Date().toISOString(),
+    pipeline_status: (row.pipeline_status as ItemRow["pipeline_status"]) ?? "ingested",
+    extra: {},
+    matched_keywords: [],
+    source_name: row.source_name ? String(row.source_name) : undefined,
+  };
+}
 
 const MODEL = "grok-4.5";
+const POLICY_VERSION = "loom-agent-v1";
+
+type Queryable = { query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<T[]> };
+type ExecuteFn = (request: ExecuteRequest) => Promise<ExecuteResponse>;
+
+type OpError = { ok: false; error: string; error_code?: string; run_id?: string };
+
+function todayShanghai(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Shanghai" });
+}
+
+function engineFromEnv(): AgentProvider {
+  const value = (process.env.AI_ENGINE ?? "legacy").trim();
+  if (value === "eino" || value === "legacy") return value;
+  throw new Error("agent_unconfigured");
+}
 
 async function chat(system: string, user: string, maxTokens: number): Promise<
   { ok: true; text: string } | { ok: false; error: string }
@@ -12,18 +72,10 @@ async function chat(system: string, user: string, maxTokens: number): Promise<
   if (!apiKey) return { ok: false, error: "当前环境未启用 AI 分析" };
   const res = await fetch("https://api.x.ai/v1/chat/completions", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({
-      model: MODEL,
-      max_tokens: maxTokens,
-      temperature: 0.3,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
+      model: MODEL, max_tokens: maxTokens, temperature: 0.3,
+      messages: [{ role: "system", content: system }, { role: "user", content: user }],
     }),
     signal: AbortSignal.timeout(45000),
   });
@@ -35,132 +87,283 @@ async function chat(system: string, user: string, maxTokens: number): Promise<
 }
 
 function parseJsonObject(text: string): Record<string, unknown> | null {
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end <= start) return null;
-  try {
-    return JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
+  try { return JSON.parse(text) as Record<string, unknown>; } catch { return null; }
 }
 
 function strArr(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return value.map((v) => String(v)).filter(Boolean).slice(0, 12);
+  return value.map((v) => String(v)).filter((v) => v.trim()).slice(0, 12);
 }
 
-export async function analyzeItem(itemId: string): Promise<{ ok: boolean; error?: string; id?: string }> {
-  const sql = await getSql();
-  const [raw] = await sql.query<Record<string, unknown>>(
-    `select i.*, s.name as source_name from items i join sources s on s.id = i.source_id where i.id = $1`,
-    [itemId],
-  );
-  if (!raw) return { ok: false, error: "内容不存在" };
-  const item = mapItem(raw);
-
-  const result = await chat(
-    "你是织识（Loom）的行业媒体分析师。只根据给定素材抽取对行业知识库有用的信息。用中文。必须返回 JSON。",
-    `请分析这条采集内容，返回 JSON：{"summary":"80字内摘要","topics":["主题"],"entities":["实体"],"insights":"对行业研究的一条洞察","tags":["标签"]}\n\n平台: ${item.platform}\n信源: ${item.source_name}\n作者: ${item.author}\n标题: ${item.title}\n正文: ${item.body.slice(0, 2800)}`,
-    700,
-  );
-  if (!result.ok) return result;
-
-  const parsed = parseJsonObject(result.text);
-  const summary = String(parsed?.summary ?? result.text).slice(0, 1200);
-  const insights = String(parsed?.insights ?? "").slice(0, 1200);
-  const id = shortId();
-  await sql.query(
-    `insert into analyses (id, item_id, summary, topics, entities, insights, tags, model)
-     values ($1,$2,$3,$4::jsonb,$5::jsonb,$6,$7::jsonb,$8)`,
-    [
-      id,
-      itemId,
-      summary,
-      JSON.stringify(strArr(parsed?.topics)),
-      JSON.stringify(strArr(parsed?.entities)),
-      insights,
-      JSON.stringify(strArr(parsed?.tags)),
-      MODEL,
-    ],
-  );
-  await sql.query("update items set pipeline_status = 'analyzed' where id = $1", [itemId]);
-  return { ok: true, id };
+function deadline(seconds = 40): string {
+  return new Date(Date.now() + seconds * 1000).toISOString();
 }
 
-export async function generateBriefing(): Promise<{ ok: boolean; error?: string; id?: string; title?: string }> {
-  const sql = await getSql();
-  const rows = await sql.query<Record<string, unknown>>(
-    `select i.*, s.name as source_name
-     from items i join sources s on s.id = i.source_id
-     order by coalesce(i.published_at, i.collected_at) desc
-     limit 12`,
-  );
-  if (!rows.length) return { ok: false, error: "还没有可分析的内容" };
-  const digest = rows
-    .map((r, i) => {
-      const item = mapItem(r);
-      return `${i + 1}. [${item.platform}/${item.source_name}] ${item.title}\n${item.body.slice(0, 280)}`;
-    })
-    .join("\n\n");
-  const result = await chat(
-    "你是织识的行业情报主编。根据采集到的媒体条目写一份简洁、具体、可执行的中文简报。不要空话，不要表情符号。结构：一、今日信号 二、跨平台交叉 三、值得跟进的问题。",
-    `以下是最近采集的条目：\n\n${digest}`,
-    1100,
-  );
-  if (!result.ok) return result;
-  const id = shortId();
-  const title = `行业简报 · ${new Date().toLocaleDateString("zh-CN")}`;
-  await sql.query(
-    `insert into knowledge_notes (id, title, content, kind, item_ids)
-     values ($1,$2,$3,'briefing',$4::jsonb)`,
-    [id, title, result.text, JSON.stringify(rows.map((r) => String(r.id)))],
-  );
-  return { ok: true, id, title };
+function buildRequest(mode: ExecuteRequest["mode"], sources: EvidenceSource[], extra: {
+  question?: string; range?: { from: string; to: string } | null; maxModelCalls: number; maxToolCalls: number; maxOutput: number; dataAccessToken?: string;
+}): ExecuteRequest {
+  return {
+    schema_version: 1,
+    run_id: randomUUID(),
+    mode,
+    input: {
+      question: extra.question ?? "",
+      sources,
+      range: extra.range ?? null,
+    },
+    policy: {
+      version: POLICY_VERSION,
+      deadline_at: deadline(),
+      max_model_calls: extra.maxModelCalls,
+      max_tool_calls: extra.maxToolCalls,
+      max_output_tokens_per_call: extra.maxOutput,
+    },
+    ...(extra.dataAccessToken ? { data_access_token: extra.dataAccessToken } : {}),
+  };
 }
 
-export async function askKnowledge(question: string): Promise<AskResult> {
-  const q = question.trim().slice(0, 400);
-  if (q.length < 2) return { ok: false, error: "请输入问题" };
-  const sql = await getSql();
-  const like = `%${q.replace(/[%_]/g, "")}%`;
-  let rows = await sql.query<Record<string, unknown>>(
-    `select i.*, s.name as source_name
-     from items i join sources s on s.id = i.source_id
-     where i.title ilike $1 or i.body ilike $1 or i.author ilike $1
-     order by coalesce(i.published_at, i.collected_at) desc
-     limit 8`,
-    [like],
-  );
-  if (!rows.length) {
-    rows = await sql.query<Record<string, unknown>>(
-      `select i.*, s.name as source_name
-       from items i join sources s on s.id = i.source_id
-       order by coalesce(i.published_at, i.collected_at) desc
-       limit 8`,
-    );
+async function executeLegacy(request: ExecuteRequest): Promise<ExecuteResponse> {
+  const digest = request.input.sources.map((s, i) =>
+    `#${i + 1} ${s.title} evidence_id=${s.evidence_id} coverage=${s.coverage}\n${s.text}`).join("\n\n");
+  const system = request.mode === "analyze_item"
+    ? "你是织识的行业媒体分析师。只根据给定素材回答。必须返回一个 JSON 对象，不要 markdown。"
+    : "你是织识的行业情报主编。只根据给定素材回答。必须返回一个 JSON 对象，不要 markdown。";
+  const schema = request.mode === "analyze_item"
+    ? `{"summary":"摘要","topics":["主题"],"entities":["实体"],"insights":"洞察","tags":["标签"],"citations":[{"evidence_id":"id","quote":"原文"}],"insufficient_evidence":false}`
+    : `{"title":"标题","content":"正文","citations":[{"evidence_id":"id","quote":"原文"}],"insufficient_evidence":false}`;
+  const result = await chat(system, `问题: ${request.input.question}\n返回 JSON：${schema}\n\n${digest}`, request.policy.max_output_tokens_per_call);
+  if (!result.ok) {
+    return { schema_version: 1, run_id: request.run_id, ok: false, error: { code: "agent_unavailable", message: result.error, retryable: false, outcome_unknown: false } };
   }
-  const citations = rows.map((r) => {
-    const item = mapItem(r);
-    return { id: item.id, title: item.title, platform: item.platform };
-  });
-  const context = rows
-    .map((r, i) => {
-      const item = mapItem(r);
-      return `#${i + 1} ${item.title}（${item.source_name} / ${item.platform}）\n${item.body.slice(0, 500)}`;
-    })
-    .join("\n\n");
-  const result = await chat(
-    "你是织识知识库助手。只根据提供的采集条目回答。用中文。引用条目标题。如果材料不足，明确说不足，不要编造。",
-    `问题：${q}\n\n材料：\n${context}`,
-    800,
-  );
-  if (!result.ok) return { ok: false, error: result.error, citations };
-  const id = shortId();
-  await sql.query(
-    `insert into knowledge_notes (id, title, content, kind, item_ids)
-     values ($1,$2,$3,'answer',$4::jsonb)`,
-    [id, q.slice(0, 80), result.text, JSON.stringify(citations.map((c) => c.id))],
-  );
-  return { ok: true, answer: result.text, note_id: id, citations };
+  const parsed = parseExecuteResponse(JSON.stringify({
+    schema_version: 1, run_id: request.run_id, ok: true,
+    result: {
+      ...(parseJsonObject(result.text) ?? {}),
+      citations: (parseJsonObject(result.text) as { citations?: unknown })?.citations ?? [],
+      insufficient_evidence: Boolean((parseJsonObject(result.text) as { insufficient_evidence?: unknown })?.insufficient_evidence),
+      coverage: request.input.sources.some((s) => s.coverage === "partial") ? "partial" : "full",
+      warnings: [],
+    },
+    runtime: { model: MODEL, prompt_version: POLICY_VERSION, skill_versions: {}, input_tokens: null, output_tokens: null, model_calls: 1, tool_calls: 0, events: [] },
+    evidence: request.input.sources.map((s) => ({ evidence_id: s.evidence_id, item_id: s.item_id, title: s.title, url: s.url, text: s.text, origin: "internal" })),
+  }), request.mode);
+  if (!parsed.ok) {
+    return { schema_version: 1, run_id: request.run_id, ok: false, error: { code: "invalid_output", message: parsed.error, retryable: false, outcome_unknown: false } };
+  }
+  return parsed.value;
 }
+
+async function runEngine(request: ExecuteRequest, engine: AgentProvider, execute?: ExecuteFn): Promise<ExecuteResponse> {
+  if (execute) return execute(request);
+  if (engine === "legacy") return executeLegacy(request);
+  try {
+    return await executeAgent(request, agentClientConfig());
+  } catch (error) {
+    const code = error instanceof AgentClientError ? error.code : "agent_unavailable";
+    return { schema_version: 1, run_id: request.run_id, ok: false, error: { code, message: code, retryable: false, outcome_unknown: code === "model_timeout" } };
+  }
+}
+
+function fail(error: string, extra: { error_code?: string; run_id?: string } = {}): OpError {
+  return { ok: false, error, ...extra };
+}
+
+export async function analyzeItemWith(opts: {
+  sql: Queryable; itemId: string; requestId?: string; engine?: AgentProvider; execute?: ExecuteFn;
+}): Promise<{ ok: true; id: string; run_id?: string } | OpError> {
+  const engine = opts.engine ?? engineFromEnv();
+  const [raw] = await opts.sql.query<Record<string, unknown>>(
+    `select i.*, s.name as source_name from items i join sources s on s.id = i.source_id where i.id = $1`,
+    [opts.itemId],
+  );
+  if (!raw) return fail("内容不存在", { error_code: "invalid_request" });
+  const item = mapItem(raw);
+  const selected = selectAnalyzeSources(item);
+  if (selected.sources.length === 0) return fail("没有可分析的正文", { error_code: "invalid_request" });
+  const requestId = opts.requestId ?? randomUUID();
+  const inputHash = hashCanonical({ mode: "analyze_item", item_id: item.id });
+  const request = buildRequest("analyze_item", selected.sources, { maxModelCalls: 2, maxToolCalls: 0, maxOutput: 1200 });
+  const begun = await beginRun(opts.sql, {
+    id: request.run_id, requestId, mode: "analyze_item", provider: engine,
+    inputHash, materialHash: selected.materialHash, policyVersion: POLICY_VERSION,
+    requestJson: { mode: "analyze_item", item_id: item.id, sources: selected.sources, warnings: selected.warnings },
+    claimToken: randomUUID(), expiresAt: new Date(Date.now() + 60_000).toISOString(),
+  });
+  if (begun.kind === "replay") {
+    const saved = begun.responseJson as { analysis_id?: string };
+    return { ok: true, id: String(saved.analysis_id ?? begun.run.id), run_id: begun.run.id };
+  }
+  if (begun.kind === "in_progress") return fail("任务仍在执行", { error_code: "run_in_progress", run_id: begun.run.id });
+  if (begun.kind === "conflict") return fail("请求冲突", { error_code: "request_conflict", run_id: begun.run.id });
+  if (begun.kind === "failed") return fail("上次执行已失败，请重新分析", { error_code: begun.run.error_code || "failed", run_id: begun.run.id });
+
+  const executed = await runEngine(request, engine, opts.execute);
+  if (!executed.ok || !executed.result?.analysis) {
+    const code = executed.ok ? "invalid_output" : executed.error.code;
+    await failRun(opts.sql, { id: begun.run.id, claimToken: begun.run.claim_token, errorCode: code });
+    return fail(executed.ok ? "模型输出无效" : executed.error.message, { error_code: code, run_id: begun.run.id });
+  }
+  const citations = validateCitations(executed.result.citations, evidenceMap(selected.sources));
+  if (!citations.ok) {
+    await failRun(opts.sql, { id: begun.run.id, claimToken: begun.run.claim_token, errorCode: "invalid_citation" });
+    return fail("引用无效", { error_code: "invalid_citation", run_id: begun.run.id });
+  }
+  const analysisId = shortId();
+  const persist = await finishAnalyzeAtomically(opts.sql, {
+    runId: begun.run.id, claimToken: begun.run.claim_token, itemId: item.id,
+    title: item.title, body: item.body, author: item.author, url: item.url, platform: item.platform,
+    analysisId, summary: executed.result.analysis.summary, topics: executed.result.analysis.topics,
+    entities: executed.result.analysis.entities, insights: executed.result.analysis.insights,
+    tags: executed.result.analysis.tags, model: executed.runtime.model,
+    promptVersion: executed.runtime.prompt_version, skillVersions: executed.runtime.skill_versions,
+    responseJson: { ...executed, analysis_id: analysisId },
+    inputTokens: executed.runtime.input_tokens, outputTokens: executed.runtime.output_tokens,
+    modelCalls: executed.runtime.model_calls, toolCalls: executed.runtime.tool_calls,
+  });
+  if (persist === "input_changed") {
+    await failRun(opts.sql, { id: begun.run.id, claimToken: begun.run.claim_token, errorCode: "input_changed" });
+    return fail("原文已变化", { error_code: "input_changed", run_id: begun.run.id });
+  }
+  if (persist !== "ok") {
+    await failRun(opts.sql, { id: begun.run.id, claimToken: begun.run.claim_token, errorCode: "persist_failed" });
+    return fail("结果未保存", { error_code: "persist_failed", run_id: begun.run.id });
+  }
+  return { ok: true, id: analysisId, run_id: begun.run.id };
+}
+
+export async function generateBriefingWith(opts: {
+  sql: Queryable; requestId?: string; from?: string; to?: string; engine?: AgentProvider; execute?: ExecuteFn;
+}): Promise<{ ok: true; id: string; title: string; run_id?: string } | OpError> {
+  const engine = opts.engine ?? engineFromEnv();
+  const range = opts.from && opts.to ? { from: opts.from, to: opts.to } : shanghaiDayRange(todayShanghai());
+  const rows = await opts.sql.query<Record<string, unknown>>(
+    `select i.*, s.name as source_name from items i join sources s on s.id = i.source_id
+     where coalesce(i.published_at, i.collected_at) >= $1::timestamptz
+       and coalesce(i.published_at, i.collected_at) < $2::timestamptz
+     order by coalesce(i.published_at, i.collected_at) desc limit 12`,
+    [range.from, range.to],
+  );
+  const selected = selectBriefingSources(rows.map(mapItem), range);
+  if (!selected.ok) return fail("日期范围无效", { error_code: selected.error });
+  if (selected.sources.length === 0) return fail("该时间范围暂无材料", { error_code: "insufficient_evidence" });
+  const requestId = opts.requestId ?? randomUUID();
+  const inputHash = hashCanonical({ mode: "briefing", range });
+  const request = buildRequest("briefing", selected.sources, { range, maxModelCalls: 2, maxToolCalls: 0, maxOutput: 1800 });
+  const begun = await beginRun(opts.sql, {
+    id: request.run_id, requestId, mode: "briefing", provider: engine,
+    inputHash, materialHash: selected.materialHash, policyVersion: POLICY_VERSION,
+    requestJson: { mode: "briefing", range, sources: selected.sources },
+    claimToken: randomUUID(), expiresAt: new Date(Date.now() + 60_000).toISOString(),
+  });
+  if (begun.kind === "replay") {
+    const saved = begun.responseJson as { note_id?: string; title?: string };
+    return { ok: true, id: String(saved.note_id ?? begun.run.id), title: String(saved.title ?? ""), run_id: begun.run.id };
+  }
+  if (begun.kind !== "won") return fail("无法开始简报", { error_code: begun.kind, run_id: begun.run.id });
+  const executed = await runEngine(request, engine, opts.execute);
+  if (!executed.ok || !executed.result?.content) {
+    const code = executed.ok ? "invalid_output" : executed.error.code;
+    await failRun(opts.sql, { id: begun.run.id, claimToken: begun.run.claim_token, errorCode: code });
+    return fail("简报生成失败", { error_code: code, run_id: begun.run.id });
+  }
+  const citations = validateCitations(executed.result.citations, evidenceMap(selected.sources));
+  if (!citations.ok) {
+    await failRun(opts.sql, { id: begun.run.id, claimToken: begun.run.claim_token, errorCode: "invalid_citation" });
+    return fail("引用无效", { error_code: "invalid_citation", run_id: begun.run.id });
+  }
+  const noteId = shortId();
+  const title = executed.result.title || `行业简报 · ${todayShanghai()}`;
+  const saved = await finishNoteAtomically(opts.sql, {
+    runId: begun.run.id, claimToken: begun.run.claim_token, noteId, title, content: executed.result.content,
+    kind: "briefing", itemIds: [...new Set(executed.result.citations.map((c) => {
+      const src = selected.sources.find((s) => s.evidence_id === c.evidence_id);
+      return src?.item_id ?? "";
+    }).filter(Boolean))],
+    model: executed.runtime.model, promptVersion: executed.runtime.prompt_version, skillVersions: executed.runtime.skill_versions,
+    responseJson: { ...executed, note_id: noteId, title },
+    inputTokens: executed.runtime.input_tokens, outputTokens: executed.runtime.output_tokens,
+    modelCalls: executed.runtime.model_calls, toolCalls: executed.runtime.tool_calls,
+  });
+  if (!saved) return fail("结果未保存", { error_code: "persist_failed", run_id: begun.run.id });
+  return { ok: true, id: noteId, title, run_id: begun.run.id };
+}
+
+export async function askKnowledgeWith(opts: {
+  sql: Queryable; question: string; requestId?: string; engine?: AgentProvider; execute?: ExecuteFn; async?: boolean;
+}): Promise<AskResult & { error_code?: string; run_id?: string }> {
+  const engine = opts.engine ?? engineFromEnv();
+  const q = opts.question.trim();
+  if (Array.from(q).length < 2) return { ok: false, error: "请输入问题", error_code: "invalid_request" };
+  const terms = splitQueryTerms(q);
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+  for (const term of (terms.length ? terms : [q])) {
+    params.push(`%${term.replace(/[%_\\]/g, (ch) => `\\${ch}`)}%`);
+    const idx = params.length;
+    clauses.push(`(i.title ilike $${idx} escape '\\' or i.body ilike $${idx} escape '\\' or i.author ilike $${idx} escape '\\')`);
+  }
+  const rows = await opts.sql.query<Record<string, unknown>>(
+    `select i.*, s.name as source_name from items i join sources s on s.id = i.source_id
+     where ${clauses.join(" or ")}
+     order by coalesce(i.published_at, i.collected_at) desc, i.id desc limit 40`,
+    params,
+  );
+  const selected = selectResearchSeeds(rankRetrievedItems(q, rows.map(mapItem), 8));
+  if (selected.sources.length === 0) {
+    return { ok: false, error: "材料不足", error_code: "insufficient_evidence", citations: [] };
+  }
+  const requestId = opts.requestId ?? randomUUID();
+  if (opts.async) {
+    const job = await enqueueResearchJob(opts.sql, {
+      question: q, requestId, materialHash: hashCanonical({ mode: "research", question: q }),
+    });
+    if (!job) return { ok: false, error: "无法排队问答", error_code: "persist_failed" };
+    return { ok: true, pending: true, job_id: job.id, error_code: "queued", citations: [] };
+  }
+  const inputHash = hashCanonical({ mode: "research", question: q });
+  const dataAccessToken = randomBytes(32).toString("hex");
+  const request = buildRequest("research", selected.sources, {
+    question: q, maxModelCalls: 6, maxToolCalls: 4, maxOutput: 1800, dataAccessToken,
+  });
+  const begun = await beginRun(opts.sql, {
+    id: request.run_id, requestId, mode: "research", provider: engine,
+    inputHash, materialHash: selected.materialHash, policyVersion: POLICY_VERSION,
+    requestJson: { mode: "research", question: q, sources: selected.sources },
+    claimToken: randomUUID(), expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    dataTokenHash: hashRunToken(dataAccessToken),
+  });
+  if (begun.kind === "replay") {
+    const saved = begun.responseJson as { note_id?: string; answer?: string; citations?: AskResult["citations"] };
+    return { ok: true, answer: saved.answer, note_id: saved.note_id, citations: saved.citations, run_id: begun.run.id };
+  }
+  if (begun.kind !== "won") return { ok: false, error: "无法开始问答", error_code: begun.kind, run_id: begun.run.id };
+  const executed = await runEngine(request, engine, opts.execute);
+  if (!executed.ok || !executed.result?.content) {
+    const code = executed.ok ? "invalid_output" : executed.error.code;
+    await failRun(opts.sql, { id: begun.run.id, claimToken: begun.run.claim_token, errorCode: code });
+    return { ok: false, error: "问答失败", error_code: code, run_id: begun.run.id, citations: [] };
+  }
+  const citations = validateCitations(executed.result.citations, evidenceMap(selected.sources));
+  if (!citations.ok) {
+    await failRun(opts.sql, { id: begun.run.id, claimToken: begun.run.claim_token, errorCode: "invalid_citation" });
+    return { ok: false, error: "引用无效", error_code: "invalid_citation", run_id: begun.run.id, citations: [] };
+  }
+  const publicCitations = citations.citations.flatMap((c) => {
+    const src = selected.sources.find((s) => s.evidence_id === c.evidence_id);
+    return src ? [{ id: src.item_id, title: src.title, platform: src.platform as PlatformId }] : [];
+  });
+  const noteId = shortId();
+  const saved = await finishNoteAtomically(opts.sql, {
+    runId: begun.run.id, claimToken: begun.run.claim_token, noteId, title: q.slice(0, 80),
+    content: executed.result.content, kind: "answer",
+    itemIds: [...new Set(publicCitations.map((c) => c.id))],
+    model: executed.runtime.model, promptVersion: executed.runtime.prompt_version, skillVersions: executed.runtime.skill_versions,
+    responseJson: { ...executed, note_id: noteId, answer: executed.result.content, citations: publicCitations },
+    inputTokens: executed.runtime.input_tokens, outputTokens: executed.runtime.output_tokens,
+    modelCalls: executed.runtime.model_calls, toolCalls: executed.runtime.tool_calls,
+  });
+  if (!saved) return { ok: false, error: "结果未保存", error_code: "persist_failed", run_id: begun.run.id };
+  return { ok: true, answer: executed.result.content, note_id: noteId, citations: publicCitations, run_id: begun.run.id };
+}
+
+export const materialHashForTests = materialFingerprint;

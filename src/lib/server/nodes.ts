@@ -6,6 +6,8 @@ import { xaiReady } from "./extract";
 import { ingestPending } from "./media";
 import { extractPending } from "./extract";
 import { cronHasBudget, CRON_EXTRACT_RESERVE_MS, CRON_INGEST_RESERVE_MS } from "./cron";
+import { autoAnalyzeConfigFromEnv, claimAiJob, enqueueReadyAnalyses, finishAiJob } from "./agent-queue";
+import { analyzeItemWith } from "./analyze";
 
 export type NodeCard = {
   id: string;
@@ -106,6 +108,7 @@ export async function runProductionTick({ deadlineMs, now = Date.now, allowExtra
 } = {}): Promise<{
   stored: number;
   extracted: number;
+  analyzed: number;
   ingest_errors: number;
   extract_errors: number;
   deferred: number;
@@ -116,9 +119,30 @@ export async function runProductionTick({ deadlineMs, now = Date.now, allowExtra
   const runExtract = allowExtract && prod.extractAuto
     && (!bounded || cronHasBudget(deadlineMs, CRON_EXTRACT_RESERVE_MS, now));
   const extract = runExtract ? await extractPending(bounded ? 1 : 2) : { ran: 0, errors: 0 };
+  let analyzed = 0;
+  const cfg = autoAnalyzeConfigFromEnv();
+  if (cfg.autoAnalyze) {
+    const sql = await getSql();
+    const day = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Shanghai" });
+    await enqueueReadyAnalyses(sql, cfg, day);
+    const job = await claimAiJob(sql, { worker: "cron", leaseSeconds: 60, kind: "analyze" });
+    if (job) {
+      const result = await analyzeItemWith({ sql, itemId: job.item_id });
+      const unknown = !result.ok && (result.error_code === "model_timeout" || result.error_code === "outcome_unknown");
+      await finishAiJob(sql, {
+        id: job.id,
+        claimToken: job.claim_token,
+        status: result.ok ? "succeeded" : unknown ? "outcome_unknown" : "failed",
+        runId: result.run_id,
+        errorCode: result.ok ? "" : result.error_code,
+      });
+      if (result.ok) analyzed = 1;
+    }
+  }
   return {
     stored: ingest.stored,
     extracted: extract.ran,
+    analyzed,
     ingest_errors: ingest.errors,
     extract_errors: extract.errors,
     deferred: Number(!runIngest) + Number(allowExtract && prod.extractAuto && !runExtract),

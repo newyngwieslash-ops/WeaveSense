@@ -1,0 +1,45 @@
+{
+  "request": {
+    "schema_version": 1,
+    "run_id": "8ec1448d-d195-50a9-af6c-3d343a46cd68",
+    "mode": "research",
+    "input": {
+      "question": "固态电池量产目前卡在哪些环节？",
+      "sources": [],
+      "range": null
+    },
+    "policy": {
+      "version": "loom-agent-v1",
+      "deadline_at": "2026-09-07T02:00:40Z",
+      "max_model_calls": 6,
+      "max_tool_calls": 4,
+      "max_output_tokens_per_call": 1800
+    }
+  },
+  "response": {
+    "schema_version": 1,
+    "run_id": "8ec1448d-d195-50a9-af6c-3d343a46cd68",
+    "ok": true,
+    "result": {
+      "content": "材料不足，无法确认量产卡点。",
+      "citations": [],
+      "insufficient_evidence": true,
+      "coverage": "partial",
+      "warnings": ["no_matching_items"]
+    },
+    "runtime": {
+      "model": "compat-model",
+      "prompt_version": "loom-agent-v1",
+      "skill_versions": {"cross-source-check": "ghi"},
+      "input_tokens": 8,
+      "output_tokens": 16,
+      "model_calls": 2,
+      "tool_calls": 1,
+      "events": [
+        {"type": "tool", "name": "search_items", "duration_ms": 5, "ok": true},
+        {"type": "model", "name": "generate", "duration_ms": 18, "ok": true}
+      ]
+    },
+    "evidence": []
+  }
+}

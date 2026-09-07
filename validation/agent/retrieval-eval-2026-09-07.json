@@ -1,0 +1,85 @@
+{
+  "cases": 22,
+  "baseline": {
+    "recall_at_8": 0.5172,
+    "hits": 15,
+    "expected": 29,
+    "false_positives_on_none": 0,
+    "failures": [
+      {
+        "id": "c07",
+        "query": "国产推理芯片",
+        "got": [],
+        "expected": [
+          "ai-1"
+        ]
+      },
+      {
+        "id": "c08",
+        "query": "上海天气",
+        "got": [],
+        "expected": [
+          "none-1"
+        ]
+      },
+      {
+        "id": "c09",
+        "query": "宁德固态电池上车",
+        "got": [],
+        "expected": [
+          "cross-1",
+          "cross-2"
+        ]
+      },
+      {
+        "id": "c12",
+        "query": "钠电两轮车",
+        "got": [],
+        "expected": [
+          "long-1"
+        ]
+      },
+      {
+        "id": "c16",
+        "query": "足球比分",
+        "got": [],
+        "expected": [
+          "noise-2"
+        ]
+      },
+      {
+        "id": "c17",
+        "query": "量产缺电解液",
+        "got": [],
+        "expected": [
+          "batt-2"
+        ]
+      },
+      {
+        "id": "c18",
+        "query": "封装交期恶化",
+        "got": [],
+        "expected": [
+          "chip-2"
+        ]
+      },
+      {
+        "id": "c19",
+        "query": "车企联合验证固态",
+        "got": [],
+        "expected": [
+          "cross-2"
+        ]
+      }
+    ]
+  },
+  "improved": {
+    "recall_at_8": 0.9655,
+    "hits": 28,
+    "expected": 29,
+    "false_positives_on_none": 0,
+    "failures": []
+  },
+  "delta_recall": 0.4483,
+  "vector_db": "not_introduced"
+}

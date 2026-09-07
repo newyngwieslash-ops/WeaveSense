@@ -120,6 +120,9 @@ export type AnalysisRow = {
   tags: string[];
   model: string;
   created_at: string;
+  run_id?: string | null;
+  coverage?: "full" | "partial" | "unknown";
+  warnings?: string[];
 };
 
 export type MediaObjectRow = {
@@ -151,6 +154,10 @@ export type KnowledgeNote = {
   kind: "briefing" | "answer" | "note";
   item_ids: string[];
   created_at: string;
+  run_id?: string | null;
+  coverage?: "full" | "partial" | "unknown";
+  warnings?: string[];
+  insufficient_evidence?: boolean;
 };
 
 export type PlatformStat = {
@@ -192,7 +199,13 @@ export type TickResult = {
 export type AskResult = {
   ok: boolean;
   error?: string;
+  error_code?: string;
+  run_id?: string;
+  job_id?: string;
+  pending?: boolean;
   answer?: string;
   note_id?: string;
   citations?: { id: string; title: string; platform: PlatformId }[];
+  external_citations?: { title: string; url: string; quote: string }[];
+  insufficient_evidence?: boolean;
 };

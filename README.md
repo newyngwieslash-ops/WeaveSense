@@ -74,6 +74,9 @@ npm run dev
 | `DAJIALA_DAILY_BUDGET_RMB` | 否 | 付费兜底每日硬上限，默认 20 RMB。 |
 | `TICK_LIMIT` | 否 | 每轮扫描到期信源数，默认 5，Docker 建议 20。 |
 | `EXTRACT_AUTO` | 否 | `true` 才在扫描时自动 OCR/ASR。 |
+| `AI_ENGINE` | 否 | `legacy`（默认）或 `eino`。未显式切换时不调用 Go 分析服务。 |
+| `AGENT_SERVICE_URL` / `AGENT_SERVICE_TOKEN` | eino 时 | 内部分析服务地址与独立服务凭证。 |
+| `AGENT_DATA_TOKEN` | eino 研究问答时 | 内部只读数据 API 凭证，与执行 token 分离。 |
 | `VITE_AUTH_ENABLED` | 已关闭 | 本产品无登录。见 `.grok/app-env.json`。 |
 
 ## Docker 生产

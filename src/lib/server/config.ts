@@ -20,7 +20,21 @@ export const prod = {
   minioForcePathStyle: read("MINIO_FORCE_PATH_STYLE", "true") !== "false",
   tickLimit: Math.min(40, Math.max(1, Number(read("TICK_LIMIT", "5")) || 5)),
   extractAuto: read("EXTRACT_AUTO", "false") === "true",
+  autoAnalyze: read("AUTO_ANALYZE", "false") === "true",
+  autoAnalyzeDailyLimit: Math.max(0, Number(read("AUTO_ANALYZE_DAILY_LIMIT", "20")) || 0),
+  autoAnalyzeDailyBudgetRmb: Math.max(0, Number(read("AUTO_ANALYZE_DAILY_BUDGET_RMB", "20")) || 0),
+  autoAnalyzePriceVersion: read("AUTO_ANALYZE_PRICE_VERSION", "v1") || "v1",
+  autoAnalyzeWorstCostRmb: Math.max(0.01, Number(read("AUTO_ANALYZE_WORST_COST_RMB", "1")) || 1),
+  aiEngine: parseEngine(read("AI_ENGINE", "legacy")),
+  agentServiceUrl: read("AGENT_SERVICE_URL").replace(/\/$/, ""),
+  agentServiceToken: read("AGENT_SERVICE_TOKEN"),
+  agentDataToken: read("AGENT_DATA_TOKEN"),
 };
+
+function parseEngine(value: string): "legacy" | "eino" {
+  if (value === "legacy" || value === "eino") return value;
+  throw new Error("agent_unconfigured");
+}
 
 export function minioConfigured(): boolean {
   return Boolean(prod.minioEndpoint && prod.minioAccessKey && prod.minioSecretKey);

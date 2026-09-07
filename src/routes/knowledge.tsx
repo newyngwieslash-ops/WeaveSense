@@ -1,12 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { coverageCopy, errorCopy, retryOrFreshRequestId } from "@/lib/agent-request";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/input";
-import { askFn, briefingFn, listKnowledgeFn } from "@/lib/server/fns";
+import { askFn, briefingFn, getAskJobFn, listKnowledgeFn } from "@/lib/server/fns";
 import { formatRelative } from "@/lib/format";
 
 export const Route = createFileRoute("/knowledge")({ component: KnowledgePage });
@@ -14,28 +15,62 @@ export const Route = createFileRoute("/knowledge")({ component: KnowledgePage })
 function KnowledgePage() {
   const qc = useQueryClient();
   const [question, setQuestion] = useState("");
+  const [jobId, setJobId] = useState<string | null>(null);
+  const askRequestId = useRef<string | null>(null);
+  const briefRequestId = useRef<string | null>(null);
   const data = useQuery({ queryKey: ["knowledge"], queryFn: () => listKnowledgeFn() });
+  const job = useQuery({
+    queryKey: ["ask-job", jobId],
+    queryFn: () => getAskJobFn({ data: { id: jobId! } }),
+    enabled: Boolean(jobId),
+    refetchInterval: (q) => {
+      const status = q.state.data && "status" in q.state.data ? String(q.state.data.status) : "";
+      if (!jobId || status === "succeeded" || status === "failed" || status === "outcome_unknown") return false;
+      return 2_000;
+    },
+  });
   const ask = useMutation({
-    mutationFn: () => askFn({ data: { question } }),
+    mutationFn: () => {
+      askRequestId.current = retryOrFreshRequestId(askRequestId.current, Boolean(askRequestId.current));
+      return askFn({ data: { question, request_id: askRequestId.current, async: true } });
+    },
     onSuccess: (r) => {
-      if (!r.ok) toast.error(r.error ?? "提问失败");
+      if (r.pending && r.job_id) {
+        setJobId(r.job_id);
+        toast.message("任务已排队，页面会继续查看进度");
+        return;
+      }
+      if (!r.ok) toast.error(errorCopy(r.error_code) + (r.error ? `：${r.error}` : ""));
       else {
         toast.success("已写入知识库");
         setQuestion("");
       }
+      askRequestId.current = null;
       void qc.invalidateQueries({ queryKey: ["knowledge"] });
     },
   });
   const brief = useMutation({
-    mutationFn: () => briefingFn(),
+    mutationFn: () => {
+      briefRequestId.current = retryOrFreshRequestId(briefRequestId.current, Boolean(briefRequestId.current));
+      return briefingFn({ data: { request_id: briefRequestId.current } });
+    },
     onSuccess: (r) => {
-      if (!r.ok) toast.error(r.error ?? "简报失败");
+      if (!r.ok) toast.error(errorCopy("error_code" in r ? String(r.error_code ?? "") : "") + (r.error ? `：${r.error}` : ""));
       else toast.success(r.title ?? "简报已生成");
+      briefRequestId.current = null;
       void qc.invalidateQueries({ queryKey: ["knowledge"] });
     },
   });
 
-  const latestAnswer = ask.data?.ok ? ask.data : null;
+  const latestAnswer = ask.data?.ok && !ask.data.pending ? ask.data : null;
+  const jobStatus = job.data && "status" in job.data ? String(job.data.status) : "";
+  useEffect(() => {
+    if (jobStatus === "succeeded") {
+      setJobId(null);
+      askRequestId.current = null;
+      void qc.invalidateQueries({ queryKey: ["knowledge"] });
+    }
+  }, [jobStatus, qc]);
 
   return (
     <AppShell
@@ -67,22 +102,42 @@ function KnowledgePage() {
           placeholder="例如：固态电池量产目前卡在哪些环节？"
         />
         <div className="mt-3 flex justify-end">
-          <Button type="submit" disabled={ask.isPending || question.trim().length < 2}>
-            {ask.isPending ? "检索中" : "提问"}
+          <Button type="submit" disabled={ask.isPending || Boolean(jobId) || question.trim().length < 2}>
+            {ask.isPending || jobId ? "任务进行中" : "提问"}
           </Button>
         </div>
       </form>
+
+      {jobId ? (
+        <p className="mt-3 text-sm text-muted">
+          {jobStatus === "failed" || jobStatus === "outcome_unknown"
+            ? errorCopy(jobStatus === "outcome_unknown" ? "run_in_progress" : undefined) + "：长任务未完成。"
+            : "任务仍在执行，页面每两秒查看一次，刷新后也会继续。"}
+        </p>
+      ) : null}
 
       {latestAnswer?.answer ? (
         <article className="mt-5 rounded-lg bg-surface p-5 shadow-[var(--shadow-border)]">
           <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">本次回答</p>
           <div className="mt-3 whitespace-pre-wrap text-sm leading-relaxed">{latestAnswer.answer}</div>
+          {latestAnswer.insufficient_evidence ? (
+            <p className="mt-3 text-sm text-muted">材料不足，没有编造引用。</p>
+          ) : null}
           {latestAnswer.citations?.length ? (
             <div className="mt-4 flex flex-wrap gap-2">
               {latestAnswer.citations.map((c) => (
                 <Link key={c.id} to="/inbox/$itemId" params={{ itemId: c.id }}>
                   <Badge>{c.title}</Badge>
                 </Link>
+              ))}
+            </div>
+          ) : null}
+          {latestAnswer.external_citations?.length ? (
+            <div className="mt-3 space-y-1 text-sm">
+              {latestAnswer.external_citations.map((c) => (
+                <a key={c.url} href={c.url} target="_blank" rel="noreferrer" className="block text-muted hover:text-fg">
+                  {c.title}
+                </a>
               ))}
             </div>
           ) : null}
@@ -104,6 +159,7 @@ function KnowledgePage() {
                   <span className="font-mono text-[11px] text-faint">{formatRelative(note.created_at)}</span>
                 </div>
                 <h3 className="mt-2 font-display text-lg">{note.title}</h3>
+                <p className="mt-1 text-xs text-muted">{coverageCopy(note.coverage)}</p>
                 <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-fg/90">{note.content}</p>
               </article>
             ))
