@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
+	"time"
 
 	"loom.local/agent/internal/agent"
 )
@@ -27,5 +29,10 @@ func main() {
 }
 
 func healthcheck() int {
+	client := &http.Client{Timeout: 2 * time.Second}
+	res, err := client.Get("http://127.0.0.1:8791/healthz")
+	if err != nil || res.StatusCode != http.StatusOK {
+		return 1
+	}
 	return 0
 }

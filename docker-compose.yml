@@ -110,6 +110,28 @@ services:
     build: .
     command: ["node", "workers/wechat-gateway/fixture-server.mjs"]
 
+  agent:
+    build:
+      context: ./workers/agent
+    environment:
+      AGENT_LISTEN_ADDR: 0.0.0.0:8791
+      AGENT_SERVICE_TOKEN: ${AGENT_SERVICE_TOKEN:-}
+      AGENT_MODEL_BASE_URL: ${AGENT_MODEL_BASE_URL:-https://api.x.ai/v1}
+      AGENT_MODEL_NAME: ${AGENT_MODEL_NAME:-grok-4.5}
+      AGENT_MODEL_API_KEY: ${AGENT_MODEL_API_KEY:-${XAI_API_KEY:-}}
+      AGENT_DATA_URL: ${AGENT_DATA_URL:-http://app:8080/api/internal/agent-data}
+      AGENT_DATA_TOKEN: ${AGENT_DATA_TOKEN:-}
+      AGENT_SKILLS_DIR: /app/skills
+      AGENT_MCP_CONFIG: ${AGENT_MCP_CONFIG:-}
+      AGENT_MAX_CONCURRENT_RUNS: ${AGENT_MAX_CONCURRENT_RUNS:-2}
+    healthcheck:
+      test: ["CMD", "/app/agent", "healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 10s
+    restart: unless-stopped
+
   app:
     build: .
     ports:
@@ -127,6 +149,10 @@ services:
       CRON_SECRET: ${CRON_SECRET:?set CRON_SECRET}
       CRON_TICK_LIMIT: ${CRON_TICK_LIMIT:-200}
       EXTRACT_AUTO: ${EXTRACT_AUTO:-false}
+      AI_ENGINE: ${AI_ENGINE:-legacy}
+      AGENT_SERVICE_URL: ${AGENT_SERVICE_URL:-http://agent:8791}
+      AGENT_SERVICE_TOKEN: ${AGENT_SERVICE_TOKEN:-}
+      AGENT_DATA_TOKEN: ${AGENT_DATA_TOKEN:-}
       WECHAT_GATEWAY_URL: ${WECHAT_GATEWAY_URL:-http://wechat-gateway:8790}
       WECHAT_GATEWAY_TOKEN: ${WECHAT_GATEWAY_TOKEN:?set WECHAT_GATEWAY_TOKEN}
       VITE_AUTH_ENABLED: "false"

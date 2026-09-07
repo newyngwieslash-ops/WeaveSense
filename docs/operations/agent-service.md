@@ -75,9 +75,27 @@ Final locked direct modules after `go mod tidy`:
 - `go test ./internal/agent -run TestHTTP` PASS on Windows with `CGO_ENABLED=0`.
 - `go test -race` is not available on this host: `go: -race requires cgo; enable cgo by setting CGO_ENABLED=1`. Re-run race tests in the Linux Docker/QA image.
 
+## Deploy
+
+Compose service `agent` has **no host ports**. App talks to `http://agent:8791`. Agent talks back to `http://app:8080/api/internal/agent-data` for research tools. There is no bidirectional health dependency: the app starts and shows collected items if the agent is down. Eino operations then return `agent_unavailable` and do not fall back to legacy.
+
+Vercel deploys only the TypeScript app. The Go agent must run as a separate internal service. Do not spawn Go from ServerFn.
+
+Default `AI_ENGINE=legacy`. Set `eino` only after `AGENT_SERVICE_TOKEN` and `AGENT_DATA_TOKEN` are independent random secrets. MCP example config is disabled. Empty `allowed_tools` exposes no tools. Skills are the three packaged files under `workers/agent/skills`; versions are SHA-256 of allowed files.
+
+Rollback: set `AI_ENGINE=legacy` for new tasks. Keep `ai_runs` and existing analyses/notes. Do not down-migrate. Stop the Go service only after in-flight runs expire.
+
+## MCP / Skills coverage
+
+Verified offline: Streamable HTTP tools + allowlist + empty allowlist = 0 tools. Not claimed: MCP Resources, Prompts, OAuth, or a real remote MCP server.
+
 ## Unverified
 
 - Real xAI / OpenAI-compatible tool calling, JSON mode, and usage
+- Any production MCP server
+- `go test -race` on this Windows host (needs cgo)
+- Docker image build in this session
+- Desktop/mobile browser smoke against `/workspace` (Linux QA path; this host is Windows)
 - Any production MCP server
 - Docker image build and Compose agent wiring (Task 15)
 - PGlite vs PostgreSQL atomic-save race (Task 16)
