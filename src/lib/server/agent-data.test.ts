@@ -77,6 +77,19 @@ test("ILIKE wildcards in the query do not expand the match", async () => {
   await pg.close();
 });
 
+test("split keywords still find synonym and late-body facts", async () => {
+  const { pg, sql, runId, runToken } = await setup();
+  await pg.query("insert into items (id,source_id,platform,external_id,title,body) values ('item-2','s','rss','e2','产业纪要','前文很长很长很长很长很长很长很长很长很长很长很长很长很长很长 固态电池量产缺电解液')");
+  const result = await handleAgentData({
+    sql, serviceToken: token, providedServiceToken: token, runToken, runId,
+    action: "search_items", params: { query: "固态电池量产卡点" },
+  });
+  assert.equal(result.status, 200);
+  const ids = ((result.body.items as { item_id: string }[]) ?? []).map((row) => row.item_id);
+  assert.ok(ids.includes("item-2"));
+  await pg.close();
+});
+
 test("unknown action is rejected", async () => {
   const { pg, sql, runId, runToken } = await setup();
   const result = await handleAgentData({

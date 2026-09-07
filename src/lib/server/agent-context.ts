@@ -156,6 +156,56 @@ export function selectBriefingSources(
   };
 }
 
+const STOPWORDS = new Set(["的", "了", "和", "与", "在", "是", "对", "及", "或", "the", "a", "an", "of", "to", "for"]);
+
+export function splitQueryTerms(query: string): string[] {
+  const raw = query
+    .replace(/[，。！？、；：""''（）()\[\]{}]/g, " ")
+    .split(/[\s,./\\-]+/)
+    .flatMap((part) => {
+      if (/[\u4e00-\u9fff]/.test(part) && part.length >= 4) {
+        const grams: string[] = [];
+        for (let i = 0; i < part.length - 1; i += 1) grams.push(part.slice(i, i + 2));
+        grams.push(part);
+        return grams;
+      }
+      return [part];
+    })
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 2 && !STOPWORDS.has(t.toLowerCase()));
+  return [...new Set(raw)].slice(0, 16);
+}
+
+export function scoreItemMatch(query: string, item: { title: string; body: string; author: string }): number {
+  const terms = splitQueryTerms(query);
+  if (terms.length === 0) return 0;
+  const title = item.title.toLowerCase();
+  const body = item.body.toLowerCase();
+  const author = item.author.toLowerCase();
+  let score = 0;
+  for (const term of terms) {
+    const needle = term.toLowerCase();
+    if (title.includes(needle)) score += 4;
+    if (author.includes(needle)) score += 2;
+    const firstHit = body.indexOf(needle);
+    if (firstHit >= 0) score += firstHit > body.length * 0.55 ? 3 : 1;
+  }
+  return score;
+}
+
+export function rankRetrievedItems<T extends { title: string; body: string; author: string }>(
+  query: string,
+  items: T[],
+  limit = 8,
+): T[] {
+  return [...items]
+    .map((item) => ({ item, score: scoreItemMatch(query, item) }))
+    .filter((row) => row.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((row) => row.item);
+}
+
 export function selectResearchSeeds(items: ItemRow[]): {
   sources: EvidenceSource[];
   warnings: string[];

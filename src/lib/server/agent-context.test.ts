@@ -5,6 +5,8 @@ import {
   selectTextSegments,
   selectAnalyzeSources,
   selectBriefingSources,
+  rankRetrievedItems,
+  splitQueryTerms,
   validateCitations,
   materialFingerprint,
 } from "./agent-context.ts";
@@ -104,6 +106,19 @@ test("validateCitations keeps only exact quotes from this run's evidence", () =>
   const one = validateCitations([{ evidence_id: "item:a:0", quote: "alpha" }], evidence);
   assert.equal(one.ok, true);
   if (one.ok) assert.equal(one.citations.length, 1);
+});
+
+test("query split and field weights prefer title and late-body facts", () => {
+  const terms = splitQueryTerms("固态电池量产卡点");
+  assert.ok(terms.includes("固态") || terms.includes("固态电池量产卡点") || terms.some((t) => t.includes("固态")));
+  const ranked = rankRetrievedItems("固态电池量产卡点", [
+    item({ id: "noise", title: "今日天气", body: "晴" }),
+    item({ id: "late", title: "纪要", body: "A".repeat(80) + "固态电池量产仍缺电解液" }),
+    item({ id: "title", title: "固态电池量产卡点", body: "概述" }),
+  ], 8);
+  assert.equal(ranked[0].id, "title");
+  assert.ok(ranked.some((row) => row.id === "late"));
+  assert.equal(ranked.some((row) => row.id === "noise"), false);
 });
 
 test("materialFingerprint changes when body or title changes", () => {

@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { appendEvidenceReceipt, getRun, hashCanonical } from "./agent-runs.ts";
-import { TOOL_CODE_POINT_CAP, codePoints, selectTextSegments } from "./agent-context.ts";
+import { TOOL_CODE_POINT_CAP, codePoints, rankRetrievedItems, selectTextSegments, splitQueryTerms } from "./agent-context.ts";
 
 type Queryable = { query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<T[]> };
 
@@ -53,17 +53,36 @@ export async function handleAgentData(opts: {
     if (Array.from(query).length < 2 || Array.from(query).length > 200) {
       return { status: 400, body: { error: "invalid_request" } };
     }
-    const like = `%${escapeLike(query)}%`;
-    const params: unknown[] = [like, limit];
-    let sql = `select i.id, i.title, i.body, i.platform, s.name as source_name, i.published_at
+    const terms = splitQueryTerms(query);
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    for (const term of (terms.length ? terms : [query])) {
+      params.push(`%${escapeLike(term)}%`);
+      const idx = params.length;
+      clauses.push(`(i.title ilike $${idx} escape '\\' or i.body ilike $${idx} escape '\\' or i.author ilike $${idx} escape '\\')`);
+    }
+    let sql = `select i.id, i.title, i.body, i.author, i.platform, s.name as source_name, i.published_at
       from items i join sources s on s.id = i.source_id
-      where (i.title ilike $1 escape '\\' or i.body ilike $1 escape '\\' or i.author ilike $1 escape '\\')`;
+      where ${clauses.join(" or ")}`;
     if (range?.from && range?.to) {
       params.push(range.from, range.to);
-      sql += ` and coalesce(i.published_at, i.collected_at) >= $3::timestamptz and coalesce(i.published_at, i.collected_at) < $4::timestamptz`;
+      sql += ` and coalesce(i.published_at, i.collected_at) >= $${params.length - 1}::timestamptz and coalesce(i.published_at, i.collected_at) < $${params.length}::timestamptz`;
     }
-    sql += ` order by coalesce(i.published_at, i.collected_at) desc, i.id desc limit $2`;
-    const rows = await opts.sql.query<Record<string, unknown>>(sql, params);
+    sql += ` order by coalesce(i.published_at, i.collected_at) desc, i.id desc limit 40`;
+    const rawRows = await opts.sql.query<Record<string, unknown>>(sql, params);
+    const ranked = rankRetrievedItems(
+      query,
+      rawRows.map((row) => ({
+        id: String(row.id),
+        title: String(row.title ?? ""),
+        body: String(row.body ?? ""),
+        author: String(row.author ?? ""),
+        platform: String(row.platform ?? ""),
+        source_name: String(row.source_name ?? ""),
+      })),
+      limit,
+    );
+    const rows = ranked;
     const items = [];
     for (const row of rows) {
       const snippet = clip(String(row.body ?? ""), 400);
