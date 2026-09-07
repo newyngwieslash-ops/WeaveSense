@@ -85,6 +85,18 @@ Default `AI_ENGINE=legacy`. Set `eino` only after `AGENT_SERVICE_TOKEN` and `AGE
 
 Rollback: set `AI_ENGINE=legacy` for new tasks. Keep `ai_runs` and existing analyses/notes. Do not down-migrate. Stop the Go service only after in-flight runs expire.
 
+## Auto-analyze (P3, off by default)
+
+`AUTO_ANALYZE=false`. Independent of `EXTRACT_AUTO`. Queue identity is `(item_id, material_hash, policy_version)`. Daily count and RMB worst-cost reserve live in `ai_budget_days`. Empty body, pending OCR, failed media, and an already-valid analysis are skipped. `outcome_unknown` is not auto-retried.
+
+## Long research jobs (P3)
+
+Knowledge questions can enqueue a durable `ai_jobs` row. The Go process polls `/api/internal/agent-jobs` when `AGENT_DATA_URL` and `AGENT_DATA_TOKEN` are set. Checkpoints are opaque bytes with schema/runtime version fencing; a stale `claim_token` cannot complete. The knowledge page polls job status every 2 seconds while queued/running. Refreshing the page does not require the original HTTP request to stay alive.
+
+## Retrieval (P3)
+
+Keyword split + title/late-body weighting is the current search. Vector DB was not introduced. Measured 2026-09-07 labeled set: baseline recall@8 0.5172 → improved 0.9655 (`validation/agent/retrieval-eval-2026-09-07.json`). No-answer cases stayed empty.
+
 ## MCP / Skills coverage
 
 Verified offline: Streamable HTTP tools + allowlist + empty allowlist = 0 tools. Not claimed: MCP Resources, Prompts, OAuth, or a real remote MCP server.
@@ -94,8 +106,8 @@ Verified offline: Streamable HTTP tools + allowlist + empty allowlist = 0 tools.
 - Real xAI / OpenAI-compatible tool calling, JSON mode, and usage
 - Any production MCP server
 - `go test -race` on this Windows host (needs cgo)
-- Docker image build in this session
+- Docker `compose build agent` now PASS (`gig5cyrba5yn3tsi-grok-workspace-agent`)
 - Desktop/mobile browser smoke against `/workspace` (Linux QA path; this host is Windows)
 - Any production MCP server
-- Docker image build and Compose agent wiring (Task 15)
+- Compose agent image build now PASS; host ports remain unpublished
 - PGlite vs PostgreSQL atomic-save race (Task 16)
