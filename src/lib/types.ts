@@ -201,6 +201,8 @@ export type AskResult = {
   error?: string;
   error_code?: string;
   run_id?: string;
+  job_id?: string;
+  pending?: boolean;
   answer?: string;
   note_id?: string;
   citations?: { id: string; title: string; platform: PlatformId }[];

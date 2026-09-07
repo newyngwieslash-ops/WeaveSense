@@ -98,6 +98,23 @@ test("briefing only uses the requested range", async () => {
   await pg.close();
 });
 
+test("async ask enqueues a job without calling the model", async () => {
+  const { pg, sql } = await setup();
+  await pg.exec(readFileSync(new URL("../../../migrations/0012_ai_jobs.sql", import.meta.url), "utf8"));
+  await pg.query(`insert into items (id,source_id,platform,external_id,title,body)
+    values ('item-1','s','rss','e1','固态电池量产卡点','电解液仍是瓶颈')`);
+  let calls = 0;
+  const result = await askKnowledgeWith({
+    sql, question: "固态电池量产卡点", engine: "eino", async: true,
+    execute: async () => { calls += 1; return okAnalyze(); },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.pending, true);
+  assert.ok(result.job_id);
+  assert.equal(calls, 0);
+  await pg.close();
+});
+
 test("ask with no matches does not invent citations", async () => {
   const { pg, sql } = await setup();
   await pg.query(`insert into items (id,source_id,platform,external_id,title,body)

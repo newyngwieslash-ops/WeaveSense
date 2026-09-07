@@ -26,6 +26,7 @@ export const askInput = z.object({
     return length >= 2 && length <= 400;
   }, { message: "invalid_question" }),
   request_id: z.uuid().optional(),
+  async: z.boolean().optional(),
 }).strict();
 
 export const briefingInput = z.object({

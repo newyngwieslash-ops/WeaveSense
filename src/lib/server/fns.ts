@@ -6,6 +6,7 @@ import { prod, wechatGatewayConfigured } from "./config";
 import { parseTelegramHandles, telethonHealth } from "./telethon";
 import { analyzeInput, askInput, briefingInput } from "../agent-contract.ts";
 import { analyzeItemWith, askKnowledgeWith, generateBriefingWith } from "./analyze";
+import { getAiJob } from "./agent-queue";
 import { extractItem, extractPending } from "./extract";
 import { ingestPending } from "./media";
 import { getNodesStatus, runProductionTick } from "./nodes";
@@ -418,7 +419,21 @@ export const briefingFn = createServerFn({ method: "POST" })
 
 export const askFn = createServerFn({ method: "POST" })
   .validator((input: unknown) => askInput.parse(input ?? {}))
-  .handler(async ({ data }) => askKnowledgeWith({ sql: await getSql(), question: data.question, requestId: data.request_id }));
+  .handler(async ({ data }) => askKnowledgeWith({
+    sql: await getSql(), question: data.question, requestId: data.request_id, async: data.async,
+  }));
+
+export const getAskJobFn = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const id = input && typeof input === "object" && "id" in input ? String((input as { id?: unknown }).id ?? "") : "";
+    if (!id) throw new Error("invalid_job");
+    return { id };
+  })
+  .handler(async ({ data }) => {
+    const job = await getAiJob(await getSql(), data.id);
+    if (!job) return { ok: false as const, error_code: "not_found" };
+    return { ok: true as const, job_id: job.id, status: job.status };
+  });
 
 export const listKnowledgeFn = createServerFn({ method: "GET" }).handler(async () => {
   await ensureSeeded();

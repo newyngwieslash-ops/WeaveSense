@@ -10,6 +10,7 @@ export function retryOrFreshRequestId(current: string | null, explicitRetry: boo
 export function errorCopy(code?: string): string {
   switch (code) {
     case "run_in_progress": return "任务仍在执行";
+    case "queued": return "任务已排队，刷新后继续查看";
     case "persist_failed": return "结果未保存";
     case "insufficient_evidence": return "材料不足";
     case "input_changed": return "原文已变化，请重新分析";

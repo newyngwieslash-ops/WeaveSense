@@ -9,13 +9,16 @@ import { AgentClientError, agentClientConfig, executeAgent } from "./agent-clien
 import {
   evidenceMap,
   materialFingerprint,
+  rankRetrievedItems,
   selectAnalyzeSources,
   selectBriefingSources,
   selectResearchSeeds,
   shanghaiDayRange,
+  splitQueryTerms,
   validateCitations,
   type EvidenceSource,
 } from "./agent-context.ts";
+import { enqueueResearchJob } from "./agent-queue.ts";
 import { beginRun, failRun, finishAnalyzeAtomically, finishNoteAtomically, hashCanonical, type AgentProvider } from "./agent-runs.ts";
 import type { ItemRow } from "../types.ts";
 import { isPlatform } from "../platforms.ts";
@@ -286,23 +289,37 @@ export async function generateBriefingWith(opts: {
 }
 
 export async function askKnowledgeWith(opts: {
-  sql: Queryable; question: string; requestId?: string; engine?: AgentProvider; execute?: ExecuteFn;
+  sql: Queryable; question: string; requestId?: string; engine?: AgentProvider; execute?: ExecuteFn; async?: boolean;
 }): Promise<AskResult & { error_code?: string; run_id?: string }> {
   const engine = opts.engine ?? engineFromEnv();
   const q = opts.question.trim();
   if (Array.from(q).length < 2) return { ok: false, error: "请输入问题", error_code: "invalid_request" };
-  const like = `%${q.replace(/[%_\\]/g, (ch) => `\\${ch}`)}%`;
+  const terms = splitQueryTerms(q);
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+  for (const term of (terms.length ? terms : [q])) {
+    params.push(`%${term.replace(/[%_\\]/g, (ch) => `\\${ch}`)}%`);
+    const idx = params.length;
+    clauses.push(`(i.title ilike $${idx} escape '\\' or i.body ilike $${idx} escape '\\' or i.author ilike $${idx} escape '\\')`);
+  }
   const rows = await opts.sql.query<Record<string, unknown>>(
     `select i.*, s.name as source_name from items i join sources s on s.id = i.source_id
-     where i.title ilike $1 escape '\\' or i.body ilike $1 escape '\\' or i.author ilike $1 escape '\\'
-     order by coalesce(i.published_at, i.collected_at) desc, i.id desc limit 8`,
-    [like],
+     where ${clauses.join(" or ")}
+     order by coalesce(i.published_at, i.collected_at) desc, i.id desc limit 40`,
+    params,
   );
-  const selected = selectResearchSeeds(rows.map(mapItem));
+  const selected = selectResearchSeeds(rankRetrievedItems(q, rows.map(mapItem), 8));
   if (selected.sources.length === 0) {
     return { ok: false, error: "材料不足", error_code: "insufficient_evidence", citations: [] };
   }
   const requestId = opts.requestId ?? randomUUID();
+  if (opts.async) {
+    const job = await enqueueResearchJob(opts.sql, {
+      question: q, requestId, materialHash: hashCanonical({ mode: "research", question: q }),
+    });
+    if (!job) return { ok: false, error: "无法排队问答", error_code: "persist_failed" };
+    return { ok: true, pending: true, job_id: job.id, error_code: "queued", citations: [] };
+  }
   const inputHash = hashCanonical({ mode: "research", question: q });
   const dataAccessToken = randomBytes(32).toString("hex");
   const request = buildRequest("research", selected.sources, {
