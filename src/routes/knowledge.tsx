@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
+import { coverageCopy, errorCopy, retryOrFreshRequestId } from "@/lib/agent-request";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,23 +15,33 @@ export const Route = createFileRoute("/knowledge")({ component: KnowledgePage })
 function KnowledgePage() {
   const qc = useQueryClient();
   const [question, setQuestion] = useState("");
+  const askRequestId = useRef<string | null>(null);
+  const briefRequestId = useRef<string | null>(null);
   const data = useQuery({ queryKey: ["knowledge"], queryFn: () => listKnowledgeFn() });
   const ask = useMutation({
-    mutationFn: () => askFn({ data: { question } }),
+    mutationFn: () => {
+      askRequestId.current = retryOrFreshRequestId(askRequestId.current, Boolean(askRequestId.current));
+      return askFn({ data: { question, request_id: askRequestId.current } });
+    },
     onSuccess: (r) => {
-      if (!r.ok) toast.error(r.error ?? "提问失败");
+      if (!r.ok) toast.error(errorCopy(r.error_code) + (r.error ? `：${r.error}` : ""));
       else {
         toast.success("已写入知识库");
         setQuestion("");
       }
+      askRequestId.current = null;
       void qc.invalidateQueries({ queryKey: ["knowledge"] });
     },
   });
   const brief = useMutation({
-    mutationFn: () => briefingFn(),
+    mutationFn: () => {
+      briefRequestId.current = retryOrFreshRequestId(briefRequestId.current, Boolean(briefRequestId.current));
+      return briefingFn({ data: { request_id: briefRequestId.current } });
+    },
     onSuccess: (r) => {
-      if (!r.ok) toast.error(r.error ?? "简报失败");
+      if (!r.ok) toast.error(errorCopy("error_code" in r ? String(r.error_code ?? "") : "") + (r.error ? `：${r.error}` : ""));
       else toast.success(r.title ?? "简报已生成");
+      briefRequestId.current = null;
       void qc.invalidateQueries({ queryKey: ["knowledge"] });
     },
   });
@@ -77,12 +88,24 @@ function KnowledgePage() {
         <article className="mt-5 rounded-lg bg-surface p-5 shadow-[var(--shadow-border)]">
           <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">本次回答</p>
           <div className="mt-3 whitespace-pre-wrap text-sm leading-relaxed">{latestAnswer.answer}</div>
+          {latestAnswer.insufficient_evidence ? (
+            <p className="mt-3 text-sm text-muted">材料不足，没有编造引用。</p>
+          ) : null}
           {latestAnswer.citations?.length ? (
             <div className="mt-4 flex flex-wrap gap-2">
               {latestAnswer.citations.map((c) => (
                 <Link key={c.id} to="/inbox/$itemId" params={{ itemId: c.id }}>
                   <Badge>{c.title}</Badge>
                 </Link>
+              ))}
+            </div>
+          ) : null}
+          {latestAnswer.external_citations?.length ? (
+            <div className="mt-3 space-y-1 text-sm">
+              {latestAnswer.external_citations.map((c) => (
+                <a key={c.url} href={c.url} target="_blank" rel="noreferrer" className="block text-muted hover:text-fg">
+                  {c.title}
+                </a>
               ))}
             </div>
           ) : null}
@@ -104,6 +127,7 @@ function KnowledgePage() {
                   <span className="font-mono text-[11px] text-faint">{formatRelative(note.created_at)}</span>
                 </div>
                 <h3 className="mt-2 font-display text-lg">{note.title}</h3>
+                <p className="mt-1 text-xs text-muted">{coverageCopy(note.coverage)}</p>
                 <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-fg/90">{note.content}</p>
               </article>
             ))

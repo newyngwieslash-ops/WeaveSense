@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRef } from "react";
 import { toast } from "sonner";
 import { ArrowLeft, ExternalLink, Sparkles } from "lucide-react";
+import { coverageCopy, errorCopy, retryOrFreshRequestId } from "@/lib/agent-request";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -20,11 +22,21 @@ function ItemPage() {
     queryKey: ["item", itemId],
     queryFn: () => getItemFn({ data: { id: itemId } }),
   });
+  const requestId = useRef<string | null>(null);
   const analyze = useMutation({
-    mutationFn: () => analyzeItemFn({ data: { id: itemId } }),
+    mutationFn: () => {
+      requestId.current = retryOrFreshRequestId(requestId.current, Boolean(requestId.current));
+      return analyzeItemFn({ data: { id: itemId, request_id: requestId.current } });
+    },
     onSuccess: (r) => {
-      if (!r.ok) toast.error(r.error ?? "分析失败");
-      else toast.success("已写入知识层");
+      if (!r.ok) {
+        const code = "error_code" in r ? String(r.error_code ?? "") : "";
+        toast.error(errorCopy(code) + (r.error ? `：${r.error}` : ""));
+        requestId.current = null;
+      } else {
+        requestId.current = null;
+        toast.success("已写入知识层");
+      }
       void qc.invalidateQueries({ queryKey: ["item", itemId] });
       void qc.invalidateQueries({ queryKey: ["overview"] });
       void qc.invalidateQueries({ queryKey: ["knowledge"] });
@@ -59,7 +71,7 @@ function ItemPage() {
           >
             {extract.isPending ? "提取中" : "OCR / ASR"}
           </Button>
-          <Button size="sm" onClick={() => analyze.mutate()} disabled={analyze.isPending || !item}>
+          <Button size="sm" onClick={() => analyze.mutate()} disabled={analyze.isPending || !item} data-testid="analyze-button">
             <Sparkles className="size-4" />
             {analyze.isPending ? "分析中" : "LLM 分析"}
           </Button>
@@ -121,6 +133,10 @@ function ItemPage() {
               <h3 className="font-display text-lg">知识层</h3>
               {analysis ? (
                 <div className="mt-3 space-y-3 text-sm">
+                  <p className="text-xs text-muted">{coverageCopy(analysis.coverage)}</p>
+                  {analysis.warnings?.length ? (
+                    <p className="text-xs text-muted">{analysis.warnings.join(" · ")}</p>
+                  ) : null}
                   <p className="leading-relaxed">{analysis.summary}</p>
                   {analysis.insights ? (
                     <p className="text-muted">洞察：{analysis.insights}</p>
