@@ -85,6 +85,7 @@ export const executeRequestSchema = z.object({
     range: rangeSchema.nullable(),
   }).strict(),
   policy: policySchema,
+  data_access_token: z.string().min(16).max(128).optional(),
 }).strict().superRefine((v, ctx) => {
   if (v.mode === "analyze_item") {
     if (v.input.sources.length === 0) {

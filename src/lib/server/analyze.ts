@@ -1,6 +1,8 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
+import { hashRunToken } from "./agent-data.ts";
 import { shortId } from "../utils.ts";
 import type { AskResult } from "../types.ts";
+import type { PlatformId } from "../platforms.ts";
 import type { ExecuteRequest, ExecuteResponse } from "../agent-contract.ts";
 import { parseExecuteResponse } from "../agent-contract.ts";
 import { AgentClientError, agentClientConfig, executeAgent } from "./agent-client.ts";
@@ -95,7 +97,7 @@ function deadline(seconds = 40): string {
 }
 
 function buildRequest(mode: ExecuteRequest["mode"], sources: EvidenceSource[], extra: {
-  question?: string; range?: { from: string; to: string } | null; maxModelCalls: number; maxToolCalls: number; maxOutput: number;
+  question?: string; range?: { from: string; to: string } | null; maxModelCalls: number; maxToolCalls: number; maxOutput: number; dataAccessToken?: string;
 }): ExecuteRequest {
   return {
     schema_version: 1,
@@ -113,6 +115,7 @@ function buildRequest(mode: ExecuteRequest["mode"], sources: EvidenceSource[], e
       max_tool_calls: extra.maxToolCalls,
       max_output_tokens_per_call: extra.maxOutput,
     },
+    ...(extra.dataAccessToken ? { data_access_token: extra.dataAccessToken } : {}),
   };
 }
 
@@ -301,12 +304,16 @@ export async function askKnowledgeWith(opts: {
   }
   const requestId = opts.requestId ?? randomUUID();
   const inputHash = hashCanonical({ mode: "research", question: q });
-  const request = buildRequest("research", selected.sources, { question: q, maxModelCalls: 6, maxToolCalls: 4, maxOutput: 1800 });
+  const dataAccessToken = randomBytes(32).toString("hex");
+  const request = buildRequest("research", selected.sources, {
+    question: q, maxModelCalls: 6, maxToolCalls: 4, maxOutput: 1800, dataAccessToken,
+  });
   const begun = await beginRun(opts.sql, {
     id: request.run_id, requestId, mode: "research", provider: engine,
     inputHash, materialHash: selected.materialHash, policyVersion: POLICY_VERSION,
     requestJson: { mode: "research", question: q, sources: selected.sources },
     claimToken: randomUUID(), expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    dataTokenHash: hashRunToken(dataAccessToken),
   });
   if (begun.kind === "replay") {
     const saved = begun.responseJson as { note_id?: string; answer?: string; citations?: AskResult["citations"] };
@@ -326,7 +333,7 @@ export async function askKnowledgeWith(opts: {
   }
   const publicCitations = citations.citations.flatMap((c) => {
     const src = selected.sources.find((s) => s.evidence_id === c.evidence_id);
-    return src ? [{ id: src.item_id, title: src.title, platform: src.platform as AskResult["citations"][number]["platform"] }] : [];
+    return src ? [{ id: src.item_id, title: src.title, platform: src.platform as PlatformId }] : [];
   });
   const noteId = shortId();
   const saved = await finishNoteAtomically(opts.sql, {

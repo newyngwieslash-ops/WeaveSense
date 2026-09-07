@@ -73,11 +73,12 @@ type Policy struct {
 }
 
 type ExecuteRequest struct {
-	SchemaVersion int          `json:"schema_version"`
-	RunID         string       `json:"run_id"`
-	Mode          Mode         `json:"mode"`
-	Input         ExecuteInput `json:"input"`
-	Policy        Policy       `json:"policy"`
+	SchemaVersion    int          `json:"schema_version"`
+	RunID            string       `json:"run_id"`
+	Mode             Mode         `json:"mode"`
+	Input            ExecuteInput `json:"input"`
+	Policy           Policy       `json:"policy"`
+	DataAccessToken  string       `json:"data_access_token,omitempty"`
 }
 
 type Analysis struct {

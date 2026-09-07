@@ -40,9 +40,27 @@ func Execute(ctx context.Context, cfg Config, req ExecuteRequest) (ExecuteRespon
 	if remaining <= 0 {
 		remaining = 1
 	}
+	if req.Mode == ModeResearch {
+		return runResearch(ctx, cfg, req, coverage)
+	}
 	events := make([]RuntimeEvent, 0, 8)
+	skillName := "industry-analysis"
+	if req.Mode == ModeBriefing {
+		skillName = "briefing-writing"
+	}
+	skillBody, _ := loadFixedSkill(ctx, cfg, skillName)
+	loadedSkillVersions := map[string]string{}
+	if cfg.SkillsDir != "" {
+		if versions, err := skillVersions(cfg.SkillsDir); err == nil {
+			loadedSkillVersions = versions
+		}
+	}
+	sys := systemPrompt(req.Mode, coverage)
+	if skillBody != "" {
+		sys += "\n\n" + skillBody
+	}
 	messages := []*schema.Message{
-		schema.SystemMessage(systemPrompt(req.Mode, coverage)),
+		schema.SystemMessage(sys),
 		schema.UserMessage(userPrompt(req)),
 	}
 
@@ -87,7 +105,7 @@ func Execute(ctx context.Context, cfg Config, req ExecuteRequest) (ExecuteRespon
 		OK:            true,
 		Result:        result,
 		Runtime: &Runtime{
-			Model: cfg.ModelName, PromptVersion: promptVersion, SkillVersions: map[string]string{},
+				Model: cfg.ModelName, PromptVersion: promptVersion, SkillVersions: loadedSkillVersions,
 			InputTokens: inTok, OutputTokens: outTok,
 			ModelCalls: req.Policy.MaxModelCalls - remaining, ToolCalls: 0, Events: events,
 		},
