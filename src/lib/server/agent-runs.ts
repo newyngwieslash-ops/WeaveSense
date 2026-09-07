@@ -346,3 +346,28 @@ export async function finishNoteAtomically(sql: Queryable, input: {
   );
   return rows.length === 1;
 }
+
+export async function appendEvidenceReceipt(sql: Queryable, input: {
+  runId: string;
+  receipt: Record<string, unknown>;
+  maxEvents?: number;
+}): Promise<"ok" | "budget_exceeded" | "not_running"> {
+  const maxEvents = input.maxEvents ?? 64;
+  const rows = await sql.query<{ n: number }>(
+    `update ai_runs
+     set events_json = coalesce(events_json, '[]'::jsonb) || $2::jsonb
+     where id = $1
+       and status = 'running'
+       and expires_at > now()
+       and jsonb_array_length(coalesce(events_json, '[]'::jsonb)) < $3
+     returning jsonb_array_length(events_json) as n`,
+    [input.runId, JSON.stringify([input.receipt]), maxEvents],
+  );
+  if (rows.length === 1) return "ok";
+  const [run] = await sql.query<{ status: string; n: number }>(
+    `select status, jsonb_array_length(coalesce(events_json, '[]'::jsonb)) as n from ai_runs where id = $1`,
+    [input.runId],
+  );
+  if (!run || run.status !== "running") return "not_running";
+  return "budget_exceeded";
+}
