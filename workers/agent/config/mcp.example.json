@@ -1,0 +1,11 @@
+{
+  "servers": [{
+    "id": "research",
+    "enabled": false,
+    "url": "https://mcp.example.com/mcp",
+    "transport": "streamable_http",
+    "token_env": "RESEARCH_MCP_TOKEN",
+    "allowed_tools": ["search"],
+    "required": false
+  }]
+}
