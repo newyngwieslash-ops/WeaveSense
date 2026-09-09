@@ -26,7 +26,8 @@ type modelJSON struct {
 	Warnings             []string           `json:"warnings"`
 }
 
-func Execute(ctx context.Context, cfg Config, req ExecuteRequest) (ExecuteResponse, error) {
+func Execute(ctx context.Context, cfg Config, req ExecuteRequest) (response ExecuteResponse, executionErr error) {
+	ctx = context.WithValue(ctx, executionKey{}, executionReceipt{cfg: cfg, req: req})
 	if err := ValidateRequest(req); err != nil {
 		return fail(req.RunID, "invalid_request", false, false), nil
 	}
@@ -37,22 +38,33 @@ func Execute(ctx context.Context, cfg Config, req ExecuteRequest) (ExecuteRespon
 		}
 	}
 	remaining := req.Policy.MaxModelCalls
-	if remaining <= 0 {
-		remaining = 1
+	if remaining < 0 {
+		remaining = 0
 	}
 	if req.Mode == ModeResearch {
 		return runResearch(ctx, cfg, req, coverage)
 	}
 	events := make([]RuntimeEvent, 0, 8)
+	usage := &runBudget{toolLeft: req.Policy.MaxToolCalls}
+	ctx = withBudget(ctx, usage)
 	skillName := "industry-analysis"
 	if req.Mode == ModeBriefing {
 		skillName = "briefing-writing"
 	}
 	skillBody, _ := loadFixedSkill(ctx, cfg, skillName)
 	loadedSkillVersions := map[string]string{}
+	defer func() {
+		if !response.OK {
+			i, o := usage.usage()
+			response.Runtime = &Runtime{Model: cfg.ModelName, PromptVersion: promptVersion, SkillVersions: loadedSkillVersions,
+				InputTokens: i, OutputTokens: o, ModelCalls: req.Policy.MaxModelCalls - remaining, ToolCalls: req.Policy.MaxToolCalls - usage.toolLeft, Events: events}
+		}
+	}()
 	if cfg.SkillsDir != "" {
 		if versions, err := skillVersions(cfg.SkillsDir); err == nil {
-			loadedSkillVersions = versions
+			if skillBody != "" {
+				loadedSkillVersions[skillName] = versions[skillName]
+			}
 		}
 	}
 	sys := systemPrompt(req.Mode, coverage)
@@ -64,7 +76,7 @@ func Execute(ctx context.Context, cfg Config, req ExecuteRequest) (ExecuteRespon
 		schema.UserMessage(userPrompt(req)),
 	}
 
-	msg, err := generateOnce(ctx, cfg, &remaining, &events, messages)
+	msg, err := generateOnce(ctx, cfg, &remaining, req.Policy.MaxOutputTokensPerCall, &events, messages)
 	if err != nil {
 		code, retryable, unknown := classifyModelError(err)
 		return fail(req.RunID, code, retryable, unknown), nil
@@ -72,10 +84,10 @@ func Execute(ctx context.Context, cfg Config, req ExecuteRequest) (ExecuteRespon
 	result, parseErr := parseModelJSON(msg.Content, req.Mode, coverage)
 	if parseErr != nil && remaining > 0 {
 		repair := []*schema.Message{
-			schema.SystemMessage("Return only one JSON object matching the required schema. Do not include markdown."),
-			schema.UserMessage("invalid_output: " + parseErr.Error() + "\nRequired keys only. No extra fields."),
+			schema.SystemMessage(systemPrompt(req.Mode, coverage) + " Keep evidence_id and quotes exact. No extra fields."),
+			schema.UserMessage("invalid_output: " + parseErr.Error() + "\nOriginal:\n" + string([]rune(msg.Content)[:min(len([]rune(msg.Content)), 4000)])),
 		}
-		msg, err = generateOnce(ctx, cfg, &remaining, &events, repair)
+		msg, err = generateOnce(ctx, cfg, &remaining, req.Policy.MaxOutputTokensPerCall, &events, repair)
 		if err != nil {
 			code, retryable, unknown := classifyModelError(err)
 			return fail(req.RunID, code, retryable, unknown), nil
@@ -90,24 +102,16 @@ func Execute(ctx context.Context, cfg Config, req ExecuteRequest) (ExecuteRespon
 		return fail(req.RunID, "invalid_output", false, false), nil
 	}
 
-	var inTok, outTok *int
-	if msg != nil && msg.ResponseMeta != nil && msg.ResponseMeta.Usage != nil {
-		p := msg.ResponseMeta.Usage.PromptTokens
-		c := msg.ResponseMeta.Usage.CompletionTokens
-		// ponytail: openai adapter fills Usage with 0 when the vendor omits it; treat 0/0 as unknown instead of a real zero-cost call.
-		if p != 0 || c != 0 {
-			inTok, outTok = &p, &c
-		}
-	}
+	inTok, outTok := usage.usage()
 	return ExecuteResponse{
 		SchemaVersion: schemaVersion,
 		RunID:         req.RunID,
 		OK:            true,
 		Result:        result,
 		Runtime: &Runtime{
-				Model: cfg.ModelName, PromptVersion: promptVersion, SkillVersions: loadedSkillVersions,
+			Model: cfg.ModelName, PromptVersion: promptVersion, SkillVersions: loadedSkillVersions,
 			InputTokens: inTok, OutputTokens: outTok,
-			ModelCalls: req.Policy.MaxModelCalls - remaining, ToolCalls: 0, Events: events,
+			ModelCalls: req.Policy.MaxModelCalls - remaining, ToolCalls: req.Policy.MaxToolCalls - usage.toolLeft, Events: events,
 		},
 		Evidence: sourcesToEvidence(req.Input.Sources),
 	}, nil
@@ -120,6 +124,10 @@ func fail(runID, code string, retryable, unknown bool) ExecuteResponse {
 		OK:            false,
 		Error:         &ExecuteError{Code: code, Message: code, Retryable: retryable, OutcomeUnknown: unknown},
 	}
+}
+
+func researchPrompt(coverage Coverage) string {
+	return "You are Loom's industry analyst. Use only corpus tools and provided sources. Coverage is " + string(coverage) + ". Call search_items and get_item as needed. Never invent evidence_id. Reply with a single JSON object. Schema: {\"content\":string,\"citations\":[{\"evidence_id\":string,\"quote\":string}],\"insufficient_evidence\":boolean}"
 }
 
 func systemPrompt(mode Mode, coverage Coverage) string {

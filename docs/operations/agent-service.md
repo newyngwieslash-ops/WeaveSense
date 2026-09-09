@@ -1,5 +1,7 @@
 # Agent service operations
 
+Current implementation and release status: [V3 acceptance](../../validation/agent/implementation-v3-2026-09-08/acceptance.md). Historical baseline sections below are explicitly dated; real supplier and production verification remain pending authorization.
+
 Internal Eino analysis worker for Loom. The TypeScript app owns materials, authorization, idempotency and persistence. This Go service only executes models and tools.
 
 ## Toolchain recorded 2026-09-07
@@ -70,7 +72,7 @@ Final locked direct modules after `go mod tidy`:
 - MCP example config is disabled. Empty `allowed_tools` exposes no tools.
 - Skills are versioned by a stable hash of allowed files. Fork/model/agent overrides are rejected.
 
-## Host test notes
+## Host test notes (historical baseline)
 
 - `go test ./internal/agent -run TestHTTP` PASS on Windows with `CGO_ENABLED=0`.
 - `go test -race` is not available on this host: `go: -race requires cgo; enable cgo by setting CGO_ENABLED=1`. Re-run race tests in the Linux Docker/QA image.
@@ -91,9 +93,9 @@ Rollback: set `AI_ENGINE=legacy` for new tasks. Keep `ai_runs` and existing anal
 
 ## Long research jobs (P3)
 
-Knowledge questions can enqueue a durable `ai_jobs` row. The Go process polls `/api/internal/agent-jobs` when `AGENT_DATA_URL` and `AGENT_DATA_TOKEN` are set. Checkpoints are opaque bytes with schema/runtime version fencing; a stale `claim_token` cannot complete. The knowledge page polls job status every 2 seconds while queued/running. Refreshing the page does not require the original HTTP request to stay alive.
+Knowledge questions can enqueue a durable `ai_jobs` row only when effective async capability is available. Go polling additionally requires `AGENT_WORKER_ENABLED=true`; data URL/token alone do not start a worker. Checkpoints contain Eino state, budget, evidence, events and Skill versions. A new claim rotates ownership and data tokens. The worker renews its lease through completion ACK and resumes only a safe saved state; uncertain external calls converge to unknown. The knowledge page polls queued/running jobs every two seconds and keeps the job identity across refreshes.
 
-## Retrieval (P3)
+## Retrieval (historical P3 baseline)
 
 Keyword split + title/late-body weighting is the current search. Vector DB was not introduced. Measured 2026-09-07 labeled set: baseline recall@8 0.5172 → improved 0.9655 (`validation/agent/retrieval-eval-2026-09-07.json`). No-answer cases stayed empty.
 
@@ -101,13 +103,22 @@ Keyword split + title/late-body weighting is the current search. Vector DB was n
 
 Verified offline: Streamable HTTP tools + allowlist + empty allowlist = 0 tools. Not claimed: MCP Resources, Prompts, OAuth, or a real remote MCP server.
 
-## Unverified
+## Follow-up remediation 2026-09-08
 
-- Real xAI / OpenAI-compatible tool calling, JSON mode, and usage
-- Any production MCP server
-- `go test -race` on this Windows host (needs cgo)
-- Docker `compose build agent` now PASS (`gig5cyrba5yn3tsi-grok-workspace-agent`)
-- Desktop/mobile browser smoke against `/workspace` (Linux QA path; this host is Windows)
-- Any production MCP server
-- Compose agent image build now PASS; host ports remain unpublished
-- PGlite vs PostgreSQL atomic-save race (Task 16)
+Offline regressions R01–R09, S01–S08, M01–M02 and the Go follow-up probe pass in the current uncommitted workspace. The Go probe is maintained as `workers/agent/internal/agent/followup_regression_test.go`.
+
+Implemented boundaries: async `complete` rejects missing output, fences job/run/token/lease in one SQL success statement and accepts an identical completed replay; async request identity hashes the question separately from its material hash; zero model/tool allowance sends no fixed-flow or Skill request; fixed output limits reach the model wire; stream attempts are audited; MCP follows no credential-bearing redirect; Skill reads resolve and stay under the configured root; checkpoint stale/version errors surface; known-not-sent failure releases the daily reservation.
+
+The paragraph above records the pre-third-review baseline. V3 now unifies sync/auto/async terminal writes under real transactions, settles from authenticated call facts, persists MCP receipts, implements Eino Resume/lease renewal and includes process-kill, SQL retrieval and browser integration harnesses. Full current evidence and limitations are in V3 acceptance. Default remains `AI_ENGINE=legacy`, `AGENT_ASYNC_RESEARCH_ENABLED=false`, `AGENT_WORKER_ENABLED=false`, and `AUTO_ANALYZE=false`.
+
+## Current offline operations and release gate
+
+`npm run agent:e2e -- --dev` and `npm run agent:e2e` own independent PostgreSQL, fake model/MCP endpoints, current Go and app processes, and browser checks. The built pass uses `npm run preview` on a private port on Windows; it needs no `/proc`. They never target the running production app. `npm run agent:pg` requires `REVIEW_PG_PORT` for a disposable review database. Do not set it to a production port. Formal Go follow-ups are in the normal test package: `go -C workers/agent test ./internal/agent -run 'TestFollowup|TestThird|TestInvariant' -count=1`; do not combine the old duplicate overlay.
+
+Linux CGO race, real PostgreSQL competing transactions, old-data migration rollback/retry, desktop/mobile dev/built interaction and real worker process recovery passed. Commands, screenshots and resource identities are linked in V3 acceptance. These are offline fake-supplier results, not production approval.
+
+Automatic admission requires Eino, `AUTO_ANALYZE=true`, a model name and positive `AGENT_PRICE_INPUT_RMB_PER_MILLION` / `AGENT_PRICE_OUTPUT_RMB_PER_MILLION`. There is no trusted user-entered worst-cost amount: the upper bound follows the enforced two-call request/output limits. Reservations store the model and price version; changing price versions cannot reset the daily allowance. Known usage settles at saved rates; unknown spend retains the reservation. `invalid_output` never establishes zero spend.
+
+Forward migrations 0016–0020 extend the existing ledger and material revision; do not rewrite or down-migrate 0014/0015. Rollback closes new async claims and explicitly cancels queued research jobs, preserves historical results and does not reroute an existing run through another engine. In-flight runs use their saved provider/policy; expiry or unsafe recovery records unknown rather than repeating an uncertain call. Keep the Agent up while permitted in-flight tasks drain; browsing continues if it is unavailable.
+
+Real model tool calling/JSON/usage, real MCP authentication and citations, actual billing, production migrations and deployment/rollback remain unverified and require explicit authorization. Open sync Eino, async worker and automatic analysis separately after their corresponding real checks. No production switches were enabled by this implementation.

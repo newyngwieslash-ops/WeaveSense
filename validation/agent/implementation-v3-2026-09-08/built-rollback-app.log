@@ -1,0 +1,15 @@
+
+> preview
+> node scripts/with-app-env.mjs vite preview --host 127.0.0.1 --port 61095 --strictPort
+
+
+ ╭────────── [Build Info] ─────────────╮
+ │                                     │
+ │  - Build Directory: .vercel/output  │
+ │  - Date: 2026/9/8 16:46:13          │
+ │  - Nitro Version: 3.0.260610-beta   │
+ │  - Nitro Preset: vercel             │
+ │                                     │
+ ╰─────────────────────────────────────╯
+
+  ➜  Local:   http://127.0.0.1:61095/

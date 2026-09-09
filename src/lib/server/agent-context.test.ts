@@ -9,8 +9,28 @@ import {
   splitQueryTerms,
   validateCitations,
   materialFingerprint,
+  selectResearchSeeds,
 } from "./agent-context.ts";
+
+test('V7 selected query and briefing conclusion windows include tail proof and disclose partial coverage',()=>{
+ const row=item({id:'tail',body:'背景。'.repeat(9000)+'结论 quantum separator 良率为97%。'});
+ const research=selectResearchSeeds([row],'quantum separator');
+ assert.equal(research.coverage,'partial');assert.match(research.sources[0].text,/quantum separator/);
+ assert.ok(research.sources[0].start>0);
+ const briefing=selectBriefingSources([row],{from:'2026-09-07T00:00:00Z',to:'2026-09-08T00:00:00Z'});
+ assert.ok(briefing.ok);if(briefing.ok){assert.equal(briefing.coverage,'partial');assert.match(briefing.sources.map(s=>s.text).join(''),/良率为97%/);}
+ assert.notEqual(materialFingerprint(row),materialFingerprint({...row,material_version:1}));
+});
 import type { ItemRow } from "../types.ts";
+import { mapAgentItem } from './agent-retrieval.ts';
+
+test('V7 shared DB material mapping retains Date milliseconds in fingerprints',()=>{
+ const date=new Date('2026-09-08T07:00:00.789Z');
+ const row=item({id:'millis',body:'same material',published_at:date.toISOString()});
+ const mapped=mapAgentItem({...row,published_at:date});
+ assert.equal(mapped.published_at,date.toISOString());
+ assert.equal(materialFingerprint(mapped),materialFingerprint(row));
+});
 
 function item(partial: Partial<ItemRow> & { id: string; body: string }): ItemRow {
   return {

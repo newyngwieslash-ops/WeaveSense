@@ -159,6 +159,7 @@ const errorResponseSchema = z.object({
   schema_version: z.literal(1),
   run_id: z.uuid(),
   ok: z.literal(false),
+  runtime: runtimeSchema.optional(),
   error: z.object({
     code: z.string().min(1).max(64),
     message: z.string().min(1).max(500),
@@ -171,6 +172,31 @@ export const executeResponseSchema = z.discriminatedUnion("ok", [
   successResponseSchema,
   errorResponseSchema,
 ]);
+
+export const completeJobSchema = z.object({
+  action: z.literal("complete").optional(),
+  job_id: z.uuid(), run_id: z.uuid(), claim_token: z.string().min(1).max(128),
+  status: z.enum(["succeeded", "failed", "outcome_unknown"]),
+  response: executeResponseSchema.optional(), error_code: z.string().min(1).max(64).optional(),
+  // Known claim metadata can be echoed. It never overrides the saved request.
+  question: text(400).optional(), mode: z.enum(["research", "briefing", "analyze_item"]).optional(),
+  data_access_token: z.string().max(128).optional(), item_id: z.string().max(128).optional(),
+  input: executeRequestSchema.shape.input.optional(), policy: policySchema.optional(),
+  resume: z.boolean().optional(), sequence: z.number().int().min(0).optional(),
+}).strict().superRefine((v, ctx) => {
+  if (v.status === "succeeded" && (!v.response || !v.response.ok)) ctx.addIssue({ code: "custom", message: "missing_response" });
+});
+
+export const checkpointActionSchema = z.object({
+  action: z.enum(["save_checkpoint", "get_checkpoint"]).optional(),
+  run_id: z.uuid(), claim_token: z.string().min(1).max(128), check_point_id: z.string().min(1).max(128),
+  runtime_version: z.string().min(1).max(64), schema_version: z.literal("1").optional(),
+  sequence: z.number().int().min(0).optional(), payload: z.string().max(350000).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/).optional(),
+}).strict();
+export const renewJobSchema = z.object({
+  action: z.literal("renew").optional(), job_id: z.uuid(), run_id: z.uuid(), claim_token: z.string().min(1).max(128),
+}).strict();
+export const claimJobSchema = z.object({ action: z.literal("claim").optional() }).strict();
 
 export type ExecuteMode = "analyze_item" | "briefing" | "research";
 export type ExecuteRequest = z.infer<typeof executeRequestSchema>;

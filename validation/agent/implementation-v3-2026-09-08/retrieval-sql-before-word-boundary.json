@@ -1,0 +1,619 @@
+{
+  "method": "production retrieveAgentItems SQL -> rankRetrievedItems -> selectResearchSeeds",
+  "corpus_size": 98,
+  "corpus_hash": "d9425f9d9dd7a123fbc4890473756b04f46e7569f9f746492204881b06d27e9f",
+  "code_hash": "8fd59a4b76d54227fff9fc665acd95455405f4966a954f19459a35c57a6d51f1",
+  "thresholds": {
+    "scope_violations": 0,
+    "none_false_positive": 0,
+    "tail_quote_coverage": true,
+    "tail_candidate_recall": 1
+  },
+  "results": [
+    {
+      "id": "c01",
+      "candidate_recall": 1,
+      "final_recall": 1,
+      "none_false_positive": 0,
+      "quote_covered": null,
+      "baseline_quote_covered": null,
+      "scope_violations": 0,
+      "selected_chars": 202,
+      "partial_ratio": 0,
+      "elapsed_ms": 9.817700000000002,
+      "candidates": [
+        "batt-1",
+        "wx-1",
+        "syn-1",
+        "batt-2",
+        "rss-1",
+        "cross-2",
+        "cross-1"
+      ],
+      "selected": [
+        "batt-1",
+        "batt-2",
+        "wx-1",
+        "syn-1",
+        "cross-2",
+        "cross-1",
+        "rss-1"
+      ]
+    },
+    {
+      "id": "c02",
+      "candidate_recall": 1,
+      "final_recall": 1,
+      "none_false_positive": 0,
+      "quote_covered": null,
+      "baseline_quote_covered": null,
+      "scope_violations": 0,
+      "selected_chars": 188,
+      "partial_ratio": 0,
+      "elapsed_ms": 5.073200000000043,
+      "candidates": [
+        "syn-1",
+        "batt-1",
+        "wx-1",
+        "cross-2",
+        "cross-1",
+        "batt-2"
+      ],
+      "selected": [
+        "syn-1",
+        "batt-1",
+        "wx-1",
+        "cross-2",
+        "batt-2",
+        "cross-1"
+      ]
+    },
+    {
+      "id": "c03",
+      "candidate_recall": 1,
+      "final_recall": 1,
+      "none_false_positive": 0,
+      "quote_covered": null,
+      "baseline_quote_covered": null,
+      "scope_violations": 0,
+      "selected_chars": 151,
+      "partial_ratio": 0,
+      "elapsed_ms": 3.845200000000034,
+      "candidates": [
+        "batt-1",
+        "batt-2",
+        "wx-1",
+        "rss-1"
+      ],
+      "selected": [
+        "batt-2",
+        "batt-1",
+        "wx-1",
+        "rss-1"
+      ]
+    },
+    {
+      "id": "c04",
+      "candidate_recall": 1,
+      "final_recall": 1,
+      "none_false_positive": 0,
+      "quote_covered": null,
+      "baseline_quote_covered": null,
+      "scope_violations": 0,
+      "selected_chars": 14,
+      "partial_ratio": 0,
+      "elapsed_ms": 5.468899999999962,
+      "candidates": [
+        "ev-1"
+      ],
+      "selected": [
+        "ev-1"
+      ]
+    },
+    {
+      "id": "c05",
+      "candidate_recall": 1,
+      "final_recall": 1,
+      "none_false_positive": 0,
+      "quote_covered": null,
+      "baseline_quote_covered": null,
+      "scope_violations": 0,
+      "selected_chars": 108,
+      "partial_ratio": 0,
+      "elapsed_ms": 4.211299999999994,
+      "candidates": [
+        "chip-1",
+        "chip-2"
+      ],
+      "selected": [
+        "chip-2",
+        "chip-1"
+      ]
+    },
+    {
+      "id": "c06",
+      "candidate_recall": 1,
+      "final_recall": 1,
+      "none_false_positive": 0,
+      "quote_covered": null,
+      "baseline_quote_covered": null,
+      "scope_violations": 0,
+      "selected_chars": 17,
+      "partial_ratio": 0,
+      "elapsed_ms": 2.887700000000052,
+      "candidates": [
+        "chip-1"
+      ],
+      "selected": [
+        "chip-1"
+      ]
+    },
+    {
+      "id": "c07",
+      "candidate_recall": 1,
+      "final_recall": 1,
+      "none_false_positive": 0,
+      "quote_covered": null,
+      "baseline_quote_covered": null,
+      "scope_violations": 0,
+      "selected_chars": 12,
+      "partial_ratio": 0,
+      "elapsed_ms": 3.9598000000000297,
+      "candidates": [
+        "ai-1"
+      ],
+      "selected": [
+        "ai-1"
+      ]
+    },
+    {
+      "id": "c08",
+      "candidate_recall": 1,
+      "final_recall": 1,
+      "none_false_positive": 0,
+      "quote_covered": null,
+      "baseline_quote_covered": null,
+      "scope_violations": 0,
+      "selected_chars": 7,
+      "partial_ratio": 0,
+      "elapsed_ms": 3.060699999999997,
+      "candidates": [
+        "none-1"
+      ],
+      "selected": [
+        "none-1"
+      ]
+    },
+    {
+      "id": "c09",
+      "candidate_recall": 1,
+      "final_recall": 1,
+      "none_false_positive": 0,
+      "quote_covered": null,
+      "baseline_quote_covered": null,
+      "scope_violations": 0,
+      "selected_chars": 202,
+      "partial_ratio": 0,
+      "elapsed_ms": 4.7327000000000226,
+      "candidates": [
+        "wx-1",
+        "batt-1",
+        "cross-1",
+        "syn-1",
+        "rss-1",
+        "cross-2",
+        "batt-2"
+      ],
+      "selected": [
+        "cross-1",
+        "wx-1",
+        "batt-1",
+        "cross-2",
+        "batt-2",
+        "syn-1",
+        "rss-1"
+      ]
+    },
+    {
+      "id": "c10",
+      "candidate_recall": 1,
+      "final_recall": 1,
+      "none_false_positive": 0,
+      "quote_covered": null,
+      "baseline_quote_covered": null,
+      "scope_violations": 0,
+      "selected_chars": 34,
+      "partial_ratio": 0,
+      "elapsed_ms": 2.206200000000024,
+      "candidates": [
+        "phrase-2",
+        "phrase-1"
+      ],
+      "selected": [
+        "phrase-2",
+        "phrase-1"
+      ]
+    },
+    {
+      "id": "c11",
+      "candidate_recall": 0.5,
+      "final_recall": 0.5,
+      "none_false_positive": 0,
+      "quote_covered": null,
+      "baseline_quote_covered": null,
+      "scope_violations": 0,
+      "selected_chars": 19,
+      "partial_ratio": 0,
+      "elapsed_ms": 4.498300000000029,
+      "candidates": [
+        "phrase-2"
+      ],
+      "selected": [
+        "phrase-2"
+      ]
+    },
+    {
+      "id": "c12",
+      "candidate_recall": 1,
+      "final_recall": 1,
+      "none_false_positive": 0,
+      "quote_covered": null,
+      "baseline_quote_covered": null,
+      "scope_violations": 0,
+      "selected_chars": 105,
+      "partial_ratio": 0,
+      "elapsed_ms": 3.435600000000022,
+      "candidates": [
+        "long-1"
+      ],
+      "selected": [
+        "long-1"
+      ]
+    },
+    {
+      "id": "c13",
+      "candidate_recall": 1,
+      "final_recall": 1,
+      "none_false_positive": 0,
+      "quote_covered": null,
+      "baseline_quote_covered": null,
+      "scope_violations": 0,
+      "selected_chars": 166,
+      "partial_ratio": 0,
+      "elapsed_ms": 5.4728999999999814,
+      "candidates": [
+        "rss-1",
+        "wx-1",
+        "syn-1",
+        "batt-2",
+        "batt-1"
+      ],
+      "selected": [
+        "rss-1",
+        "wx-1",
+        "batt-2",
+        "syn-1",
+        "batt-1"
+      ]
+    },
+    {
+      "id": "c14",
+      "candidate_recall": 1,
+      "final_recall": 1,
+      "none_false_positive": 0,
+      "quote_covered": null,
+      "baseline_quote_covered": null,
+      "scope_violations": 0,
+      "selected_chars": 202,
+      "partial_ratio": 0,
+      "elapsed_ms": 3.578300000000013,
+      "candidates": [
+        "wx-1",
+        "batt-1",
+        "syn-1",
+        "rss-1",
+        "cross-2",
+        "cross-1",
+        "batt-2"
+      ],
+      "selected": [
+        "wx-1",
+        "batt-1",
+        "cross-2",
+        "batt-2",
+        "syn-1",
+        "cross-1",
+        "rss-1"
+      ]
+    },
+    {
+      "id": "c15",
+      "candidate_recall": 1,
+      "final_recall": 1,
+      "none_false_positive": 0,
+      "quote_covered": null,
+      "baseline_quote_covered": null,
+      "scope_violations": 0,
+      "selected_chars": 0,
+      "partial_ratio": 0,
+      "elapsed_ms": 7.3115999999999985,
+      "candidates": [],
+      "selected": []
+    },
+    {
+      "id": "c16",
+      "candidate_recall": 1,
+      "final_recall": 1,
+      "none_false_positive": 0,
+      "quote_covered": null,
+      "baseline_quote_covered": null,
+      "scope_violations": 0,
+      "selected_chars": 8,
+      "partial_ratio": 0,
+      "elapsed_ms": 3.1084999999999923,
+      "candidates": [
+        "noise-2"
+      ],
+      "selected": [
+        "noise-2"
+      ]
+    },
+    {
+      "id": "c17",
+      "candidate_recall": 1,
+      "final_recall": 1,
+      "none_false_positive": 0,
+      "quote_covered": null,
+      "baseline_quote_covered": null,
+      "scope_violations": 0,
+      "selected_chars": 166,
+      "partial_ratio": 0,
+      "elapsed_ms": 3.925299999999993,
+      "candidates": [
+        "batt-1",
+        "batt-2",
+        "wx-1",
+        "syn-1",
+        "rss-1"
+      ],
+      "selected": [
+        "batt-2",
+        "batt-1",
+        "wx-1",
+        "syn-1",
+        "rss-1"
+      ]
+    },
+    {
+      "id": "c18",
+      "candidate_recall": 1,
+      "final_recall": 1,
+      "none_false_positive": 0,
+      "quote_covered": null,
+      "baseline_quote_covered": null,
+      "scope_violations": 0,
+      "selected_chars": 108,
+      "partial_ratio": 0,
+      "elapsed_ms": 4.833500000000015,
+      "candidates": [
+        "chip-1",
+        "chip-2"
+      ],
+      "selected": [
+        "chip-2",
+        "chip-1"
+      ]
+    },
+    {
+      "id": "c19",
+      "candidate_recall": 1,
+      "final_recall": 1,
+      "none_false_positive": 0,
+      "quote_covered": null,
+      "baseline_quote_covered": null,
+      "scope_violations": 0,
+      "selected_chars": 188,
+      "partial_ratio": 0,
+      "elapsed_ms": 5.430800000000033,
+      "candidates": [
+        "cross-2",
+        "cross-1",
+        "wx-1",
+        "syn-1",
+        "batt-1",
+        "batt-2"
+      ],
+      "selected": [
+        "cross-2",
+        "cross-1",
+        "wx-1",
+        "syn-1",
+        "batt-1",
+        "batt-2"
+      ]
+    },
+    {
+      "id": "c20",
+      "candidate_recall": 1,
+      "final_recall": 1,
+      "none_false_positive": 0,
+      "quote_covered": null,
+      "baseline_quote_covered": null,
+      "scope_violations": 0,
+      "selected_chars": 15,
+      "partial_ratio": 0,
+      "elapsed_ms": 4.70920000000001,
+      "candidates": [
+        "phrase-1"
+      ],
+      "selected": [
+        "phrase-1"
+      ]
+    },
+    {
+      "id": "c21",
+      "candidate_recall": 1,
+      "final_recall": 1,
+      "none_false_positive": 0,
+      "quote_covered": null,
+      "baseline_quote_covered": null,
+      "scope_violations": 0,
+      "selected_chars": 19,
+      "partial_ratio": 0,
+      "elapsed_ms": 4.842899999999986,
+      "candidates": [
+        "phrase-2"
+      ],
+      "selected": [
+        "phrase-2"
+      ]
+    },
+    {
+      "id": "c22",
+      "candidate_recall": 1,
+      "final_recall": 1,
+      "none_false_positive": 0,
+      "quote_covered": null,
+      "baseline_quote_covered": null,
+      "scope_violations": 0,
+      "selected_chars": 7,
+      "partial_ratio": 0,
+      "elapsed_ms": 3.5301000000000045,
+      "candidates": [
+        "none-1"
+      ],
+      "selected": [
+        "none-1"
+      ]
+    },
+    {
+      "id": "tail-and-cap",
+      "candidate_recall": 1,
+      "final_recall": 1,
+      "none_false_positive": 0,
+      "quote_covered": true,
+      "baseline_quote_covered": false,
+      "scope_violations": 0,
+      "selected_chars": 3154,
+      "partial_ratio": 0.125,
+      "elapsed_ms": 7.685799999999972,
+      "candidates": [
+        "tail-proof",
+        "stress-noise-9",
+        "stress-noise-8",
+        "stress-noise-79",
+        "stress-noise-78",
+        "stress-noise-77",
+        "stress-noise-76",
+        "stress-noise-75",
+        "stress-noise-74",
+        "stress-noise-73",
+        "stress-noise-72",
+        "stress-noise-71",
+        "stress-noise-70",
+        "stress-noise-7",
+        "stress-noise-69",
+        "stress-noise-68",
+        "stress-noise-67",
+        "stress-noise-66",
+        "stress-noise-65",
+        "stress-noise-64",
+        "stress-noise-63",
+        "stress-noise-62",
+        "stress-noise-61",
+        "stress-noise-60",
+        "stress-noise-6",
+        "stress-noise-59",
+        "stress-noise-58",
+        "stress-noise-57",
+        "stress-noise-56",
+        "stress-noise-55",
+        "stress-noise-54",
+        "stress-noise-53",
+        "stress-noise-52",
+        "stress-noise-51",
+        "stress-noise-50",
+        "stress-noise-5",
+        "stress-noise-49",
+        "stress-noise-48",
+        "stress-noise-47",
+        "stress-noise-46"
+      ],
+      "selected": [
+        "tail-proof",
+        "stress-noise-9",
+        "stress-noise-8",
+        "stress-noise-79",
+        "stress-noise-78",
+        "stress-noise-77",
+        "stress-noise-76",
+        "stress-noise-75"
+      ]
+    },
+    {
+      "id": "absent",
+      "candidate_recall": 1,
+      "final_recall": 1,
+      "none_false_positive": 8,
+      "quote_covered": null,
+      "baseline_quote_covered": null,
+      "scope_violations": 0,
+      "selected_chars": 176,
+      "partial_ratio": 0,
+      "elapsed_ms": 4.860799999999983,
+      "candidates": [
+        "stress-noise-9",
+        "stress-noise-8",
+        "stress-noise-79",
+        "stress-noise-78",
+        "stress-noise-77",
+        "stress-noise-76",
+        "stress-noise-75",
+        "stress-noise-74",
+        "stress-noise-73",
+        "stress-noise-72",
+        "stress-noise-71",
+        "stress-noise-70",
+        "stress-noise-7",
+        "stress-noise-69",
+        "stress-noise-68",
+        "stress-noise-67",
+        "stress-noise-66",
+        "stress-noise-65",
+        "stress-noise-64",
+        "stress-noise-63",
+        "stress-noise-62",
+        "stress-noise-61",
+        "stress-noise-60",
+        "stress-noise-6",
+        "stress-noise-59",
+        "stress-noise-58",
+        "stress-noise-57",
+        "stress-noise-56",
+        "stress-noise-55",
+        "stress-noise-54",
+        "stress-noise-53",
+        "stress-noise-52",
+        "stress-noise-51",
+        "stress-noise-50",
+        "stress-noise-5",
+        "stress-noise-49",
+        "stress-noise-48",
+        "stress-noise-47",
+        "stress-noise-46",
+        "stress-noise-45"
+      ],
+      "selected": [
+        "stress-noise-9",
+        "stress-noise-8",
+        "stress-noise-79",
+        "stress-noise-78",
+        "stress-noise-77",
+        "stress-noise-76",
+        "stress-noise-75",
+        "stress-noise-74"
+      ]
+    }
+  ],
+  "model_answer_quality": "not evaluated; no model calls"
+}

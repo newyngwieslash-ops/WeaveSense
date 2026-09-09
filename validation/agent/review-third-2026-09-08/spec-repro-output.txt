@@ -1,0 +1,120 @@
+✖ TSP01 completed job rejects a different completion content (1187.3064ms)
+✖ TSP02 completed job rejects a forged claim token on replay (875.266ms)
+✖ TSP03 response run ID must match envelope run ID (852.8524ms)
+✖ TSP04 expired job failure cannot mutate still-live run (868.5638ms)
+✖ TSP05 expired job lease cannot save a checkpoint (845.4874ms)
+✖ TSP06 failed paid model call does not release all reserved cost (898.8405ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 0
+ℹ fail 6
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5875.2565
+
+✖ failing tests:
+
+test at validation\agent\review-third-2026-09-08\spec-repro.test.ts:31:1
+✖ TSP01 completed job rejects a different completion content (1187.3064ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  200 !== 409
+  
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-third-2026-09-08/spec-repro.test.ts:34:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 200,
+    expected: 409,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at validation\agent\review-third-2026-09-08\spec-repro.test.ts:36:1
+✖ TSP02 completed job rejects a forged claim token on replay (875.266ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  200 !== 409
+  
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-third-2026-09-08/spec-repro.test.ts:39:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 200,
+    expected: 409,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at validation\agent\review-third-2026-09-08\spec-repro.test.ts:41:1
+✖ TSP03 response run ID must match envelope run ID (852.8524ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  200 !== 400
+  
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-third-2026-09-08/spec-repro.test.ts:43:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 200,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at validation\agent\review-third-2026-09-08\spec-repro.test.ts:45:1
+✖ TSP04 expired job failure cannot mutate still-live run (868.5638ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'failed'
+  - 'running'
+  
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-third-2026-09-08/spec-repro.test.ts:50:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'failed',
+    expected: 'running',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at validation\agent\review-third-2026-09-08\spec-repro.test.ts:52:1
+✖ TSP05 expired job lease cannot save a checkpoint (845.4874ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  'ok' !== 'stale'
+  
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-third-2026-09-08/spec-repro.test.ts:55:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'ok',
+    expected: 'stale',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at validation\agent\review-third-2026-09-08\spec-repro.test.ts:57:1
+✖ TSP06 failed paid model call does not release all reserved cost (898.8405ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  0 !== 1
+  
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-third-2026-09-08/spec-repro.test.ts:64:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

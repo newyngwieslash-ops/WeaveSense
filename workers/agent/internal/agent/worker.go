@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
 )
@@ -13,28 +14,61 @@ import (
 const runtimeVersion = "eino-v0.9.19"
 
 type jobClaim struct {
-	JobID      string `json:"job_id"`
-	RunID      string `json:"run_id"`
-	ClaimToken string `json:"claim_token"`
-	Mode       Mode   `json:"mode"`
-	Question   string `json:"question"`
+	JobID           string       `json:"job_id"`
+	RunID           string       `json:"run_id"`
+	ClaimToken      string       `json:"claim_token"`
+	DataAccessToken string       `json:"data_access_token"`
+	Mode            Mode         `json:"mode"`
+	Question        string       `json:"question"`
+	Input           ExecuteInput `json:"input"`
+	Policy          Policy       `json:"policy"`
+	Resume          bool         `json:"resume"`
+	Sequence        int          `json:"sequence"`
 }
+
+type workerContextKey struct{}
 
 type httpStore struct {
 	cfg        Config
 	runID      string
 	claimToken string
 	seq        int
+	budget     *runBudget
+	request    *ExecuteRequest
+	events     *[]RuntimeEvent
+	bag        *evidenceBag
+	skills     map[string]string
+}
+
+type checkpointEnvelope struct {
+	Schema       int               `json:"schema"`
+	Runtime      string            `json:"runtime"`
+	Model        string            `json:"model"`
+	Policy       Policy            `json:"policy"`
+	ModelLeft    int               `json:"model_left"`
+	ToolLeft     int               `json:"tool_left"`
+	InputTokens  int               `json:"input_tokens"`
+	OutputTokens int               `json:"output_tokens"`
+	KnownUsage   int               `json:"known_usage"`
+	UsageCalls   int               `json:"usage_calls"`
+	Events       []RuntimeEvent    `json:"events"`
+	Evidence     []Evidence        `json:"evidence"`
+	Skills       map[string]string `json:"skills"`
+	State        []byte            `json:"state"`
 }
 
 func (s *httpStore) Get(ctx context.Context, checkPointID string) ([]byte, bool, error) {
 	body, _ := json.Marshal(map[string]any{
 		"action": "get_checkpoint", "run_id": s.runID, "check_point_id": checkPointID,
+		"claim_token":     s.claimToken,
 		"runtime_version": runtimeVersion,
 	})
 	raw, status, err := postJobs(ctx, s.cfg, body)
-	if err != nil || status >= 400 {
+	if err != nil {
 		return nil, false, err
+	}
+	if status >= 400 {
+		return nil, false, fmt.Errorf("checkpoint_get_denied: %d", status)
 	}
 	var parsed struct {
 		Found   bool   `json:"found"`
@@ -43,11 +77,61 @@ func (s *httpStore) Get(ctx context.Context, checkPointID string) ([]byte, bool,
 	if err := json.Unmarshal(raw, &parsed); err != nil {
 		return nil, false, err
 	}
+	if parsed.Found && s.budget != nil {
+		var env checkpointEnvelope
+		if json.Unmarshal(parsed.Payload, &env) != nil || env.Schema != 1 || env.Runtime != runtimeVersion || env.Model != s.cfg.ModelName || env.Policy != s.request.Policy {
+			return nil, false, fmt.Errorf("checkpoint_version_mismatch")
+		}
+		if len(env.Skills) > 0 {
+			versions, err := skillVersions(s.cfg.SkillsDir)
+			if err != nil {
+				return nil, false, err
+			}
+			for name, version := range env.Skills {
+				if versions[name] != version {
+					return nil, false, fmt.Errorf("checkpoint_skill_mismatch")
+				}
+			}
+		}
+		b := s.budget
+		b.mu.Lock()
+		b.modelLeft = env.ModelLeft
+		b.toolLeft = env.ToolLeft
+		b.inputTokens = env.InputTokens
+		b.outputTokens = env.OutputTokens
+		b.knownUsage = env.KnownUsage
+		b.usageCalls = env.UsageCalls
+		b.mu.Unlock()
+		*s.events = env.Events
+		s.bag.mu.Lock()
+		s.bag.items = nil
+		s.bag.mu.Unlock()
+		for _, ev := range env.Evidence {
+			s.bag.add(ev)
+		}
+		for name, version := range env.Skills {
+			s.skills[name] = version
+		}
+		return env.State, true, nil
+	}
 	return parsed.Payload, parsed.Found, nil
 }
 
 func (s *httpStore) Set(ctx context.Context, checkPointID string, checkPoint []byte) error {
 	s.seq++
+	if s.budget != nil {
+		b := s.budget
+		b.mu.Lock()
+		env := checkpointEnvelope{Schema: 1, Runtime: runtimeVersion, Model: s.cfg.ModelName, Policy: s.request.Policy,
+			ModelLeft: b.modelLeft, ToolLeft: b.toolLeft, InputTokens: b.inputTokens, OutputTokens: b.outputTokens, KnownUsage: b.knownUsage, UsageCalls: b.usageCalls,
+			Events: *s.events, Evidence: s.bag.all(), Skills: s.skills, State: checkPoint}
+		b.mu.Unlock()
+		var err error
+		checkPoint, err = json.Marshal(env)
+		if err != nil {
+			return err
+		}
+	}
 	body, _ := json.Marshal(map[string]any{
 		"action": "save_checkpoint", "run_id": s.runID, "claim_token": s.claimToken,
 		"check_point_id": checkPointID, "sequence": s.seq, "schema_version": "1",
@@ -106,7 +190,9 @@ func RunWorkerLoop(ctx context.Context, cfg Config, execute func(context.Context
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for {
-		_ = RunWorkerOnce(ctx, cfg, execute)
+		if err := RunWorkerOnce(ctx, cfg, execute); err != nil {
+			log.Printf("agent worker: %v", err)
+		}
 		select {
 		case <-ctx.Done():
 			return
@@ -135,8 +221,35 @@ func RunWorkerOnce(ctx context.Context, cfg Config, execute func(context.Context
 		Input: ExecuteInput{Question: claim.Question},
 		Policy: Policy{Version: "loom-agent-v1", DeadlineAt: time.Now().Add(40 * time.Second).UTC().Format(time.RFC3339),
 			MaxModelCalls: 6, MaxToolCalls: 4, MaxOutputTokensPerCall: 1800},
+		DataAccessToken: claim.DataAccessToken,
 	}
-	resp, err := execute(ctx, req)
+	if claim.Policy.Version != "" {
+		req.Policy = claim.Policy
+		req.Input = claim.Input
+	}
+	execCtx, cancel := context.WithCancel(ctx)
+	execCtx = context.WithValue(execCtx, workerContextKey{}, claim)
+	renewDone := make(chan struct{})
+	defer func() { cancel(); <-renewDone }()
+	go func() {
+		defer close(renewDone)
+		tick := time.NewTicker(15 * time.Second)
+		defer tick.Stop()
+		for {
+			select {
+			case <-execCtx.Done():
+				return
+			case <-tick.C:
+				body, _ := json.Marshal(map[string]any{"action": "renew", "job_id": claim.JobID, "run_id": claim.RunID, "claim_token": claim.ClaimToken})
+				_, status, err := postJobs(execCtx, cfg, body)
+				if err != nil || status >= 400 {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	resp, err := execute(execCtx, req)
 	complete := map[string]any{
 		"action": "complete", "job_id": claim.JobID, "run_id": claim.RunID,
 		"claim_token": claim.ClaimToken,
@@ -157,6 +270,34 @@ func RunWorkerOnce(ctx context.Context, cfg Config, execute func(context.Context
 		}
 	}
 	body, _ := json.Marshal(complete)
-	_, _, _ = postJobs(ctx, cfg, body)
-	return err
+	if err == nil && !resp.OK {
+		complete["response"] = resp
+		body, _ = json.Marshal(complete)
+	}
+	// Retain the exact serialized result until ACK. Never invoke execute to retry persistence.
+	for attempt := 0; ; attempt++ {
+		_, completeStatus, completeErr := postJobs(execCtx, cfg, body)
+		if completeErr == nil && completeStatus >= 200 && completeStatus < 300 {
+			return nil
+		}
+		if completeErr == nil && completeStatus >= 400 && completeStatus < 500 && completeStatus != 429 {
+			if completeStatus == 400 && complete["status"] == "succeeded" {
+				// Invalid evidence/output is diagnostic failure, never a reason to run the model again.
+				complete["status"] = "failed"
+				complete["error_code"] = "invalid_output"
+				delete(complete, "response")
+				body, _ = json.Marshal(complete)
+				continue
+			}
+			return fmt.Errorf("complete_denied: %d", completeStatus)
+		}
+		log.Printf("agent complete ACK pending (attempt %d, status %d)", attempt+1, completeStatus)
+		timer := time.NewTimer(time.Duration(min(attempt+1, 8)) * 250 * time.Millisecond)
+		select {
+		case <-execCtx.Done():
+			timer.Stop()
+			return execCtx.Err()
+		case <-timer.C:
+		}
+	}
 }

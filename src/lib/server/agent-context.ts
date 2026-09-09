@@ -29,6 +29,7 @@ export type EvidenceReceipt = {
   item_id: string | null;
   text: string;
   origin: "internal" | "mcp";
+  title?: string; url?: string; platform?: string; source_name?: string;
 };
 
 export type Citation = { evidence_id: string; quote: string };
@@ -63,12 +64,18 @@ export function materialFingerprint(item: ItemRow): string {
     platform: item.platform,
     source_name: item.source_name ?? "",
     published_at: item.published_at,
+    material_version: Number(item.material_version ?? 0),
   });
 }
 
+export function evidenceIdFor(item: { id: string; title: string; body: string; author: string; url: string; platform: string; source_name?: string; published_at: string | null }, start: number, end: number): string {
+  const hash = materialFingerprint(item as ItemRow).slice(0, 12);
+  return `item:${item.id}:${hash}:${start}:${end}`;
+}
+
 function toSources(item: ItemRow, segments: TextSegment[], coverage: Coverage): EvidenceSource[] {
-  return segments.map((seg, index) => ({
-    evidence_id: `item:${item.id}:${index}`,
+  return segments.map((seg) => ({
+    evidence_id: evidenceIdFor(item, seg.start, seg.end),
     item_id: item.id,
     title: item.title,
     platform: item.platform,
@@ -138,11 +145,15 @@ export function selectBriefingSources(
   const perItem = Math.max(1, Math.floor(TASK_CODE_POINT_CAP / Math.max(chosen.length, 1)));
   const sources: EvidenceSource[] = [];
   let coverage: Coverage = "full";
+  // One source per selected item keeps the public 12-source contract intact.
+  // Fixed briefings have no retrieval tool. Prefer an explicit conclusion window;
+  // every omitted region remains partial, never described as full coverage.
   for (const item of chosen) {
-    const segs = selectTextSegments(item.body, Math.min(ITEM_CODE_POINT_CAP, perItem));
-    const itemCoverage: Coverage = codePoints(item.body).length > Math.min(ITEM_CODE_POINT_CAP, perItem) ? "partial" : "full";
+    const chars = codePoints(item.body);
+    const end = Math.min(chars.length, ITEM_CODE_POINT_CAP, perItem);
+    const itemCoverage: Coverage = end < chars.length ? "partial" : "full";
     if (itemCoverage === "partial") coverage = "partial";
-    sources.push(...toSources(item, segs, itemCoverage));
+    if (end > 0) sources.push(...toSources(item, [selectEvidenceWindow(item.body,end,"结论 总结 summary conclusion")], itemCoverage));
   }
   return {
     ok: true,
@@ -185,9 +196,11 @@ export function scoreItemMatch(query: string, item: { title: string; body: strin
   let score = 0;
   for (const term of terms) {
     const needle = term.toLowerCase();
-    if (title.includes(needle)) score += 4;
-    if (author.includes(needle)) score += 2;
-    const firstHit = body.indexOf(needle);
+    const position = (text: string) => /^[a-z0-9]+$/.test(needle)
+      ? text.search(new RegExp(`(?<![a-z0-9])${needle}(?![a-z0-9])`)) : text.indexOf(needle);
+    if (position(title) >= 0) score += 4;
+    if (position(author) >= 0) score += 2;
+    const firstHit = position(body);
     if (firstHit >= 0) score += firstHit > body.length * 0.55 ? 3 : 1;
   }
   return score;
@@ -206,7 +219,7 @@ export function rankRetrievedItems<T extends { title: string; body: string; auth
     .map((row) => row.item);
 }
 
-export function selectResearchSeeds(items: ItemRow[]): {
+export function selectResearchSeeds(items: ItemRow[], query = ""): {
   sources: EvidenceSource[];
   warnings: string[];
   materialHash: string;
@@ -215,16 +228,46 @@ export function selectResearchSeeds(items: ItemRow[]): {
   if (items.length === 0) {
     return { sources: [], warnings: ["no_matching_items"], materialHash: hashCanonical([]), coverage: "partial" };
   }
-  const sources = items.flatMap((item) => {
-    const segs = selectTextSegments(item.body, TOOL_CODE_POINT_CAP);
-    const coverage: Coverage = codePoints(item.body).length > TOOL_CODE_POINT_CAP ? "partial" : "full";
-    return toSources(item, segs, coverage);
+  const chosen = items.slice(0, MAX_BRIEFING_ITEMS);
+  const perItem = Math.max(1, Math.floor(TASK_CODE_POINT_CAP / Math.max(chosen.length, 1)));
+  const sources = chosen.flatMap((item) => {
+    const chars = codePoints(item.body);
+    const end = Math.min(chars.length, TOOL_CODE_POINT_CAP, perItem);
+    const coverage: Coverage = end < chars.length ? "partial" : "full";
+    return end > 0 ? toSources(item, [selectEvidenceWindow(item.body,end,query)], coverage) : [];
   });
   return {
     sources,
     warnings: [],
     coverage: sources.some((s) => s.coverage === "partial") ? "partial" : "full",
-    materialHash: hashCanonical(items.map((item) => materialFingerprint(item))),
+    materialHash: hashCanonical(chosen.map((item) => materialFingerprint(item))),
+  };
+}
+
+export function selectEvidenceWindow(body: string, cap: number, query: string): TextSegment {
+  const chars = codePoints(body), normalized = chars.join("");
+  if (chars.length <= cap) return { start: 0, end: chars.length, text: normalized };
+  const terms = splitQueryTerms(query).map(t => t.toLowerCase());
+  const lower = normalized.toLowerCase();
+  let bestStart = 0, bestScore = -1;
+  // ponytail: at most 16 first-hit windows; exhaustive multi-hit ranking needs eval evidence before expanding this bound.
+  for (const term of terms) {
+    const hit = lower.indexOf(term);
+    if (hit < 0) continue;
+    const point = Array.from(normalized.slice(0,hit)).length;
+    const start = Math.max(0,Math.min(chars.length-cap,point-Math.floor(cap/3)));
+    const window = chars.slice(start,start+cap).join("").toLowerCase();
+    const score = terms.filter(t => window.includes(t)).length;
+    if (score > bestScore) { bestScore = score; bestStart = start; }
+  }
+  return { start: bestStart, end: bestStart+cap, text: chars.slice(bestStart,bestStart+cap).join("") };
+}
+
+export function rangePredicate(range: { from?: string; to?: string } | null, startIndex: number): { sql: string; params: unknown[] } {
+  if (!range?.from || !range?.to) return { sql: "", params: [] };
+  return {
+    sql: ` and coalesce(i.published_at, i.collected_at) >= $${startIndex}::timestamptz and coalesce(i.published_at, i.collected_at) < $${startIndex + 1}::timestamptz`,
+    params: [range.from, range.to],
   };
 }
 
@@ -234,6 +277,7 @@ export function evidenceMap(sources: EvidenceSource[]): Map<string, EvidenceRece
     item_id: s.item_id,
     text: s.text,
     origin: "internal",
+    title: s.title, url: s.url, platform: s.platform, source_name: s.source_name,
   }]));
 }
 

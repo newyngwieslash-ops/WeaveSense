@@ -1,0 +1,164 @@
+✖ S01 complete without response cannot produce succeeded job (1202.0593ms)
+✖ S02 expired job lease must prevent answer and run commit (878.1608ms)
+✖ S03 successful complete replay must be idempotently accepted (875.0983ms)
+✖ S04 queued same request ID with changed question must return conflict (872.1673ms)
+✖ S05 same async request after claim must remain in progress rather than conflict (845.909ms)
+✖ S06 expired run cannot save checkpoint (848.6688ms)
+✖ S07 same checkpoint sequence with different payload must be rejected (902.3096ms)
+✖ S08 safely failed job release must reconcile reserved daily total (943.5209ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 0
+ℹ fail 8
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 7766.2046
+
+✖ failing tests:
+
+test at validation\agent\review-followup-2026-09-08\spec-repro.test.ts:35:1
+✖ S01 complete without response cannot produce succeeded job (1202.0593ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  200 !== 400
+  
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-followup-2026-09-08/spec-repro.test.ts:39:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 200,
+    expected: 400,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at validation\agent\review-followup-2026-09-08\spec-repro.test.ts:41:1
+✖ S02 expired job lease must prevent answer and run commit (878.1608ms)
+  AssertionError [ERR_ASSERTION]: denied complete already committed answer
+  + actual - expected
+  
+  + [
+  +   {
+  +     id: 'f84f28b5-31bd-4fe6-b3f6-9db08f358f6a'
+  +   }
+  + ]
+  - []
+  
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-followup-2026-09-08/spec-repro.test.ts:47:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: [ { id: 'f84f28b5-31bd-4fe6-b3f6-9db08f358f6a' } ],
+    expected: [],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at validation\agent\review-followup-2026-09-08\spec-repro.test.ts:49:1
+✖ S03 successful complete replay must be idempotently accepted (875.0983ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  409 !== 200
+  
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-followup-2026-09-08/spec-repro.test.ts:54:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 409,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at validation\agent\review-followup-2026-09-08\spec-repro.test.ts:56:1
+✖ S04 queued same request ID with changed question must return conflict (872.1673ms)
+  AssertionError [ERR_ASSERTION]: {"ok":true,"pending":true,"job_id":"0e2562fa-90f0-4952-90ff-1efe0d3337e8","error_code":"queued","citations":[]}
+  + actual - expected
+  
+  + 'queued'
+  - 'request_conflict'
+  
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-followup-2026-09-08/spec-repro.test.ts:62:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'queued',
+    expected: 'request_conflict',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at validation\agent\review-followup-2026-09-08\spec-repro.test.ts:64:1
+✖ S05 same async request after claim must remain in progress rather than conflict (845.909ms)
+  AssertionError [ERR_ASSERTION]: {"ok":false,"error":"请求冲突","error_code":"request_conflict","run_id":"0eb9143f-3d3a-4e5f-a7b9-869f234d2201","citations":[]}
+  + actual - expected
+  
+  + 'request_conflict'
+  - 'run_in_progress'
+  
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-followup-2026-09-08/spec-repro.test.ts:71:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'request_conflict',
+    expected: 'run_in_progress',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at validation\agent\review-followup-2026-09-08\spec-repro.test.ts:73:1
+✖ S06 expired run cannot save checkpoint (848.6688ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  'ok' !== 'stale'
+  
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-followup-2026-09-08/spec-repro.test.ts:78:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'ok',
+    expected: 'stale',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at validation\agent\review-followup-2026-09-08\spec-repro.test.ts:80:1
+✖ S07 same checkpoint sequence with different payload must be rejected (902.3096ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  'ok' !== 'stale'
+  
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-followup-2026-09-08/spec-repro.test.ts:85:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'ok',
+    expected: 'stale',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at validation\agent\review-followup-2026-09-08\spec-repro.test.ts:87:1
+✖ S08 safely failed job release must reconcile reserved daily total (943.5209ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-followup-2026-09-08/spec-repro.test.ts:94:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

@@ -29,7 +29,14 @@ export const prod = {
   agentServiceUrl: read("AGENT_SERVICE_URL").replace(/\/$/, ""),
   agentServiceToken: read("AGENT_SERVICE_TOKEN"),
   agentDataToken: read("AGENT_DATA_TOKEN"),
+  agentAsyncResearch: read("AGENT_ASYNC_RESEARCH_ENABLED", "false") === "true",
+  agentWorkerEnabled: read("AGENT_WORKER_ENABLED", "false") === "true",
 };
+
+export function agentAsyncAvailable(): boolean {
+  return prod.aiEngine === "eino" && prod.agentAsyncResearch && prod.agentWorkerEnabled
+    && Boolean(prod.agentServiceUrl && prod.agentServiceToken && prod.agentDataToken);
+}
 
 function parseEngine(value: string): "legacy" | "eino" {
   if (value === "legacy" || value === "eino") return value;

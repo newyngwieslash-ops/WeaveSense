@@ -1,0 +1,155 @@
+{
+  "screenshots_visually_checked": [
+    "dev desktop",
+    "dev mobile",
+    "dev smoke desktop",
+    "dev smoke mobile",
+    "built desktop",
+    "built mobile",
+    "built smoke desktop",
+    "built smoke mobile"
+  ],
+  "generated_at": "2026-09-08T09:40:48.2024775Z",
+  "artifacts": [
+    {
+      "sha256": "35afe90aa01810a46f8c4a14e31b12cc43a1f7c621ef281ed1e5cd7ca744cb5d",
+      "path": "screenshots/agent-v3-built-desktop.png"
+    },
+    {
+      "sha256": "f0c7217f89688fd9bcf48607ca9f064d99acdc761109f64b86876a263111ecd0",
+      "path": "screenshots/agent-v3-built-mobile.png"
+    },
+    {
+      "sha256": "e4667db826f679e89e9963b515575a6d4c712f9d2973445ebcd4e661857d108f",
+      "path": "screenshots/agent-v3-built-smoke-mobile.png"
+    },
+    {
+      "sha256": "408c605cb1bf1e3f947637ec26d64a4972b0be4f11c6b93cb7d0019387f7cf6c",
+      "path": "screenshots/agent-v3-built-smoke.json"
+    },
+    {
+      "sha256": "8f1539ae296517af41ac01da4511530789aa9eeb6f9af88fd783e0a9bd1f3f8b",
+      "path": "screenshots/agent-v3-built-smoke.png"
+    },
+    {
+      "sha256": "13d266eeca941b5a5e9d74efd670521d0c544ba28727cfaca7fbb2d4e60804c9",
+      "path": "screenshots/agent-v3-dev-desktop.png"
+    },
+    {
+      "sha256": "fb0efd23e05873fd0394e042108727a18b7fe31b97a5fa76039c5aede892083b",
+      "path": "screenshots/agent-v3-dev-failure.png"
+    },
+    {
+      "sha256": "f0c7217f89688fd9bcf48607ca9f064d99acdc761109f64b86876a263111ecd0",
+      "path": "screenshots/agent-v3-dev-mobile.png"
+    },
+    {
+      "sha256": "e4667db826f679e89e9963b515575a6d4c712f9d2973445ebcd4e661857d108f",
+      "path": "screenshots/agent-v3-dev-smoke-mobile.png"
+    },
+    {
+      "sha256": "a3d5e840f6817838e7c3c85812f11bfb34b11da8111880dbe3bd9e8a72d7f1c7",
+      "path": "screenshots/agent-v3-dev-smoke.json"
+    },
+    {
+      "sha256": "8f1539ae296517af41ac01da4511530789aa9eeb6f9af88fd783e0a9bd1f3f8b",
+      "path": "screenshots/agent-v3-dev-smoke.png"
+    },
+    {
+      "sha256": "05b1c172411d5643f61a2f61b57708fe465b8ec19907cc463276956dce0fdd68",
+      "path": "validation/agent/implementation-v3-2026-09-08/build-final.txt"
+    },
+    {
+      "sha256": "b1075b3d56aa4587ffdbd4dd14d2fb3245b15d280becedb08231d9f91f5a81de",
+      "path": "validation/agent/implementation-v3-2026-09-08/docker-build-final.txt"
+    },
+    {
+      "sha256": "f614a7c5ad701a9e6426f53ee4fbf79cfaa4482833f0582a7b0c162a8f1e9487",
+      "path": "validation/agent/implementation-v3-2026-09-08/engine-rollback.txt"
+    },
+    {
+      "sha256": "5a7684a1152b5dd9aa2cb588cd5cffdf5c4c230d3587cbfece1d529173afeb7f",
+      "path": "validation/agent/implementation-v3-2026-09-08/go-formal-probes.txt"
+    },
+    {
+      "sha256": "d7f31d1fa822be93a9dfdf490c5d0e76ff4161bfb90541c6f17fcf049c008eb9",
+      "path": "validation/agent/implementation-v3-2026-09-08/go-race-final.txt"
+    },
+    {
+      "sha256": "f6f7075c018ed64ab9a2eae27eaad2c76d77f54019e7975a3b7a96bae305d8f8",
+      "path": "validation/agent/implementation-v3-2026-09-08/go-test-final.txt"
+    },
+    {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "path": "validation/agent/implementation-v3-2026-09-08/go-vet-final.txt"
+    },
+    {
+      "sha256": "2c3aad36cd7285248ff31e4a900dcfff68e748d684e6f95f706a24f295c96e3f",
+      "path": "validation/agent/implementation-v3-2026-09-08/harness-built.json"
+    },
+    {
+      "sha256": "3533b55413355db6bda465a330f42e45f7c3ce5e7eb2696ff5cc49191017b3f7",
+      "path": "validation/agent/implementation-v3-2026-09-08/harness-dev.json"
+    },
+    {
+      "sha256": "a9bd7b43f8a3529803967137aabdec2f1e200a7cfc0c97a78bbc908702105ef8",
+      "path": "validation/agent/implementation-v3-2026-09-08/npm-test-final.txt"
+    },
+    {
+      "sha256": "d7f81e95d814f4c14465393fc89675ec76b6887e7e3dabb9d6c7f368e486bd31",
+      "path": "validation/agent/implementation-v3-2026-09-08/postgres-final.txt"
+    },
+    {
+      "sha256": "b66c7062ecc2b72543b169c123e879438ee7444fb01ed9fb097a9a91b9783d96",
+      "path": "validation/agent/implementation-v3-2026-09-08/retrieval-corpus.json"
+    },
+    {
+      "sha256": "6fbdeaf23fba2458018f4f9deb239abaf4db770a77d03d143c9257647115f30c",
+      "path": "validation/agent/implementation-v3-2026-09-08/retrieval-final.txt"
+    },
+    {
+      "sha256": "d87b22c337c98a06002c85823d4bf839cc9304623894e34fa55e14e92d14e5ec",
+      "path": "validation/agent/implementation-v3-2026-09-08/retrieval-sql.json"
+    },
+    {
+      "sha256": "e5046545a3a9fcc0cf6950c9402c78a2b227f07a6a658d2a0c1fbc5f4a194da0",
+      "path": "validation/agent/implementation-v3-2026-09-08/typecheck-final.txt"
+    },
+    {
+      "sha256": "07e672c8d8d7b5b4593235e88a0ccc78e3645a6ed8f16aa8ea3b1a3e27ae65cb",
+      "path": "validation/agent/implementation-v3-2026-09-08/workspace-final.json"
+    }
+  ],
+  "commands": {
+    "npm run agent:e2e": 0,
+    "go vet ./...": 0,
+    "npm test": 0,
+    "npm run agent:e2e -- --dev": 0,
+    "go test ./...": 0,
+    "docker readonly healthcheck": 0,
+    "npm run typecheck": 0,
+    "npm run agent:pg": 0,
+    "npm run agent:retrieval": 0,
+    "go formal probes": 0,
+    "docker build isolated tag": 0,
+    "npm run build": 0,
+    "go test -race ./...": 0
+  },
+  "counts": {
+    "harness_mcp_calls_each": 1,
+    "npm": 228,
+    "postgres": 18,
+    "harness_model_calls_each": 17
+  },
+  "head": "76b6da1ac8a8d6d6c6a4b30e7f0309c9e18fd8b9",
+  "cleanup": {
+    "harness": "owned resources cleaned in finally",
+    "production": "not changed",
+    "isolated_image_retained": "loom-agent-v3-validation:20260908",
+    "removed_container_ids": [
+      "3e3a22afa00352e74baa7c6ace0bf66cb1698588d13f695adcdb8c21da49f229",
+      "0f4ac4d7ea310ab72ffbc22abd2728f49a207837ae5125a6835b0da05e97ae71"
+    ]
+  },
+  "real_paid_or_production": "not executed; authorization pending"
+}

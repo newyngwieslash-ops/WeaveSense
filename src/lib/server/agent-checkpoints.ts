@@ -1,4 +1,4 @@
-type Queryable = { query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<T[]> };
+import { agentTransaction, lockRun, ownsRun, type AgentSql as Queryable } from "./agent-transaction.ts";
 
 const MAX_BYTES = 256 * 1024;
 
@@ -26,20 +26,33 @@ export async function saveCheckpoint(sql: Queryable, input: {
   payload: Buffer;
 }): Promise<"ok" | "stale" | "too_large"> {
   if (input.payload.length > MAX_BYTES) return "too_large";
-  const [run] = await sql.query<{ claim_token: string; status: string }>(
-    "select claim_token, status from ai_runs where id = $1",
-    [input.runId],
+  if (!Number.isSafeInteger(input.sequence) || input.sequence < 0 || !input.checkPointId) return "stale";
+  return agentTransaction(sql, async sql => {
+  const locked = await lockRun(sql, input.runId);
+  if (!await ownsRun(sql, locked, input.claimToken)) return "stale";
+  const [existing] = await sql.query<{ payload: unknown; sequence: number; claim_token: string; check_point_id: string; run_id: string; schema_version: string; runtime_version: string }>(
+    "select * from agent_checkpoints where check_point_id = $1 or (run_id=$2 and sequence=$3)", [input.checkPointId,input.runId,input.sequence],
   );
-  if (!run || run.status !== "running" || run.claim_token !== input.claimToken) return "stale";
-  await sql.query(
+  if (existing && (existing.check_point_id !== input.checkPointId || existing.run_id !== input.runId || existing.schema_version !== input.schemaVersion || existing.runtime_version !== input.runtimeVersion)) return "stale";
+  if (existing && (String(existing.claim_token) !== input.claimToken || Number(existing.sequence) > input.sequence ||
+    (Number(existing.sequence) === input.sequence && !asBuffer(existing.payload).equals(input.payload)))) return "stale";
+  if (existing && Number(existing.sequence) === input.sequence) return "ok";
+  const rows = await sql.query<{ check_point_id: string }>(
     `insert into agent_checkpoints (check_point_id, run_id, claim_token, sequence, schema_version, runtime_version, payload)
      values ($1,$2,$3,$4,$5,$6,$7)
      on conflict (check_point_id) do update
        set payload = excluded.payload, sequence = excluded.sequence, claim_token = excluded.claim_token
-     where agent_checkpoints.claim_token = excluded.claim_token`,
+     where agent_checkpoints.claim_token = excluded.claim_token
+       and excluded.sequence >= agent_checkpoints.sequence
+     returning check_point_id`,
     [input.checkPointId, input.runId, input.claimToken, input.sequence, input.schemaVersion, input.runtimeVersion, input.payload],
   );
-  return "ok";
+  if (rows.length) await sql.query(`update agent_checkpoints set updated_at=clock_timestamp(),
+    model_call_count=(select count(*) from ai_model_calls where run_id=$2),
+    evidence_event_count=(select jsonb_array_length(events_json) from ai_runs where id=$2)
+    where check_point_id=$1`, [input.checkPointId,input.runId]);
+  return rows.length === 1 ? "ok" : "stale";
+  });
 }
 
 export async function loadCheckpoint(sql: Queryable, input: {

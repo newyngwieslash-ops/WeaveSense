@@ -19,15 +19,16 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-		execute := func(ctx context.Context, req agent.ExecuteRequest) (agent.ExecuteResponse, error) {
-			return agent.Execute(ctx, cfg, req)
-		}
-		go agent.RunWorkerLoop(context.Background(), cfg, execute)
-		srv := agent.NewServer(cfg, execute)
-		if err := srv.ListenAndServe(); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
+	srv := agent.NewServer(cfg, func(ctx context.Context, req agent.ExecuteRequest) (agent.ExecuteResponse, error) {
+		return agent.Execute(ctx, cfg, req)
+	})
+	if os.Getenv("AGENT_WORKER_ENABLED") == "true" {
+		go agent.RunWorkerLoop(context.Background(), cfg, srv.RunBounded)
+	}
+	if err := srv.ListenAndServe(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
 
 func healthcheck() int {

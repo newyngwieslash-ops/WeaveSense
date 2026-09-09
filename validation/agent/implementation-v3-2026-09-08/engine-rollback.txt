@@ -1,0 +1,17 @@
+✔ V10 legacy -> eino -> legacy uses the selected transport for all three public operations (1392.8551ms)
+✔ legacy analysis accepts the flat JSON its own prompt requests (1295.8819ms)
+✔ same analyze request calls the model once and replays the saved id (1189.335ms)
+✔ completed analyze request replays after the source body is emptied (1141.0537ms)
+✔ invalid output writes no analysis row (1021.1379ms)
+✔ material change during analyze rejects the old snapshot (911.5537ms)
+✔ briefing only uses the requested range (927.0071ms)
+✔ async ask enqueues a job without calling the model (910.2468ms)
+✔ ask with no matches does not invent citations (936.1913ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 10045.9846

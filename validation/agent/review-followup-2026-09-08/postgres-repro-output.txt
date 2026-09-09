@@ -1,0 +1,27 @@
+✔ PG-F01: SKIP LOCKED skips owned rows and two connections produce one winner (139.4434ms)
+✖ PG-F02: concurrent body update cannot receive stale analysis (170.5329ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 1
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 482.2155
+
+✖ failing tests:
+
+test at validation\agent\review-followup-2026-09-08\postgres-repro.test.ts:58:1
+✖ PG-F02: concurrent body update cannot receive stale analysis (170.5329ms)
+  AssertionError [ERR_ASSERTION]: {"result":"ok","rows":[{"body":"new body","pipeline_status":"analyzed"}]}
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-followup-2026-09-08/postgres-repro.test.ts:74:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'ok',
+    expected: 'ok',
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }

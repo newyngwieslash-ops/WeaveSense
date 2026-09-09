@@ -15,12 +15,14 @@ import type { ItemRow } from "../types.ts";
 async function setup() {
   const pg = new PGlite();
   await pg.waitReady;
-  for (const migration of ["0002_schema.sql", "0004_production.sql", "0007_extract_target_state.sql",
-    "0011_ai_runs.sql", "0012_ai_jobs.sql"]) {
+  for (const migration of ["0002_schema.sql","0004_production.sql","0007_extract_target_state.sql","0011_ai_runs.sql","0012_ai_jobs.sql","0013_agent_checkpoints.sql","0014_agent_integrity.sql","0015_agent_budget_reservations.sql","0016_agent_terminal_states.sql","0017_agent_call_receipts.sql","0018_agent_checkpoint_facts.sql","0019_agent_material_revision.sql","0020_agent_daily_admission.sql"]) {
     await pg.exec(readFileSync(new URL(`../../../migrations/${migration}`, import.meta.url), "utf8"));
   }
   await pg.query("insert into sources (id, platform, name) values ('s','rss','信源')");
   const sql = {
+    async transaction<T>(fn: (tx: any) => Promise<T>): Promise<T> {
+      return pg.transaction(async inner => fn({ async query<R>(text: string, params: unknown[] = []) { return (await inner.query<R>(text, params)).rows; } }));
+    },
     async query<T = Record<string, unknown>>(text: string, params: unknown[] = []) {
       return (await pg.query<T>(text, params)).rows;
     },
@@ -58,7 +60,7 @@ test("empty body, pending OCR, failed media, and existing analysis are skipped",
   await pg.query("insert into items (id,source_id,platform,external_id,title,body,pipeline_status) values ('fail','s','rss','fail','t','正文足够长','extracted')");
   await pg.query("insert into extract_jobs (id,item_id,kind,status,error) values ('j2','fail','ocr','error','vision failed')");
   await pg.query("insert into items (id,source_id,platform,external_id,title,body,pipeline_status) values ('done','s','rss','done','t','正文足够长','analyzed')");
-  const hash = materialFingerprint(item("done", "正文足够长"));
+  const hash = materialFingerprint({ ...item("done", "正文足够长"), title: "t", author: "", url: "", published_at: null });
   await pg.query("insert into ai_runs (id,request_id,mode,provider,input_hash,material_hash,policy_version,request_json,status,claim_token,expires_at) values ('run-done','req-done','analyze_item','eino','h',$1,'loom-agent-v1','{}','succeeded','c', now() + interval '1 hour')", [hash]);
   await pg.query("insert into analyses (id,item_id,summary,run_id) values ('an1','done','s','run-done')");
   const result = await enqueueReadyAnalyses(sql, {
@@ -133,6 +135,17 @@ test("research jobs are not claimed by the analyze worker", async () => {
   assert.ok(research);
   assert.notEqual(analyze.id, research.id);
   assert.equal(research.item_id.startsWith("research:"), true);
+  await pg.close();
+});
+
+test("zero daily count and money budgets enqueue no analysis", async () => {
+  const { pg, sql } = await setup();
+  await pg.query("insert into items (id,source_id,platform,external_id,title,body,pipeline_status) values ('a','s','rss','a','标题','正文足够长','extracted')");
+  const result = await enqueueReadyAnalyses(sql, {
+    autoAnalyze: true, dailyLimit: 0, dailyBudgetRmb: 0, priceVersion: "v1", worstCostRmb: 1,
+  }, "2026-09-08");
+  assert.equal(result.enqueued, 0);
+  assert.equal((await sql.query("select id from ai_jobs")).length, 0);
   await pg.close();
 });
 

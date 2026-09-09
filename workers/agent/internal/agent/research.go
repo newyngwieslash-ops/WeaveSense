@@ -9,10 +9,12 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-func runResearch(ctx context.Context, cfg Config, req ExecuteRequest, coverage Coverage) (ExecuteResponse, error) {
+func runResearch(ctx context.Context, cfg Config, req ExecuteRequest, coverage Coverage) (response ExecuteResponse, executionErr error) {
+	ctx, closeResources := context.WithCancel(ctx)
+	defer closeResources()
 	budget := &runBudget{modelLeft: req.Policy.MaxModelCalls, toolLeft: req.Policy.MaxToolCalls}
-	if budget.modelLeft <= 0 {
-		budget.modelLeft = 1
+	if budget.modelLeft < 0 {
+		budget.modelLeft = 0
 	}
 	if budget.toolLeft < 0 {
 		budget.toolLeft = 0
@@ -29,39 +31,81 @@ func runResearch(ctx context.Context, cfg Config, req ExecuteRequest, coverage C
 		return fail(req.RunID, "tool_unavailable", false, false), nil
 	}
 	tools = append(tools, mcpTools...)
-	skillHandler, skillVersions, skillErr := loadSkillHandler(ctx, cfg)
-	if skillErr != nil {
-		return fail(req.RunID, "invalid_request", false, false), nil
+	var skillHandler adk.ChatModelAgentMiddleware
+	skillVersions := map[string]string{}
+	defer func() {
+		if !response.OK {
+			i, o := budget.usage()
+			response.Runtime = &Runtime{Model: cfg.ModelName, PromptVersion: promptVersion, SkillVersions: skillVersions,
+				InputTokens: i, OutputTokens: o, ModelCalls: req.Policy.MaxModelCalls - budget.modelLeft, ToolCalls: req.Policy.MaxToolCalls - budget.toolLeft, Events: events}
+		}
+	}()
+	if req.Policy.MaxToolCalls > 0 {
+		var skillErr error
+		skillHandler, skillVersions, skillErr = loadSkillHandler(ctx, cfg)
+		if skillErr != nil {
+			return fail(req.RunID, "invalid_request", false, false), nil
+		}
+		if cfg.SkillsDir != "" {
+			tools = append(tools, skillResourceTool(cfg, skillVersions, &events))
+		}
 	}
 
-	cm, err := newChatModel(cfg, remainingDeadline(ctx))
+	inner, err := newChatModel(cfg, remainingDeadline(ctx), req.Policy.MaxOutputTokensPerCall)
 	if err != nil {
 		return fail(req.RunID, "agent_unconfigured", false, false), nil
 	}
+	claim, durable := ctx.Value(workerContextKey{}).(jobClaim)
+	cm := &budgetModel{inner: inner, budget: budget, events: &events, name: cfg.ModelName, checkpoint: durable}
 	handlers := []adk.ChatModelAgentMiddleware{}
 	if skillHandler != nil {
 		handlers = append(handlers, skillHandler)
 	}
 	agent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
-		Name:          "research",
-		Description:   "corpus research",
-		Instruction:   systemPrompt(ModeResearch, coverage) + "\nUse search_items and get_item. Never invent evidence_id.",
-		Model:         cm,
-		MaxIterations: 6,
-		ToolsConfig:   adk.ToolsConfig{ToolsNodeConfig: compose.ToolsNodeConfig{Tools: tools}},
-		Handlers:      handlers,
+		Name:             "research",
+		Description:      "corpus research",
+		Instruction:      researchPrompt(coverage),
+		Model:            cm,
+		MaxIterations:    6,
+		ToolsConfig:      adk.ToolsConfig{ToolsNodeConfig: compose.ToolsNodeConfig{Tools: tools}},
+		Handlers:         handlers,
 		ModelRetryConfig: nil,
 	})
 	if err != nil {
 		return fail(req.RunID, "agent_unavailable", true, false), nil
 	}
-	runner := adk.NewRunner(ctx, adk.RunnerConfig{Agent: agent})
-	iter := runner.Query(ctx, userPrompt(req))
+	store := &httpStore{cfg: cfg, runID: req.RunID, claimToken: claim.ClaimToken, seq: claim.Sequence,
+		budget: budget, request: &req, events: &events, bag: bag, skills: skillVersions}
+	runner := adk.NewRunner(ctx, adk.RunnerConfig{Agent: agent, CheckPointStore: store, EnableStreaming: false})
+	checkpointID := "research:" + req.RunID
+	var iter *adk.AsyncIterator[*adk.AgentEvent]
+	if durable && claim.Resume {
+		iter, err = runner.Resume(ctx, checkpointID)
+		if err != nil {
+			return fail(req.RunID, "checkpoint_unavailable", false, false), nil
+		}
+	} else if durable {
+		iter = runner.Query(ctx, userPrompt(req), adk.WithCheckPointID(checkpointID))
+	} else {
+		iter = runner.Query(ctx, userPrompt(req))
+	}
 	var last string
+	interrupted := false
 	for {
 		event, ok := iter.Next()
 		if !ok {
+			if interrupted {
+				iter, err = runner.Resume(ctx, checkpointID)
+				if err != nil {
+					return fail(req.RunID, "checkpoint_unavailable", false, false), nil
+				}
+				interrupted = false
+				continue
+			}
 			break
+		}
+		if event.Action != nil && event.Action.Interrupted != nil {
+			interrupted = true
 		}
 		if event.Err != nil {
 			if strings.Contains(event.Err.Error(), "budget") {
@@ -81,10 +125,14 @@ func runResearch(ctx context.Context, cfg Config, req ExecuteRequest, coverage C
 		return fail(req.RunID, "invalid_output", false, false), nil
 	}
 	result, parseErr := parseModelJSON(last, ModeResearch, coverage)
-	if parseErr != nil && budget.takeModel() {
-		repair, err := generateOnce(ctx, cfg, &budget.modelLeft, &events, []*schema.Message{
-			schema.SystemMessage("Return only JSON."),
-			schema.UserMessage("invalid_output: " + parseErr.Error()),
+	if parseErr != nil {
+		bounded := last
+		if len([]rune(bounded)) > 800 {
+			bounded = string([]rune(bounded)[:800])
+		}
+		repair, err := generateOnce(ctx, cfg, &budget.modelLeft, req.Policy.MaxOutputTokensPerCall, &events, []*schema.Message{
+			schema.SystemMessage(researchPrompt(coverage) + " Keep evidence_id and quotes exact. Never fabricate evidence."),
+			schema.UserMessage("invalid_output: " + parseErr.Error() + "\nOriginal:\n" + bounded),
 		})
 		if err == nil {
 			result, parseErr = parseModelJSON(repair.Content, ModeResearch, coverage)
@@ -100,6 +148,7 @@ func runResearch(ctx context.Context, cfg Config, req ExecuteRequest, coverage C
 	if err := ValidateResult(*result, ModeResearch); err != nil {
 		return fail(req.RunID, "invalid_output", false, false), nil
 	}
+	inTok, outTok := budget.usage()
 	return ExecuteResponse{
 		SchemaVersion: schemaVersion,
 		RunID:         req.RunID,
@@ -107,10 +156,10 @@ func runResearch(ctx context.Context, cfg Config, req ExecuteRequest, coverage C
 		Result:        result,
 		Runtime: &Runtime{
 			Model: cfg.ModelName, PromptVersion: promptVersion, SkillVersions: skillVersions,
+			InputTokens: inTok, OutputTokens: outTok,
 			ModelCalls: req.Policy.MaxModelCalls - budget.modelLeft, ToolCalls: req.Policy.MaxToolCalls - budget.toolLeft,
 			Events: events,
 		},
 		Evidence: append(sourcesToEvidence(req.Input.Sources), bag.all()...),
 	}, nil
 }
-

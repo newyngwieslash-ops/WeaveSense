@@ -8,6 +8,7 @@ import { extractPending } from "./extract";
 import { cronHasBudget, CRON_EXTRACT_RESERVE_MS, CRON_INGEST_RESERVE_MS } from "./cron";
 import { autoAnalyzeConfigFromEnv, claimAiJob, enqueueReadyAnalyses, finishAiJob } from "./agent-queue";
 import { analyzeItemWith } from "./analyze";
+import { confirmJobNotSent } from "./agent-budget";
 
 export type NodeCard = {
   id: string;
@@ -127,8 +128,10 @@ export async function runProductionTick({ deadlineMs, now = Date.now, allowExtra
     await enqueueReadyAnalyses(sql, cfg, day);
     const job = await claimAiJob(sql, { worker: "cron", leaseSeconds: 60, kind: "analyze" });
     if (job) {
-      const result = await analyzeItemWith({ sql, itemId: job.item_id });
+      const result = await analyzeItemWith({ sql, itemId: job.item_id, job, requestId: `auto:${job.id}` });
       const unknown = !result.ok && (result.error_code === "model_timeout" || result.error_code === "outcome_unknown");
+      if (!result.run_id) {
+      await confirmJobNotSent(sql, job.id, job.claim_token);
       await finishAiJob(sql, {
         id: job.id,
         claimToken: job.claim_token,
@@ -136,6 +139,7 @@ export async function runProductionTick({ deadlineMs, now = Date.now, allowExtra
         runId: result.run_id,
         errorCode: result.ok ? "" : result.error_code,
       });
+      }
       if (result.ok) analyzed = 1;
     }
   }

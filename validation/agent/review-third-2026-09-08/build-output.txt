@@ -1,0 +1,149 @@
+
+> build
+> node scripts/with-app-env.mjs vite build && npm run db:migrate && node scripts/copy-pglite-assets.mjs
+
+[nitro:vercel] i Using nodejs24.x runtime.
+[nitro:vercel] i Using web entry format.
+vite v8.2.2 building client environment for production...
+transforming...
+✓ 1907 modules transformed.
+rendering chunks...
+computing gzip size...
+.vercel/output/static/assets/styles-DRaVhN4-.css            44.22 kB │ gzip:   8.49 kB
+.vercel/output/static/assets/refresh-cw-DUjW9hfr.js          0.32 kB │ gzip:   0.22 kB
+.vercel/output/static/assets/platform-chip-CIYTJzSC.js       0.42 kB │ gzip:   0.31 kB
+.vercel/output/static/assets/agent-request-DKvbOBNW.js       0.59 kB │ gzip:   0.44 kB
+.vercel/output/static/assets/format-CP7WHQpR.js              0.79 kB │ gzip:   0.46 kB
+.vercel/output/static/assets/keyword-B9vYokG6.js             0.81 kB │ gzip:   0.52 kB
+.vercel/output/static/assets/input-S-9lVkVl.js               0.94 kB │ gzip:   0.35 kB
+.vercel/output/static/assets/button-XY2whG4z.js              1.58 kB │ gzip:   0.84 kB
+.vercel/output/static/assets/useMutation-nZuD9bx7.js         2.38 kB │ gzip:   0.99 kB
+.vercel/output/static/assets/jobs-BTbo5bD4.js                2.38 kB │ gzip:   1.14 kB
+.vercel/output/static/assets/inbox-DcQgw700.js               3.62 kB │ gzip:   1.58 kB
+.vercel/output/static/assets/nodes-Cmx5gUV3.js               3.90 kB │ gzip:   1.84 kB
+.vercel/output/static/assets/pipeline-Ly1XWUQq.js            4.40 kB │ gzip:   1.92 kB
+.vercel/output/static/assets/platforms-C1OLUBQG.js           4.41 kB │ gzip:   2.14 kB
+.vercel/output/static/assets/knowledge-DBDnH2UR.js           6.25 kB │ gzip:   2.63 kB
+.vercel/output/static/assets/inbox._itemId-Gdcn8G-K.js       7.30 kB │ gzip:   2.76 kB
+.vercel/output/static/assets/keywords-CnJvAW-9.js            7.63 kB │ gzip:   3.09 kB
+.vercel/output/static/assets/routes-QrBcGMP6.js              9.67 kB │ gzip:   3.43 kB
+.vercel/output/static/assets/prd-BQ3ykyrQ.js                11.08 kB │ gzip:   4.61 kB
+.vercel/output/static/assets/sources-Bwq3c5QZ.js            12.90 kB │ gzip:   4.67 kB
+.vercel/output/static/assets/fns-DNuaCy7O.js                15.61 kB │ gzip:   6.36 kB
+.vercel/output/static/assets/guide-4VYxUHUJ.js              17.84 kB │ gzip:   6.36 kB
+.vercel/output/static/assets/createLucideIcon-CxH52fSw.js   31.52 kB │ gzip:  11.82 kB
+.vercel/output/static/assets/badge-CSeDrEgu.js              34.59 kB │ gzip:  11.40 kB
+.vercel/output/static/assets/query-DscGnO-C.js              49.60 kB │ gzip:  15.53 kB
+.vercel/output/static/assets/index-D2dH7_Ci.js             366.83 kB │ gzip: 112.11 kB
+
+✓ built in 736ms
+vite v8.2.2 building ssr environment for production...
+transforming...
+✓ 150 modules transformed.
+rendering chunks...
+computing gzip size...
+node_modules/.nitro/vite/services/ssr/assets/styles-DRaVhN4-.css                      44.22 kB │ gzip:  8.49 kB
+node_modules/.nitro/vite/services/ssr/assets/start-5Z2QO8AU.js                         0.14 kB │ gzip:  0.13 kB
+node_modules/.nitro/vite/services/ssr/assets/empty-plugin-adapters-D9UWiqvJ.js         0.22 kB │ gzip:  0.16 kB
+node_modules/.nitro/vite/services/ssr/assets/platform-chip-D8L142Ls.js                 0.61 kB │ gzip:  0.41 kB
+node_modules/.nitro/vite/services/ssr/assets/agent-request-Bscn8ark.js                 0.94 kB │ gzip:  0.57 kB
+node_modules/.nitro/vite/services/ssr/assets/input-BTUyRpB0.js                         1.18 kB │ gzip:  0.42 kB
+node_modules/.nitro/vite/services/ssr/assets/button-o_MarlA4.js                        1.28 kB │ gzip:  0.67 kB
+node_modules/.nitro/vite/services/ssr/assets/jobs-Cp8T94Fc.js                          3.71 kB │ gzip:  1.42 kB
+node_modules/.nitro/vite/services/ssr/assets/platforms-D8RluMeA.js                     4.01 kB │ gzip:  1.68 kB
+node_modules/.nitro/vite/services/ssr/assets/_tanstack-start-manifest_v-BF6tJHmg.js    4.62 kB │ gzip:  0.91 kB
+node_modules/.nitro/vite/services/ssr/assets/nodes-eI8ggvgy.js                         5.43 kB │ gzip:  2.13 kB
+node_modules/.nitro/vite/services/ssr/assets/inbox-BnLJLg2f.js                         5.94 kB │ gzip:  2.06 kB
+node_modules/.nitro/vite/services/ssr/assets/pipeline-pbhNzzyF.js                      6.39 kB │ gzip:  2.22 kB
+node_modules/.nitro/vite/services/ssr/assets/badge-Dqd9o1D3.js                         7.07 kB │ gzip:  2.18 kB
+node_modules/.nitro/vite/services/ssr/assets/fns-B7km63_j.js                           7.35 kB │ gzip:  2.62 kB
+node_modules/.nitro/vite/services/ssr/assets/knowledge-BqkQHUI2.js                     9.71 kB │ gzip:  3.19 kB
+node_modules/.nitro/vite/services/ssr/assets/inbox._itemId-D-2vgl09.js                10.52 kB │ gzip:  3.01 kB
+node_modules/.nitro/vite/services/ssr/assets/keywords-_wpl91bI.js                     11.56 kB │ gzip:  3.71 kB
+node_modules/.nitro/vite/services/ssr/assets/routes-DWL3MEZa.js                       14.18 kB │ gzip:  4.08 kB
+node_modules/.nitro/vite/services/ssr/assets/prd-B0pcDvay.js                          15.11 kB │ gzip:  5.06 kB
+node_modules/.nitro/vite/services/ssr/assets/sources-MX6tUVtd.js                      22.45 kB │ gzip:  5.91 kB
+node_modules/.nitro/vite/services/ssr/assets/guide-DLeGwvoi.js                        24.58 kB │ gzip:  6.91 kB
+node_modules/.nitro/vite/services/ssr/assets/router-BJ-wpCYG.js                       34.38 kB │ gzip:  9.97 kB
+node_modules/.nitro/vite/services/ssr/assets/fns-DODt2zd3.js                          41.81 kB │ gzip: 11.10 kB
+node_modules/.nitro/vite/services/ssr/index.js                                        74.14 kB │ gzip: 19.34 kB
+node_modules/.nitro/vite/services/ssr/assets/scheduler-2qIJBvXN.js                   198.10 kB │ gzip: 52.43 kB
+
+✓ built in 560ms
+
+[nitro] o Building [Nitro] (preset: vercel, compatibility: 2026-09-08)
+[nitro] √ Generated public .vercel/output/static
+vite v8.2.2 building nitro environment for production...
+transforming...
+✓ 2010 modules transformed.
+rendering chunks...
+computing gzip size...
+.vercel/output/functions/__server.func/_ssr/start-5Z2QO8AU.mjs                    0.14 kB │ gzip:   0.13 kB
+.vercel/output/functions/__server.func/_ssr/empty-plugin-adapters-D9UWiqvJ.mjs    0.23 kB │ gzip:   0.16 kB
+.vercel/output/functions/__server.func/_ssr/platform-chip-D8L142Ls.mjs            0.75 kB │ gzip:   0.46 kB
+.vercel/output/functions/__server.func/_chunks/ssr-renderer.mjs                   0.96 kB │ gzip:   0.49 kB
+.vercel/output/functions/__server.func/_ssr/agent-request-Bscn8ark.mjs            0.99 kB │ gzip:   0.61 kB
+.vercel/output/functions/__server.func/_ssr/input-BTUyRpB0.mjs                    1.35 kB │ gzip:   0.46 kB
+.vercel/output/functions/__server.func/_ssr/button-o_MarlA4.mjs                   1.43 kB │ gzip:   0.71 kB
+.vercel/output/functions/__server.func/_runtime.mjs                               1.92 kB │ gzip:   0.87 kB
+.vercel/output/functions/__server.func/_libs/class-variance-authority+clsx.mjs    3.17 kB │ gzip:   1.24 kB
+.vercel/output/functions/__server.func/_libs/anynum.mjs                           3.85 kB │ gzip:   1.69 kB
+.vercel/output/functions/__server.func/_ssr/jobs-Cp8T94Fc.mjs                     4.25 kB │ gzip:   1.48 kB
+.vercel/output/functions/__server.func/_tanstack-start-manifest_v-BF6tJHmg.mjs    4.68 kB │ gzip:   0.94 kB
+.vercel/output/functions/__server.func/_ssr/nodes-eI8ggvgy.mjs                    6.16 kB │ gzip:   2.20 kB
+.vercel/output/functions/__server.func/_ssr/inbox-BnLJLg2f.mjs                    6.63 kB │ gzip:   2.14 kB
+.vercel/output/functions/__server.func/_ssr/fns-B7km63_j.mjs                      7.30 kB │ gzip:   2.60 kB
+.vercel/output/functions/__server.func/_ssr/pipeline-pbhNzzyF.mjs                 7.53 kB │ gzip:   2.31 kB
+.vercel/output/functions/__server.func/_ssr/badge-Dqd9o1D3.mjs                    8.02 kB │ gzip:   2.28 kB
+.vercel/output/functions/__server.func/_libs/h3-v2+rou3.mjs                       9.83 kB │ gzip:   3.05 kB
+.vercel/output/functions/__server.func/_ssr/knowledge-BqkQHUI2.mjs               10.93 kB │ gzip:   3.32 kB
+.vercel/output/functions/__server.func/_libs/tanstack__history.mjs               12.05 kB │ gzip:   3.46 kB
+.vercel/output/functions/__server.func/_ssr/inbox._itemId-D-2vgl09.mjs           12.24 kB │ gzip:   3.15 kB
+.vercel/output/functions/__server.func/_ssr/keywords-_wpl91bI.mjs                13.19 kB │ gzip:   3.85 kB
+.vercel/output/functions/__server.func/_libs/lucide-react.mjs                    15.62 kB │ gzip:   3.61 kB
+.vercel/output/functions/__server.func/_ssr/routes-DWL3MEZa.mjs                  16.35 kB │ gzip:   4.22 kB
+.vercel/output/functions/__server.func/_ssr/prd-B0pcDvay.mjs                     17.19 kB │ gzip:   5.17 kB
+.vercel/output/functions/__server.func/_libs/nodable__entities.mjs               19.14 kB │ gzip:   6.39 kB
+.vercel/output/functions/__server.func/_libs/h3+rou3+srvx.mjs                    22.57 kB │ gzip:   6.12 kB
+.vercel/output/functions/__server.func/_libs/react+tanstack__react-query.mjs     23.43 kB │ gzip:   5.96 kB
+.vercel/output/functions/__server.func/_ssr/sources-MX6tUVtd.mjs                 25.20 kB │ gzip:   6.07 kB
+.vercel/output/functions/__server.func/_ssr/guide-DLeGwvoi.mjs                   28.43 kB │ gzip:   7.03 kB
+.vercel/output/functions/__server.func/index.mjs                                 31.81 kB │ gzip:  10.05 kB
+.vercel/output/functions/__server.func/_ssr/router-BJ-wpCYG.mjs                  33.90 kB │ gzip:   9.93 kB
+.vercel/output/functions/__server.func/_ssr/fns-DODt2zd3.mjs                     41.61 kB │ gzip:  11.05 kB
+.vercel/output/functions/__server.func/_libs/sonner.mjs                          53.68 kB │ gzip:  12.12 kB
+.vercel/output/functions/__server.func/_libs/tanstack__query-core.mjs            67.59 kB │ gzip:  14.37 kB
+.vercel/output/functions/__server.func/_ssr/ssr.mjs                              72.21 kB │ gzip:  19.27 kB
+.vercel/output/functions/__server.func/_libs/tailwind-merge.mjs                  88.13 kB │ gzip:  15.66 kB
+.vercel/output/functions/__server.func/_libs/fast-xml-parser+[...].mjs          114.65 kB │ gzip:  29.91 kB
+.vercel/output/functions/__server.func/_libs/@tanstack/router-core+[...].mjs    122.94 kB │ gzip:  25.89 kB
+.vercel/output/functions/__server.func/_libs/zod.mjs                            134.09 kB │ gzip:  26.04 kB
+.vercel/output/functions/__server.func/_libs/pg.mjs                             148.63 kB │ gzip:  34.39 kB
+.vercel/output/functions/__server.func/_ssr/scheduler-2qIJBvXN.mjs              201.69 kB │ gzip:  54.57 kB
+.vercel/output/functions/__server.func/_libs/@tanstack/react-router+[...].mjs   660.47 kB │ gzip: 138.62 kB
+.vercel/output/functions/__server.func/_libs/electric-sql__pglite.mjs           752.04 kB │ gzip: 153.30 kB
+
+✓ built in 229ms
+i Generated .vercel/output/nitro.json
+
+[nitro] √ You can preview this build using npx vite preview
+[nitro] √ You can deploy this build using npx nitro deploy --prebuilt
+
+> db:migrate
+> node scripts/migrate.mjs
+
+[migrate] applied 0002_schema.sql
+[migrate] applied 0003_keywords.sql
+[migrate] applied 0004_production.sql
+[migrate] applied 0005_scheduler_leases.sql
+[migrate] applied 0006_reconciliation_queue.sql
+[migrate] applied 0007_extract_target_state.sql
+[migrate] applied 0008_reconciliation_queue_retry.sql
+[migrate] applied 0009_extract_claim_fencing.sql
+[migrate] applied 0010_wechat_job_provider.sql
+[migrate] applied 0011_ai_runs.sql
+[migrate] applied 0012_ai_jobs.sql
+[migrate] applied 0013_agent_checkpoints.sql
+[migrate] applied 0014_agent_integrity.sql
+[migrate] applied 0015_agent_budget_reservations.sql
+[migrate] done — 14 migration(s) applied.

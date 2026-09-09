@@ -1,0 +1,315 @@
+
+> test
+> node --test scripts/cron-loop.test.mjs scripts/wechat-validation-lib.test.mjs scripts/wechat-validation-report.test.mjs && node --test src/lib/server/collectors/index.test.mjs && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/auth/gate-identity.test.ts src/lib/wechat-canonical.test.ts src/lib/server/wechat-gateway-client.test.ts src/lib/server/wechat-import.test.ts src/lib/server/wechat-meta.test.ts src/lib/server/queries.test.ts src/lib/server/rss.test.ts src/lib/server/cron.test.ts src/lib/server/reconciliation-queue.test.ts src/lib/server/extract-targets.test.ts src/lib/server/scheduler.test.ts src/lib/server/agent-contract.test.ts src/lib/server/agent-runs.test.ts src/lib/server/agent-context.test.ts src/lib/server/agent-client.test.ts src/lib/server/analyze.test.ts src/lib/server/agent-data.test.ts src/lib/server/agent-queue.test.ts src/lib/server/agent-checkpoints.test.ts src/lib/server/agent-integrity.test.ts src/lib/server/agent-jobs.test.ts src/lib/server/agent-budget.test.ts && node --experimental-strip-types --test validation/agent/review-2026-09-08/repro.test.ts validation/agent/review-followup-2026-09-08/spec-repro.test.ts validation/agent/review-followup-2026-09-08/material-repro.test.ts validation/agent/review-third-2026-09-08/spec-repro.test.ts
+
+✔ runOnce posts the protected cron request with response margin over the server budget (17.4056ms)
+✔ runOnce rejects non-2xx without exposing response data (0.645ms)
+✔ network errors invoke a sanitized error callback (0.1863ms)
+✔ runOnce skips an overlapping invocation (0.3067ms)
+✔ interval accepts only Node's safe timer range (0.2107ms)
+✔ Compose waits for an app healthcheck before the immediate tick (0.2675ms)
+✔ required fields pass at 99% and fail below it (7.0864ms)
+✔ two-hour discovery passes at 95% including the boundary and fails below it (1.5857ms)
+✔ provider-known missing requires zero and canonical ID wins before URL fallback (1.3218ms)
+✔ one collected row can satisfy at most one distinct canonical reference (0.2701ms)
+✔ canonical references consume exact matches before URL-only references in stable order (0.6166ms)
+✔ duplicate rate is strict below 0.1% (21.7982ms)
+✔ duplicate equivalence is order-independent without collapsing different canonical IDs (0.8344ms)
+✔ body and cover coverage include their exact boundaries (0.443ms)
+✔ health is a live as-of snapshot with an inclusive 24-hour alert boundary (0.581ms)
+✔ paid budgets pass at equality and fail above either limit (0.3075ms)
+✔ daily budgets cannot be hidden by a multi-day total and require every Shanghai day (0.2378ms)
+✔ reference identities must be unique under the same canonical-first equivalence (0.3202ms)
+✔ URL normalization is deterministic and validation rejects invalid time and zero denominators (0.3619ms)
+✔ fixture CLI writes every passing metric and exits zero (93.9891ms)
+✔ metric failure exits one after atomically writing the complete report (102.734ms)
+✔ bad and secret-bearing arguments exit two without echoing secrets (261.5024ms)
+✔ database reads use collection time half-open windows and reject silent truncation (8.2329ms)
+✔ fixture snapshots require complete days and an as-of within two hours (173.6052ms)
+✔ live gateway requests and validates the exact Shanghai-day window (14.1542ms)
+ℹ tests 25
+ℹ suites 0
+ℹ pass 25
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 810.2783
+✔ RSS fallback preserves paid gateway attempts in batch metadata (877.2393ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 1
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1070.5842
+▶ callTool failure memo
+  ✔ replays an identical failure within the memo window without refetching (5.9541ms)
+  ✔ keys by token identity so a reminted token shares the memo entry (15.8298ms)
+  ✔ sweeps expired entries on write so unique keys do not accumulate (2.8264ms)
+  ✔ never memoizes login-required 401s (1.7308ms)
+✔ callTool failure memo (27.8864ms)
+▶ callTool
+  ✔ resolves ok:false for non-serializable args instead of rejecting (0.8512ms)
+✔ callTool (1.029ms)
+▶ isLoginRequired
+  ✔ is true only for login-required failures (0.2493ms)
+✔ isLoginRequired (0.4233ms)
+▶ redirectToLoginIfRequired
+  ✔ no-ops when login is not required (0.3894ms)
+  ✔ navigates to the server-built loginUrl in the browser (0.2184ms)
+  ✔ opens a new tab instead of navigating when framed (0.6483ms)
+  ✔ falls back to navigation when framed and the popup is blocked (0.2552ms)
+  ✔ returns false when the result has no loginUrl (0.1922ms)
+  ✔ returns false on the server (no window) (0.1ms)
+✔ redirectToLoginIfRequired (2.2984ms)
+▶ classifyCallToolError
+  ✔ returns null for successful results (0.4758ms)
+  ✔ classifies login-required before message matching (0.3865ms)
+  ✔ classifies not_connected and failed_precondition (0.1255ms)
+  ✔ classifies scope_denied without claiming a missing grant (0.1226ms)
+  ✔ classifies access_denied (0.0575ms)
+  ✔ falls back to a generic error with the raw message (0.1271ms)
+✔ classifyCallToolError (1.5593ms)
+▶ verifyGateIdentityToken
+  ✔ returns the identity for a valid token (29.0028ms)
+  ✔ omits optional claims as nulls (3.2923ms)
+  ✔ rejects a wrong audience (2.5509ms)
+  ✔ rejects a wrong issuer (2.1362ms)
+  ✔ rejects an expired token (2.2509ms)
+  ✔ rejects a token without exp (1.8622ms)
+  ✔ rejects a token signed by a different key with the same kid (2.7588ms)
+  ✔ refetches the JWKS when the kid rotates (7.7628ms)
+✔ verifyGateIdentityToken (53.5281ms)
+▶ gateIdentityFromHeaders
+  ✔ verifies the header token end to end and fails closed without it (44.43ms)
+  ✔ activates on a deployed-shaped request without GROK_GATE_ORIGIN (3.966ms)
+  ✔ fails closed when GROK_PROJECT_ID is unset (4.1071ms)
+✔ gateIdentityFromHeaders (53.0423ms)
+▶ sessionBoundToGateIdentity
+  ✔ keeps the session when it is bound to the same gate sub (0.226ms)
+  ✔ rotates when the session belongs to a different gate sub (0.0981ms)
+  ✔ rotates when the session user has no gate-bound account (0.0811ms)
+✔ sessionBoundToGateIdentity (0.5237ms)
+✔ V3 trusted preflight releases once; an error label alone retains unknown reserve (5956.0844ms)
+✔ V3 invalid_output with no_receipt: facts determine settlement, never the terminal label (3083.2181ms)
+✔ V3 invalid_output with started: facts determine settlement, never the terminal label (2706.3714ms)
+✔ V3 invalid_output with unknown: facts determine settlement, never the terminal label (2663.0399ms)
+✔ V3 invalid_output with completed_without_usage: facts determine settlement, never the terminal label (2104.9415ms)
+✔ V3 invalid_output with completed: facts determine settlement, never the terminal label (1758.1059ms)
+✔ V3 first dispatch transfers yesterday reserve atomically; call cap and model snapshot are enforced (1717.4231ms)
+✔ only the current claim_token can save a checkpoint (5815.6703ms)
+✔ runtime version mismatch refuses restore (2973.1626ms)
+✔ legacy engine never calls the agent URL (1.5061ms)
+✔ eino without url or token fails closed (1.7179ms)
+✔ unknown engine fails before fetch (0.3492ms)
+✔ mismatched run_id is rejected (31.6797ms)
+✔ html error pages and oversized bodies are rejected (3.2364ms)
+✔ timeout does not call legacy and hides the service token (0.7556ms)
+✔ timeout covers a delayed response body after headers (91.6619ms)
+✔ successful eino response is parsed (2.3628ms)
+✔ V7 selected query and briefing conclusion windows include tail proof and disclose partial coverage (12.7153ms)
+✔ V7 shared DB material mapping retains Date milliseconds in fingerprints (1.6404ms)
+✔ selectTextSegments keeps head and tail of long bodies as separate fragments (2.2105ms)
+✔ selectTextSegments uses unicode code points and CRLF to LF (0.3079ms)
+✔ selectAnalyzeSources marks partial coverage and media_incomplete (1.9667ms)
+✔ zero material does not produce sources (0.43ms)
+✔ shanghai midnight range is [from,to) UTC for a Shanghai civil day (0.2567ms)
+✔ briefing rejects ranges longer than 31 days and empty days (0.2476ms)
+✔ validateCitations keeps only exact quotes from this run's evidence (0.2557ms)
+✔ query split and field weights prefer title and late-body facts (0.8171ms)
+✔ materialFingerprint changes when body or title changes (0.2759ms)
+✔ analysis output rejects string topics (3.318ms)
+✔ analysis output rejects extra fields and overlong labels (0.9877ms)
+✔ valid analyze/briefing/research fixtures parse (9.585ms)
+✔ invalid fixtures are rejected on both sides of the contract (2.3633ms)
+✔ V5 MCP receipts require authenticated started call, immutable contents and current run token (6173.0557ms)
+✔ missing or empty service token is rejected before data access (2876.8882ms)
+✔ wrong run token and expired run are denied (2654.248ms)
+✔ ILIKE wildcards in the query do not expand the match (2657.593ms)
+✔ split keywords still find synonym and late-body facts (2067.6923ms)
+✔ get_item cannot escape a saved run time range (1645.6855ms)
+✔ unknown action is rejected (1692.6634ms)
+✔ two concurrent claims still elect one winner after skip-locked fencing (5994.6035ms)
+✔ expired lease cannot complete even with the original claim token (3000.0558ms)
+✔ claim issues a run token and complete persists an answer (5934.1701ms)
+✔ same item/material/policy enqueues once (6157.8715ms)
+✔ empty body, pending OCR, failed media, and existing analysis are skipped (3105.7786ms)
+✔ two schedulers claim the same queued job once (2608.8874ms)
+✔ daily count and RMB budget cannot overspend concurrently (2592.6738ms)
+✔ AUTO_ANALYZE=false enqueues zero jobs (2018.6218ms)
+✔ outcome_unknown jobs are not auto-retried (1785.0672ms)
+✔ research jobs are not claimed by the analyze worker (1700.8798ms)
+✔ zero daily count and money budgets enqueue no analysis (1166.4317ms)
+✔ policy version is the identity used for uniqueness (0.4577ms)
+✔ concurrent beginRun with the same request_id elects one winner (5628.397ms)
+✔ same request_id with a different input_hash is a conflict (2978.1205ms)
+✔ successful run can be replayed without a second insert (2735.2091ms)
+✔ expired running claim cannot finish (2614.8208ms)
+✔ expired running requests converge instead of staying in_progress (2191.1521ms)
+✔ wrong claim_token cannot change status (1673.3658ms)
+✔ hashCanonical is order-independent for the same fields (0.9119ms)
+✔ legacy analysis accepts the flat JSON its own prompt requests (5855.2075ms)
+✔ same analyze request calls the model once and replays the saved id (3028.2947ms)
+✔ completed analyze request replays after the source body is emptied (2762.7592ms)
+✔ invalid output writes no analysis row (2644.1223ms)
+✔ material change during analyze rejects the old snapshot (2070.0884ms)
+✔ briefing only uses the requested range (1695.347ms)
+✔ async ask enqueues a job without calling the model (1722.4311ms)
+✔ ask with no matches does not invent citations (1160.9965ms)
+✔ cron reserves enough time to finish all four extraction targets (1.2069ms)
+✔ requires an exact non-empty bearer token (0.3275ms)
+✔ reconciliation is due only from 23:30 through 23:59 Shanghai (0.6875ms)
+✔ normalizes successful reconciliation IDs in first-seen order (33.1043ms)
+✔ ACK uses the protected bounded endpoint and sanitizes invalid responses (1.3577ms)
+✔ four half-hour slots give 100 due sources capacity without starving extraction (0.3681ms)
+✔ source backlog is capped while every due tick reserves a keyword opportunity (0.1209ms)
+✔ source batch concurrency is fixed and never fans out all due work (6.3604ms)
+✔ rejects unknown reconciliation response fields (0.8513ms)
+✔ rejects unsafe gateway URLs before fetch (0.4018ms)
+✔ rejects inconsistent, invalid-day, whitespace, and ghost gateway results (1.8378ms)
+✔ cancels gateway responses larger than one MiB (1.4313ms)
+✔ gateway failures are fixed and never expose credentials or upstream bodies (4.74ms)
+✔ reconciled source scans are ordered, deduplicated, and failure-isolated (0.8855ms)
+✔ reconciled source scans defer IDs that cannot safely finish in the server budget (0.4383ms)
+✔ cron stage failures are isolated and sanitized (0.4111ms)
+✔ reconciliation stage failures are sanitized (0.2446ms)
+✔ cron tick limit accepts only safe integers from 1 through 500 (0.2252ms)
+✔ bounded cron batches stop before an unsafe start and leave work for the next batch (0.3208ms)
+✔ per-target extraction preserves all results, skips terminal empty text, and retries only failures (5984.2973ms)
+✔ two workers cannot claim the same fresh extraction target (2874.5997ms)
+✔ different target workers append atomically without truncating a long original body (2661.3587ms)
+✔ a commit-stage failure cannot leave an ok job without its body label (2572.4988ms)
+✔ a stale extraction worker cannot overwrite the reclaimed worker (2111.2743ms)
+✔ mapJob exposes ordered attempts and paid attribution (3.0501ms)
+✔ mapJob isolates jobs whose attempts JSON root is not an array (0.4279ms)
+✔ 0008 upgrades the published 0006 queue without losing existing rows (5793.627ms)
+✔ reconciliation queue is idempotent, bounded, and retries failures next tick (2847.9774ms)
+✔ batch enqueue is atomic when a later source violates the queue schema (2566.7186ms)
+✔ detail outbox rescan merges the existing canonical row before deleting its queue entry (2560.8694ms)
+✔ reconciliation queue runs its two due sources concurrently (2126.8418ms)
+▶ parseFeedXml
+  ✔ keeps WeChat Atom article metadata and its complete body (6.9814ms)
+  ✔ keeps metadata but clears a body whose UTF-8 payload exceeds 2 MiB (3.483ms)
+  ✔ retains required metadata when an Atom article has no body or thumbnail (1.1158ms)
+  ✔ keeps the legacy 8,000-character limit for non-WeChat feeds (7.1164ms)
+  ✔ uses the first non-empty name from repeated Atom authors (1.9674ms)
+✔ parseFeedXml (22.2349ms)
+✔ concurrent source claims allow only one worker through (5977.7491ms)
+✔ expired source claims are recoverable and completion is token-bound (2878.2698ms)
+✔ a conflicted item insert never enqueues media (1.1412ms)
+✔ source job completion persists successful and failed provider attempts (2645.4105ms)
+✔ duplicate merge preserves body and cover while extending provider history (2538.3635ms)
+▶ createWechatGatewayClient
+  ✔ provisions the exact gateway source contract with bearer auth (30.623ms)
+  ✔ reads aggregate health with the same auth (4.1303ms)
+  ✔ uses 20-second provisioning and 30-second health timeouts (1.2192ms)
+  ✔ maps HTTP, invalid JSON, oversized, timeout, and network failures to fixed errors (7.3006ms)
+  ✔ rejects invalid success shapes and any response that echoes the token (3.3304ms)
+  ✔ requires status 200 for source provisioning while health accepts normal 2xx (0.7708ms)
+  ✔ strictly rejects unsafe, oversized, and malformed aggregate health shapes (5.7652ms)
+  ✔ rejects unsafe base URLs without issuing a request (0.5636ms)
+✔ createWechatGatewayClient (55.6286ms)
+▶ parseCsvRecords
+  ✔ parses BOM, CRLF, quoted commas, escaped quotes, and no final newline (1.9938ms)
+  ✔ tracks the starting line of a multiline quoted record (0.7773ms)
+  ✔ rejects malformed quoting (0.5599ms)
+✔ parseCsvRecords (4.4176ms)
+▶ previewWechatImport
+  ✔ requires the exact header (0.6657ms)
+  ✔ normalizes fields and defaults a blank priority to normal (1.3959ms)
+  ✔ reports required fields per row (0.3651ms)
+  ✔ rejects invalid URLs, interval, priority, and field count (0.6242ms)
+  ✔ marks duplicate WeChat ids in the CSV and existing sources case-insensitively (0.82ms)
+  ✔ does not let an invalid row consume the CSV duplicate slot (3.1869ms)
+  ✔ keeps normalized display fields for quoted duplicate and invalid rows (0.7014ms)
+  ✔ previews 500 valid rows (14.6225ms)
+  ✔ rejects input above 1 MiB before parsing (1.2033ms)
+  ✔ accepts 1,000 data rows and rejects 1,001 (27.4803ms)
+✔ previewWechatImport (51.9629ms)
+▶ importWechatSources
+  ✔ rejects malformed core inputs before dependencies run (2.4802ms)
+  ✔ rejects confirmed lines that do not exist before any side effect (0.688ms)
+  ✔ revalidates selected rows and continues through every sanitized per-row failure (1.5341ms)
+  ✔ retries a gateway-success/database-failure with the same deterministic source id (0.5425ms)
+✔ importWechatSources (5.6247ms)
+▶ WeChat provider metadata
+  ✔ derives primary, dajiala, mixed, and empty batches (0.8142ms)
+  ✔ preserves unrelated extra and keeps provider history unique in first-seen order (0.8875ms)
+✔ WeChat provider metadata (2.7247ms)
+▶ wechatSourceId
+  ✔ creates the same safe source id for the same normalized WeChat id (1.6201ms)
+  ✔ rejects an empty WeChat id (0.5502ms)
+✔ wechatSourceId (3.1635ms)
+▶ normalizeWechatUrl
+  ✔ strips tracking parameters and hash while keeping content parameters sorted (0.5661ms)
+  ✔ rejects malformed URLs with the WeChat article error (0.2316ms)
+  ✔ rejects non-WeChat hosts with the WeChat article error (0.1849ms)
+  ✔ rejects insecure WeChat article URLs (0.1634ms)
+✔ normalizeWechatUrl (1.4288ms)
+▶ canonicalWechatId
+  ✔ uses the biz mid idx triple when available (0.4235ms)
+  ✔ uses the normalized URL fingerprint when the triple is missing (0.5326ms)
+  ✔ falls back to account title and publishedAt when the URL is unusable (0.3292ms)
+✔ canonicalWechatId (1.5539ms)
+ℹ tests 175
+ℹ suites 17
+ℹ pass 175
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 21799.4053
+✔ R01: legacy analysis accepts the exact JSON shape its own prompt requests (1784.6085ms)
+✔ R02: completed request replays even if source body is later emptied (1145.5399ms)
+✔ R03: research persists a valid newly retrieved evidence receipt (1097.6841ms)
+✔ R04: get_item cannot escape a saved run time range (1385.9986ms)
+✔ R05: zero daily count and money budgets enqueue no analysis (1408.1676ms)
+✔ R06: an expired job lease cannot complete (1395.2057ms)
+✔ R07: expired running requests are not reported in_progress forever (988.4647ms)
+✔ R08: client timeout covers response body after headers arrive (83.629ms)
+✔ R09: source metadata changes invalidate current-item analysis (933.0842ms)
+✔ M01 research eight long candidates fit shared source and text caps (4.4291ms)
+✔ M02 briefing twelve long candidates fit shared source cap (3.7004ms)
+✔ S01 complete without response cannot produce succeeded job (1816.3105ms)
+✔ S02 expired job lease must prevent answer and run commit (1150.4813ms)
+✔ S03 successful complete replay must be idempotently accepted (1092.8971ms)
+✔ S04 queued same request ID with changed question must return conflict (1388.6316ms)
+✔ S05 same async request after claim must remain in progress rather than conflict (1467.0195ms)
+✔ S06 expired run cannot save checkpoint (1407.7373ms)
+✔ S07 same checkpoint sequence with different payload must be rejected (927.5163ms)
+✔ S08 safely failed job release must reconcile reserved daily total (933.4789ms)
+✔ TSP01 completed job rejects a different completion content (1790.3954ms)
+✔ TSP02 completed job rejects a forged claim token on replay (1137.8733ms)
+✔ TSP03 response run ID must match envelope run ID (1087.0572ms)
+✖ TSP04 expired job failure cannot mutate still-live run (1396.2346ms)
+✔ TSP05 expired job lease cannot save a checkpoint (1469.6823ms)
+✔ TSP06 failed paid model call does not release all reserved cost (1407.9965ms)
+ℹ tests 25
+ℹ suites 0
+ℹ pass 24
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 10670.8777
+
+✖ failing tests:
+
+test at validation\agent\review-third-2026-09-08\spec-repro.test.ts:48:1
+✖ TSP04 expired job failure cannot mutate still-live run (1396.2346ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  400 !== 409
+  
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-third-2026-09-08/spec-repro.test.ts:51:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 400,
+    expected: 409,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -16,9 +17,9 @@ import (
 type ExecuteFn func(context.Context, ExecuteRequest) (ExecuteResponse, error)
 
 type Server struct {
-	cfg      Config
-	execute  ExecuteFn
-	slots    chan struct{}
+	cfg     Config
+	execute ExecuteFn
+	slots   chan struct{}
 }
 
 func NewServer(cfg Config, execute ExecuteFn) *Server {
@@ -56,8 +57,12 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleReady(w http.ResponseWriter, _ *http.Request) {
-	if s.cfg.ServiceToken == "" || s.cfg.ModelBaseURL == "" || s.cfg.ModelName == "" {
+	if s.cfg.ServiceToken == "" || s.cfg.ModelBaseURL == "" || s.cfg.ModelName == "" || s.cfg.ModelAPIKey == "" {
 		http.Error(w, `{"ok":false,"error":"unconfigured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	if os.Getenv("AGENT_WORKER_ENABLED") == "true" && (s.cfg.DataURL == "" || s.cfg.DataToken == "") {
+		http.Error(w, `{"ok":false,"error":"worker_unconfigured"}`, http.StatusServiceUnavailable)
 		return
 	}
 	if s.cfg.SkillsDir != "" {
@@ -65,9 +70,33 @@ func (s *Server) handleReady(w http.ResponseWriter, _ *http.Request) {
 			http.Error(w, `{"ok":false,"error":"skills_unreadable"}`, http.StatusServiceUnavailable)
 			return
 		}
+		if _, _, err := loadSkillHandler(context.Background(), s.cfg); err != nil {
+			http.Error(w, `{"ok":false,"error":"skills_invalid"}`, http.StatusServiceUnavailable)
+			return
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (s *Server) RunBounded(parent context.Context, req ExecuteRequest) (ExecuteResponse, error) {
+	deadline, err := time.Parse(time.RFC3339, req.Policy.DeadlineAt)
+	if err != nil || !deadline.After(time.Now()) {
+		return fail(req.RunID, "invalid_request", false, false), nil
+	}
+	select {
+	case s.slots <- struct{}{}:
+		defer func() { <-s.slots }()
+	default:
+		return fail(req.RunID, "capacity_exceeded", true, false), fmt.Errorf("capacity_exceeded")
+	}
+	execDeadline := time.Now().Add(ExecuteTimeout)
+	if deadline.Before(execDeadline) {
+		execDeadline = deadline
+	}
+	ctx, cancel := context.WithDeadline(parent, execDeadline)
+	defer cancel()
+	return s.execute(ctx, req)
 }
 
 func (s *Server) handleExecute(w http.ResponseWriter, r *http.Request) {
@@ -94,34 +123,21 @@ func (s *Server) handleExecute(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "", "invalid_request", false, false)
 		return
 	}
-	deadline, err := time.Parse(time.RFC3339, req.Policy.DeadlineAt)
-	if err != nil || !deadline.After(time.Now()) {
-		writeError(w, http.StatusBadRequest, req.RunID, "invalid_request", false, false)
-		return
-	}
-
-	select {
-	case s.slots <- struct{}{}:
-		defer func() { <-s.slots }()
-	default:
-		writeError(w, http.StatusTooManyRequests, req.RunID, "capacity_exceeded", true, false)
-		return
-	}
-
-	execDeadline := time.Now().Add(ExecuteTimeout)
-	if deadline.Before(execDeadline) {
-		execDeadline = deadline
-	}
-	ctx, cancel := context.WithDeadline(r.Context(), execDeadline)
-	defer cancel()
-
-	resp, err := s.execute(ctx, req)
+	resp, err := s.RunBounded(r.Context(), req)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			writeError(w, http.StatusGatewayTimeout, req.RunID, "model_timeout", false, true)
 			return
 		}
+		if strings.Contains(err.Error(), "capacity_exceeded") {
+			writeError(w, http.StatusTooManyRequests, req.RunID, "capacity_exceeded", true, false)
+			return
+		}
 		writeError(w, http.StatusBadGateway, req.RunID, "agent_unavailable", true, false)
+		return
+	}
+	if !resp.OK && resp.Error != nil && resp.Error.Code == "invalid_request" {
+		writeError(w, http.StatusBadRequest, req.RunID, "invalid_request", false, false)
 		return
 	}
 	resp.RunID = req.RunID

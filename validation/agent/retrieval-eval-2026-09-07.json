@@ -1,5 +1,7 @@
 {
   "cases": 22,
+  "corpus": 16,
+  "method": "rankRetrievedItems over labeled corpus; SQL candidate path covered by agent-data tests",
   "baseline": {
     "recall_at_8": 0.5172,
     "hits": 15,

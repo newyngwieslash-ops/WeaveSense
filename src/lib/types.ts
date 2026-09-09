@@ -37,6 +37,7 @@ export type KeywordRow = {
 export type JsonScalar = string | number | boolean | null;
 
 export type ItemRow = {
+  material_version?: number;
   id: string;
   source_id: string;
   platform: PlatformId;
@@ -148,6 +149,7 @@ export type ExtractJobView = {
 };
 
 export type KnowledgeNote = {
+  citations?: { evidence_id: string; item_id: string | null; title: string; url: string; quote: string }[];
   id: string;
   title: string;
   content: string;

@@ -1,0 +1,9 @@
+
+> dev
+> node scripts/with-app-env.mjs vite dev --host 0.0.0.0 --port 8080 --host 127.0.0.1 --port 65307 --strictPort
+
+
+  VITE v8.2.2  ready in 1992 ms
+
+  ➜  Local:   http://127.0.0.1:65307/
+16:42:58 [vite] (ssr) connected.

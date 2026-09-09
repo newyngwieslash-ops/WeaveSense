@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
 import { Input, NativeSelect } from "@/components/ui/input";
@@ -18,8 +18,13 @@ export const Route = createFileRoute("/inbox")({
     media: typeof search.media === "string" ? search.media : undefined,
     keyword: typeof search.keyword === "string" ? search.keyword : undefined,
   }),
-  component: InboxPage,
+  component: InboxRoute,
 });
+
+function InboxRoute() {
+  const hasDetail = useRouterState({ select: state => state.matches.some(match => match.routeId === "/inbox/$itemId") });
+  return hasDetail ? <Outlet /> : <InboxPage />;
+}
 
 function InboxPage() {
   const search = Route.useSearch();

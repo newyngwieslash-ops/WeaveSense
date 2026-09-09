@@ -1,0 +1,41 @@
+{
+  "url": "http://127.0.0.1:58791/knowledge",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "织识 Loom",
+      "hasCanvas": false,
+      "bodyTextLen": 171,
+      "bodyTextHash": "c974dbdeca95b33930b6c7d025bda20d0adb39c88c5db0c730889a4551d5cb5a",
+      "bodyTextPrefix": "织识 LOOM 总览 关键词 信源 内容 知识库 任务 节点 管道 指南 规格 关键词 · 增量采集 RAG · BRIEFIN",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "F:\\AI-TG-PINGTAI-0826\\GIG5cYRBa5yN3Tsi-grok-workspace\\screenshots\\agent-third-built.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "织识 Loom",
+      "hasCanvas": false,
+      "bodyTextLen": 140,
+      "bodyTextHash": "2dc8f1a1f01ac4b6f4b54ef7fb487940098f55d3600e6f85e38fd9975c72a26d",
+BRAND NOTE: no custom public/og.jpg — the platform will serve the og.grok.me placeholder. Custom cards are the default for games of every kind (DOM board/word games included), whimsical apps, creative tools, and brand-forward pages — only plain utilities (converters, CRUD trackers, admin dashboards) keep the placeholder. If this app is not a plain utility, finish the brand-asset pass per \workspace\.grok\skills\og\SKILL.md.
+      "bodyTextPrefix": "织识 RAG · BRIEFING 生成今日简报 知识库 向矩阵提问 只根据已采集条目回答。问题由你发起，不会在页面加载时调用模",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "F:\\AI-TG-PINGTAI-0826\\GIG5cYRBa5yN3Tsi-grok-workspace\\screenshots\\agent-third-built-mobile.png"
+    }
+  },
+  "brandWarnings": [
+    "BRAND NOTE: no custom public/og.jpg — the platform will serve the og.grok.me placeholder. Custom cards are the default for games of every kind (DOM board/word games included), whimsical apps, creative tools, and brand-forward pages — only plain utilities (converters, CRUD trackers, admin dashboards) keep the placeholder. If this app is not a plain utility, finish the brand-asset pass per \\workspace\\.grok\\skills\\og\\SKILL.md."
+  ],
+  "authWarnings": [],
+  "verdictFile": "F:\\AI-TG-PINGTAI-0826\\GIG5cYRBa5yN3Tsi-grok-workspace\\screenshots\\agent-third-built.json",
+  "divergesFromBaseline": false,
+  "baselineReasons": []
+}

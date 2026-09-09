@@ -1,0 +1,34 @@
+
+> agent:pg
+> node --experimental-strip-types --test validation/agent/implementation-v3-2026-09-08/postgres.test.ts validation/agent/implementation-v3-2026-09-08/migration.test.ts
+
+✔ V9 real legacy upgrade preserves null run_id results; failed migration rolls back and repeat is no-op (674.7558ms)
+✔ PG-F01: SKIP LOCKED skips owned rows and two connections produce one winner (173.5857ms)
+✔ PG-F02: concurrent body update cannot receive stale analysis (214.8075ms)
+✔ PG-T03: simultaneous identical complete messages create exactly one note (256.2261ms)
+✔ PG-T04: revoked claim cannot commit through a stale CTE snapshot (205.5554ms)
+✔ V3 ai_jobs insertion failure rolls back the entire admission (174.3663ms)
+✔ V3 ai_budget_reservations insertion failure rolls back the entire admission (157.6576ms)
+✔ V1 succeeded: revoked owner writes nothing after a real row-lock wait (204.1926ms)
+ℹ old completion blocked on job lock; new-generation committed before predicate recheck
+✔ V1 succeeded: simultaneous identical terminal messages have one consistent result (206.2814ms)
+ℹ both completion transactions blocked before run mutation
+✔ V1 failed: revoked owner writes nothing after a real row-lock wait (196.3166ms)
+ℹ old completion blocked on job lock; new-generation committed before predicate recheck
+✔ V1 failed: simultaneous identical terminal messages have one consistent result (216.9976ms)
+ℹ both completion transactions blocked before run mutation
+✔ V1 outcome_unknown: revoked owner writes nothing after a real row-lock wait (194.0958ms)
+ℹ old completion blocked on job lock; new-generation committed before predicate recheck
+✔ V1 outcome_unknown: simultaneous identical terminal messages have one consistent result (204.4593ms)
+ℹ both completion transactions blocked before run mutation
+✔ V1 SQL failure rolls back note, run and job together (179.2584ms)
+✔ V6 competing checkpoint payloads at the same sequence cannot overwrite one another (204.6178ms)
+✔ V3 two schedulers cannot reserve the last daily allowance twice (179.1243ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 16
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3227.0459

@@ -1,0 +1,51 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import test from "node:test";
+import { PGlite } from "@electric-sql/pglite";
+import { enqueueResearchJob } from "./agent-queue.ts";
+import { handleAgentJobs } from "./agent-jobs.ts";
+
+async function setup() {
+  const pg = new PGlite();
+  await pg.waitReady;
+  for (const name of ["0002_schema.sql","0004_production.sql","0011_ai_runs.sql","0012_ai_jobs.sql","0013_agent_checkpoints.sql","0014_agent_integrity.sql","0015_agent_budget_reservations.sql","0016_agent_terminal_states.sql","0017_agent_call_receipts.sql","0018_agent_checkpoint_facts.sql","0019_agent_material_revision.sql","0020_agent_daily_admission.sql"]) {
+    await pg.exec(readFileSync(new URL(`../../../migrations/${name}`, import.meta.url), "utf8"));
+  }
+  await pg.query("insert into sources (id, platform, name) values ('s','rss','信源')");
+  await pg.query("insert into items (id,source_id,platform,external_id,title,body) values ('item-1','s','rss','e1','电池','电池原始正文。')");
+  const sql = {
+    async transaction<T>(fn: (tx: any) => Promise<T>): Promise<T> {
+      return pg.transaction(async inner => fn({ async query<R>(text: string, params: unknown[] = []) { return (await inner.query<R>(text, params)).rows; } }));
+    }, async query<T = Record<string, unknown>>(text: string, params: unknown[] = []) {
+    return (await pg.query<T>(text, params)).rows;
+  } };
+  return { pg, sql };
+}
+
+test("claim issues a run token and complete persists an answer", async () => {
+  const { pg, sql } = await setup();
+  await enqueueResearchJob(sql, { question: "电池", requestId: randomUUID(), materialHash: "h" });
+  const claimed = await handleAgentJobs({ sql, authorized: true, action: "claim", params: {} });
+  assert.equal(claimed.status, 200);
+  assert.ok(claimed.body.data_access_token);
+  const runId = String(claimed.body.run_id);
+  const complete = await handleAgentJobs({
+    sql, authorized: true, action: "complete", params: {
+      job_id: claimed.body.job_id, run_id: runId, claim_token: claimed.body.claim_token, status: "succeeded",
+      question: "电池",
+      response: {
+        schema_version: 1, run_id: runId, ok: true,
+        result: { content: "根据材料回答。", citations: [], insufficient_evidence: false, coverage: "full", warnings: [] },
+        runtime: { model: "test", prompt_version: "v1", skill_versions: {}, input_tokens: null, output_tokens: null, model_calls: 1, tool_calls: 0, events: [] },
+        evidence: [],
+      },
+    },
+  });
+  assert.equal(complete.status, 200, JSON.stringify(complete));
+  const notes = await sql.query("select id from knowledge_notes");
+  const runs = await sql.query<{ status: string }>("select status from ai_runs where id = $1", [runId]);
+  assert.equal(notes.length, 1);
+  assert.equal(runs[0]?.status, "succeeded");
+  await pg.close();
+});

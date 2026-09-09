@@ -1,0 +1,125 @@
+
+> agent:retrieval
+> node scripts/agent-retrieval-eval.mjs
+
+warning: in the working copy of 'docker-compose.yml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'package.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/agent-e2e.mjs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/agent-retrieval-eval.mjs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/agent-contract.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/db.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/server/agent-checkpoints.test.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/server/agent-checkpoints.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/server/agent-client.test.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/server/agent-context.test.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/server/agent-context.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/server/agent-contract.test.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/server/agent-data.test.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/server/agent-data.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/server/agent-jobs.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/server/agent-queue.test.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/server/agent-queue.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/server/agent-runs.test.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/server/agent-runs.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/server/analyze.test.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/server/analyze.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/server/config.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/server/fns.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/server/nodes.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/server/queries.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/types.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/routeTree.gen.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/routes/api/internal/agent-jobs.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/routes/inbox.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/routes/knowledge.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'validation/agent/retrieval-eval-2026-09-07.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'workers/agent/cmd/agent/main.go', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'workers/agent/internal/agent/compatibility_test.go', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'workers/agent/internal/agent/config.go', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'workers/agent/internal/agent/contract.go', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'workers/agent/internal/agent/contract_test.go', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'workers/agent/internal/agent/mcp.go', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'workers/agent/internal/agent/mcp_test.go', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'workers/agent/internal/agent/model.go', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'workers/agent/internal/agent/research.go', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'workers/agent/internal/agent/research_test.go', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'workers/agent/internal/agent/server.go', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'workers/agent/internal/agent/server_test.go', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'workers/agent/internal/agent/skills.go', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'workers/agent/internal/agent/skills_test.go', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'workers/agent/internal/agent/tools.go', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'workers/agent/internal/agent/worker.go', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'workers/agent/internal/agent/worker_test.go', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'workers/agent/internal/agent/workflow.go', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'workers/agent/internal/agent/workflow_test.go', LF will be replaced by CRLF the next time Git touches it
+{
+  "corpus": 98,
+  "cases": 24,
+  "thresholds": "passed",
+  "tail": {
+    "id": "tail-and-cap",
+    "candidate_recall": 1,
+    "final_recall": 1,
+    "none_false_positive": 0,
+    "quote_covered": true,
+    "baseline_quote_covered": false,
+    "scope_violations": 0,
+    "selected_chars": 3154,
+    "baseline_chars": 3154,
+    "returned_bytes": 11185,
+    "partial_ratio": 0.125,
+    "elapsed_ms": 7.768100000000004,
+    "candidates": [
+      "tail-proof",
+      "stress-noise-9",
+      "stress-noise-8",
+      "stress-noise-79",
+      "stress-noise-78",
+      "stress-noise-77",
+      "stress-noise-76",
+      "stress-noise-75",
+      "stress-noise-74",
+      "stress-noise-73",
+      "stress-noise-72",
+      "stress-noise-71",
+      "stress-noise-70",
+      "stress-noise-7",
+      "stress-noise-69",
+      "stress-noise-68",
+      "stress-noise-67",
+      "stress-noise-66",
+      "stress-noise-65",
+      "stress-noise-64",
+      "stress-noise-63",
+      "stress-noise-62",
+      "stress-noise-61",
+      "stress-noise-60",
+      "stress-noise-6",
+      "stress-noise-59",
+      "stress-noise-58",
+      "stress-noise-57",
+      "stress-noise-56",
+      "stress-noise-55",
+      "stress-noise-54",
+      "stress-noise-53",
+      "stress-noise-52",
+      "stress-noise-51",
+      "stress-noise-50",
+      "stress-noise-5",
+      "stress-noise-49",
+      "stress-noise-48",
+      "stress-noise-47",
+      "stress-noise-46"
+    ],
+    "selected": [
+      "tail-proof",
+      "stress-noise-9",
+      "stress-noise-8",
+      "stress-noise-79",
+      "stress-noise-78",
+      "stress-noise-77",
+      "stress-noise-76",
+      "stress-noise-75"
+    ]
+  }
+}
