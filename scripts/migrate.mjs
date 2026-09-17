@@ -17,6 +17,12 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import pg from "pg";
 import { pendingMigrations } from "./migration-plan.mjs";
+import { assertRuntimeDatabase } from "./runtime-policy.mjs";
+
+// `npm start` runs this before the server listens, so the production
+// no-database gate fires here first (and in src/lib/db.ts for other entries).
+// A build without the flag stays in development mode and is unaffected.
+assertRuntimeDatabase(process.env);
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {

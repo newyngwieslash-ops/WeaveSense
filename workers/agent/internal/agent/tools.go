@@ -16,9 +16,42 @@ import (
 )
 
 type runBudget struct {
-	mu        sync.Mutex
-	modelLeft int
-	toolLeft  int
+	mu           sync.Mutex
+	modelLeft    int
+	toolLeft     int
+	inputTokens  int
+	outputTokens int
+	knownUsage   int
+	usageCalls   int
+}
+
+func (b *runBudget) addUsage(msg *schema.Message) {
+	if b == nil {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.usageCalls++
+	if msg == nil || msg.ResponseMeta == nil || msg.ResponseMeta.Usage == nil {
+		return
+	}
+	u := msg.ResponseMeta.Usage
+	if u.PromptTokens == 0 && u.CompletionTokens == 0 {
+		return
+	}
+	b.inputTokens += u.PromptTokens
+	b.outputTokens += u.CompletionTokens
+	b.knownUsage++
+}
+
+func (b *runBudget) usage() (*int, *int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.knownUsage == 0 || b.knownUsage != b.usageCalls {
+		return nil, nil
+	}
+	i, o := b.inputTokens, b.outputTokens
+	return &i, &o
 }
 
 func (b *runBudget) takeModel() bool {
@@ -131,7 +164,14 @@ func guardedTool(ctx context.Context, events *[]RuntimeEvent, name string, run f
 	start := time.Now()
 	out, err := run()
 	if events != nil {
+		lock := budgetFrom(ctx)
+		if lock != nil {
+			lock.mu.Lock()
+		}
 		*events = append(*events, RuntimeEvent{Type: "tool", Name: name, DurationMS: int(time.Since(start).Milliseconds()), OK: err == nil})
+		if lock != nil {
+			lock.mu.Unlock()
+		}
 	}
 	return out, err
 }
@@ -159,10 +199,10 @@ func callDataAPI(ctx context.Context, cfg Config, runID, action string, params m
 	}
 	defer res.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(res.Body, 64*1024))
-	if res.StatusCode >= 400 {
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		return "", fmt.Errorf("tool_denied")
 	}
-	if bag, _ := ctx.Value(ctxEvidence).(*evidenceBag); bag != nil {
+	if bag, _ := ctx.Value(ctxEvidence).(*evidenceBag); bag != nil && action == "get_item" {
 		var parsed map[string]any
 		if json.Unmarshal(raw, &parsed) == nil {
 			if id, _ := parsed["evidence_id"].(string); id != "" {

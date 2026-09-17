@@ -57,7 +57,8 @@ function KeywordsPage() {
   return (
     <AppShell title="关键词雷达" kicker="Keyword · scheduled">
       <p className="max-w-2xl text-sm leading-relaxed text-muted">
-        设定行业词，按 5 / 10 / 30 分钟增量收集。雷达会检索新闻 RSS、B 站、YouTube，并把已接入信源里的命中条目打上标签。词可以是「固态电池」，也可以一次粘贴多个。
+        设定行业词，按 5 / 10 / 30 分钟增量收集。标「检索」的范围会发起外部查询：新闻 RSS（Google News 中英文 + Hacker News）、B 站搜索、YouTube
+        新闻索引（经 Google News 的 site:youtube.com，不是全站视频搜索）；标「信源」的范围不发起外部请求，只在已采集到的内容里匹配并打标签。词可以是「固态电池」，也可以一次粘贴多个。
       </p>
 
       <AddKeywordForm />

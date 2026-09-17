@@ -211,7 +211,12 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
 
   async function runPaid(source, current, reconciliationDay = null, deadlineMs = null) {
     if (!paid) return { response: json(503, { error: "paid_fallback_unavailable" }), paidCall: false };
-    const listEstimate = Number(paid.estimatedListCost ?? 0.08);
+    const listEstimate = paid.estimatedListCost;
+    if (!(Number(listEstimate) > 0)) {
+      // No verified bound: the paid path stays closed. The primary feed is
+      // unaffected, which is what keeps the product usable without a price.
+      return { response: json(503, { error: "paid_price_unverified" }), paidCall: false };
+    }
     const listStarted = current();
     if (deadlineMs !== null && listStarted.getTime() + PAID_CALL_RESERVE_MS > deadlineMs) {
       return { deadlineDeferred: true, deferredPaidCalls: 1, spentDays: [], paidCall: false };
@@ -227,7 +232,12 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
       listed = await paid.listToday(source);
       store.adjustSpend(listReservation, Number(listed.cost_money ?? listEstimate));
     } catch (error) {
-      store.adjustSpend(listReservation, listEstimate);
+      // T13: distinguish "the provider answered with something unusable" (we know
+      // it was called, and it may have charged) from "we never learned the
+      // outcome". A technical failure after the request went out is UNKNOWN: the
+      // reservation stays on the books at its conservative amount.
+      if (error?.kind === "mapping_error") store.adjustSpend(listReservation, listEstimate);
+      else store.settleUnknown(listReservation, { reason: error?.code ?? "technical_error" });
       const completed = current();
       const result = error?.kind === "mapping_error" ? "mapping_error" : "technical_error";
       const latest = store.getSource(source.source_id);
@@ -252,9 +262,18 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
     for (const { raw, item: listedItem } of unique.values()) {
       let item = listedItem;
       const cachedItem = cached.get(listedItem.canonical_id);
-      if (!listedItem.body_complete && !Boolean(cachedItem?.body_complete)
+      if (!listedItem.body_complete && !cachedItem?.body_complete
         && typeof paid.enrichArticle === "function") {
-        const detailEstimate = Number(paid.estimatedDetailCost ?? 0.045);
+        const detailEstimate = paid.estimatedDetailCost;
+        if (!(Number(detailEstimate) > 0)) {
+          // Same rule for details: without a verified bound, queue it instead of
+          // spending blind. The queue is drained once a bound is configured.
+          deadlineDeferred = true;
+          deferredPaidCalls += 1;
+          store.enqueueDetail(source.source_id, listedItem, current().toISOString());
+          items.push(item);
+          continue;
+        }
         const detailStarted = deadlineDeferred ? null : current();
         if (!detailStarted || (deadlineMs !== null
           && detailStarted.getTime() + PAID_CALL_RESERVE_MS > deadlineMs)) {
@@ -277,7 +296,8 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
             store.adjustSpend(detailReservation, Number(detailed.cost_money ?? detailEstimate));
             item = normalizeItem({ ...detailed, body_complete: true }, source, current());
           } catch (error) {
-            store.adjustSpend(detailReservation, detailEstimate);
+            if (error?.kind === "mapping_error") store.adjustSpend(detailReservation, detailEstimate);
+            else store.settleUnknown(detailReservation, { reason: error?.code ?? "technical_error" });
             if (error?.kind !== "mapping_error" && error?.retryable !== false) {
               const failedAt = current();
               store.enqueueDetail(source.source_id, listedItem, failedAt.toISOString(), "technical_error",
@@ -356,13 +376,16 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
           const detailStarted = clock(now);
           if (detailStarted.getTime() + PAID_CALL_RESERVE_MS > deadlineMs) return "deferred";
           if (shanghaiDay(detailStarted) !== day) return "deferred";
-          if (Boolean(store.getGatewayItem(pending.source_id, pending.canonical_id)?.body_complete)) {
+          if (store.getGatewayItem(pending.source_id, pending.canonical_id)?.body_complete) {
             store.removePendingDetail(pending.source_id, pending.canonical_id);
             return "completed";
           }
           const source = store.getSource(pending.source_id);
           if (!source) return "failed";
-          const detailEstimate = Number(paid.estimatedDetailCost ?? 0.045);
+          // T13: no verified detail bound -> do not spend. The pending detail
+          // stays queued (it is due again later) instead of being charged blind.
+          const detailEstimate = Number(paid.estimatedDetailCost);
+          if (!(detailEstimate > 0)) return "deferred";
           const reservation = reserve(detailStarted, detailEstimate);
           if (!reservation) return "budget";
           let settled = false;
@@ -375,7 +398,13 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
               normalizeItem({ ...detailed, body_complete: true }, source, completed), completed.toISOString());
             return "completed";
           } catch (error) {
-            if (!settled) store.adjustSpend(reservation, detailEstimate);
+            if (!settled) {
+              // Same rule as the list path: a mapping error is a known call at a
+              // known (unusable) answer, while a technical failure leaves the
+              // outcome unknown and keeps the conservative reservation.
+              if (error?.kind === "mapping_error") store.adjustSpend(reservation, detailEstimate);
+              else store.settleUnknown(reservation, { reason: error?.code ?? "technical_error" });
+            }
             if (error?.kind === "mapping_error" || error?.retryable === false) {
               store.removePendingDetail(pending.source_id, pending.canonical_id);
             } else {
@@ -607,9 +636,20 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   if (!allowedFeedHosts.size) throw new Error("WECHAT_PRIMARY_ALLOWED_HOSTS is required");
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("PORT must be a valid port");
   const key = process.env.DAJIALA_KEY?.trim();
+  // T13: an estimate is only usable if it is a verified upper bound. Missing or
+  // malformed values are passed through as null so paid admission is refused
+  // rather than silently reserving a number nobody checked.
+  const estimateFromEnv = (name) => {
+    const raw = process.env[name]?.trim();
+    if (!raw) return null;
+    const value = Number(raw);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  };
   const paid = key ? createDajialaClient({ key,
     verifycode: process.env.DAJIALA_VERIFYCODE ?? "",
-    baseUrl: process.env.DAJIALA_BASE_URL ?? "https://www.dajiala.com/fbmain/monitor/v3" }) : null;
+    baseUrl: process.env.DAJIALA_BASE_URL ?? "https://www.dajiala.com/fbmain/monitor/v3",
+    estimatedListCost: estimateFromEnv("DAJIALA_LIST_COST_RMB"),
+    estimatedDetailCost: estimateFromEnv("DAJIALA_DETAIL_COST_RMB") }) : null;
   const store = openStore(dbPath);
   const server = createGatewayServer({ store, token, paid, allowedFeedHosts, dailyBudget: {
     rmb: positiveNumber("DAJIALA_DAILY_BUDGET_RMB", 20),

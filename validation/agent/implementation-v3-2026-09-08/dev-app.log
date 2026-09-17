@@ -1,0 +1,31 @@
+
+> dev
+> node scripts/with-app-env.mjs vite dev --host 0.0.0.0 --port 8080 --host 127.0.0.1 --port 61820 --strictPort
+
+
+  VITE v8.2.2  ready in 1586 ms
+
+  ➜  Local:   http://127.0.0.1:61820/
+10:59:17 [vite] (ssr) connected.
+AbortError: This operation was aborted
+    at new DOMException (node:internal/per_context/domexception:76:18)
+    ... 8 lines matching cause stack trace ...
+    at TCP.<anonymous> (node:net:346:12) {
+  cause: DOMException [AbortError]: This operation was aborted
+      at new DOMException (node:internal/per_context/domexception:76:18)
+      at AbortController.abort (node:internal/abort_controller:506:18)
+      at abort (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/node_modules/srvx/dist/adapters/node.mjs:316:51)
+      at ServerResponse.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/node_modules/srvx/dist/adapters/node.mjs:320:35)
+      at Object.onceWrapper (node:events:622:28)
+      at ServerResponse.emit (node:events:508:28)
+      at emitCloseNT (node:_http_server:1073:10)
+      at Socket.onServerResponseClose (node:_http_server:287:5)
+      at Socket.emit (node:events:520:35)
+      at TCP.<anonymous> (node:net:346:12),
+  status: 500,
+  statusText: undefined,
+  headers: undefined,
+  data: undefined,
+  body: undefined,
+  unhandled: true
+}

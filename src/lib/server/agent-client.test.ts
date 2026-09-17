@@ -84,6 +84,21 @@ test("timeout does not call legacy and hides the service token", async () => {
   assert.equal(calls, 1);
 });
 
+test("timeout covers a delayed response body after headers", async () => {
+  const fetchImpl: typeof fetch = async () => new Response(new ReadableStream({
+    start(controller) {
+      setTimeout(() => {
+        controller.enqueue(new TextEncoder().encode(JSON.stringify(response)));
+        controller.close();
+      }, 80);
+    },
+  }), { headers: { "content-type": "application/json" } });
+  await assert.rejects(
+    () => executeAgent(request, cfg({ fetchImpl, timeoutMs: 10 })),
+    (error: unknown) => error instanceof AgentClientError && (error.code === "model_timeout" || error.code === "agent_unavailable"),
+  );
+});
+
 test("successful eino response is parsed", async () => {
   const fetchImpl: typeof fetch = async (url, init) => {
     assert.equal(String(url), "http://agent.internal/v1/execute");

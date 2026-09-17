@@ -1,10 +1,14 @@
+import { completeRun } from "./agent-completion.ts";
+import { agentTransaction } from "./agent-transaction.ts";
+import { materialFingerprint, type EvidenceReceipt } from "./agent-context.ts";
+import type { ItemRow } from "../types.ts";
 import { createHash } from "node:crypto";
 
 type Queryable = { query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<T[]> };
 
 export type AgentMode = "analyze_item" | "briefing" | "research";
 export type AgentProvider = "legacy" | "eino";
-export type AgentRunStatus = "running" | "succeeded" | "failed" | "timed_out" | "cancelled";
+export type AgentRunStatus = "running" | "succeeded" | "failed" | "timed_out" | "cancelled" | "outcome_unknown";
 
 export type AgentRunRow = {
   id: string;
@@ -34,6 +38,7 @@ export type AgentRunRow = {
 };
 
 export type BeginRunInput = {
+  jobId?: string;
   id: string;
   requestId: string;
   mode: AgentMode;
@@ -62,6 +67,8 @@ function asJson(value: unknown): unknown {
 }
 
 function mapRun(row: Record<string, unknown>): AgentRunRow {
+  const response = asJson(row.response_json);
+  if (response && typeof response === "object") delete (response as Record<string, unknown>)._completion;
   return {
     id: String(row.id),
     request_id: String(row.request_id),
@@ -75,7 +82,7 @@ function mapRun(row: Record<string, unknown>): AgentRunRow {
     claim_token: String(row.claim_token),
     data_token_hash: String(row.data_token_hash ?? ""),
     expires_at: row.expires_at instanceof Date ? row.expires_at.toISOString() : String(row.expires_at),
-    response_json: asJson(row.response_json),
+    response_json: response,
     events_json: asJson(row.events_json) ?? [],
     model: String(row.model ?? ""),
     prompt_version: String(row.prompt_version ?? ""),
@@ -112,7 +119,7 @@ export async function getRun(sql: Queryable, id: string): Promise<AgentRunRow | 
   return row ? mapRun(row) : null;
 }
 
-async function getRunByRequest(sql: Queryable, requestId: string): Promise<AgentRunRow | null> {
+export async function getRunByRequest(sql: Queryable, requestId: string): Promise<AgentRunRow | null> {
   const [row] = await sql.query<Record<string, unknown>>(
     "select * from ai_runs where request_id = $1",
     [requestId],
@@ -120,7 +127,42 @@ async function getRunByRequest(sql: Queryable, requestId: string): Promise<Agent
   return row ? mapRun(row) : null;
 }
 
+export async function convergeExpiredRun(sql: Queryable, id: string): Promise<AgentRunRow | null> {
+  const run = await getRun(sql,id);
+  if (!run || run.status !== "running") return run;
+  await completeRun(sql,{runId:id,claimToken:run.claim_token,status:"timed_out",expired:true});
+  return getRun(sql,id);
+}
+
+function classifyExisting(run: AgentRunRow, inputHash: string, input?: BeginRunInput): BeginRunResult {
+  if (run.input_hash !== inputHash || (input && (run.mode !== input.mode || run.provider !== input.provider))) return { kind: "conflict", run };
+  const requested = input?.requestJson as Record<string,unknown> | undefined;
+  if (requested && ["scope","range","intent"].some(k => requested[k] !== undefined && hashCanonical(requested[k]) !== hashCanonical((run.request_json as Record<string,unknown>)?.[k] ?? null))) return {kind:"conflict",run};
+  if (run.status === "succeeded") return { kind: "replay", run, responseJson: run.response_json };
+  if (run.status === "running") return { kind: "in_progress", run };
+  return { kind: "failed", run };
+}
+
 export async function beginRun(sql: Queryable, input: BeginRunInput): Promise<BeginRunResult> {
+  if (input.jobId) return agentTransaction(sql, async tx => {
+    const [job] = await tx.query<Record<string, any>>("select * from ai_jobs where id=$1 for update", [input.jobId]);
+    const [clock] = await tx.query<{ now: Date }>("select clock_timestamp() as now");
+    if (!job || job.status !== "running" || job.claim_token !== input.claimToken || !job.lease_until || new Date(job.lease_until) <= new Date(clock.now)
+      || job.material_hash !== input.materialHash) throw new Error("stale_job");
+    const begun = await beginRun(tx, { ...input, jobId: undefined });
+    if (begun.kind !== "won") throw new Error("job_run_conflict");
+    await tx.query("update ai_jobs set run_id=$2 where id=$1", [job.id,begun.run.id]);
+    return begun;
+  });
+  const existingFirst = await getRunByRequest(sql, input.requestId);
+  if (existingFirst) {
+    if (existingFirst.status === "running" && Date.parse(existingFirst.expires_at) <= Date.now()) {
+      const expired = await convergeExpiredRun(sql, existingFirst.id);
+      return classifyExisting(expired ?? existingFirst, input.inputHash, input);
+    }
+    return classifyExisting(existingFirst, input.inputHash, input);
+  }
+
   const inserted = await sql.query<Record<string, unknown>>(
     `insert into ai_runs (id, request_id, mode, provider, input_hash, material_hash,
       policy_version, request_json, status, claim_token, data_token_hash, expires_at)
@@ -145,12 +187,11 @@ export async function beginRun(sql: Queryable, input: BeginRunInput): Promise<Be
 
   const existing = await getRunByRequest(sql, input.requestId);
   if (!existing) throw new Error("run_missing_after_conflict");
-  if (existing.input_hash !== input.inputHash) return { kind: "conflict", run: existing };
-  if (existing.status === "succeeded") {
-    return { kind: "replay", run: existing, responseJson: existing.response_json };
+  if (existing.status === "running" && Date.parse(existing.expires_at) <= Date.now()) {
+    const expired = await convergeExpiredRun(sql, existing.id);
+    return classifyExisting(expired ?? existing, input.inputHash, input);
   }
-  if (existing.status === "running") return { kind: "in_progress", run: existing };
-  return { kind: "failed", run: existing };
+  return classifyExisting(existing, input.inputHash, input);
 }
 
 export async function finishRun(sql: Queryable, input: {
@@ -165,37 +206,7 @@ export async function finishRun(sql: Queryable, input: {
   modelCalls: number;
   toolCalls: number;
 }): Promise<boolean> {
-  const rows = await sql.query<{ id: string }>(
-    `update ai_runs
-     set status = 'succeeded',
-         response_json = $3::jsonb,
-         model = $4,
-         prompt_version = $5,
-         skill_versions = $6::jsonb,
-         input_tokens = $7,
-         output_tokens = $8,
-         model_calls = $9,
-         tool_calls = $10,
-         finished_at = now()
-     where id = $1
-       and status = 'running'
-       and claim_token = $2
-       and expires_at > now()
-     returning id`,
-    [
-      input.id,
-      input.claimToken,
-      JSON.stringify(input.responseJson),
-      input.model,
-      input.promptVersion,
-      JSON.stringify(input.skillVersions),
-      input.inputTokens,
-      input.outputTokens,
-      input.modelCalls,
-      input.toolCalls,
-    ],
-  );
-  return rows.length === 1;
+  return (await completeRun(sql, { ...input, runId: input.id, status: "succeeded" })).ok;
 }
 
 export async function failRun(sql: Queryable, input: {
@@ -205,26 +216,11 @@ export async function failRun(sql: Queryable, input: {
   status?: Exclude<AgentRunStatus, "running" | "succeeded">;
   responseJson?: unknown;
 }): Promise<boolean> {
-  const rows = await sql.query<{ id: string }>(
-    `update ai_runs
-     set status = $3,
-         error_code = $4,
-         response_json = coalesce($5::jsonb, response_json),
-         finished_at = now()
-     where id = $1
-       and status = 'running'
-       and claim_token = $2
-       and expires_at > now()
-     returning id`,
-    [
-      input.id,
-      input.claimToken,
-      input.status ?? "failed",
-      input.errorCode,
-      input.responseJson == null ? null : JSON.stringify(input.responseJson),
-    ],
-  );
-  return rows.length === 1;
+  const runtime = (input.responseJson as { runtime?: Record<string, any> } | undefined)?.runtime;
+  return (await completeRun(sql, { ...input, runId: input.id,
+    model: runtime?.model, promptVersion: runtime?.prompt_version, skillVersions: runtime?.skill_versions,
+    inputTokens: runtime?.input_tokens, outputTokens: runtime?.output_tokens, modelCalls: runtime?.model_calls, toolCalls: runtime?.tool_calls,
+    status: input.status ?? (["outcome_unknown", "model_timeout"].includes(input.errorCode) ? "outcome_unknown" : "failed") })).ok;
 }
 
 export async function finishAnalyzeAtomically(sql: Queryable, input: {
@@ -236,6 +232,9 @@ export async function finishAnalyzeAtomically(sql: Queryable, input: {
   author: string;
   url: string;
   platform: string;
+  sourceName: string;
+  publishedAt?: string | null;
+  materialHash?: string;
   analysisId: string;
   summary: string;
   topics: string[];
@@ -251,49 +250,27 @@ export async function finishAnalyzeAtomically(sql: Queryable, input: {
   modelCalls: number;
   toolCalls: number;
 }): Promise<"ok" | "input_changed" | "persist_failed"> {
-  const rows = await sql.query<{ analysis_id: string }>(
-    `with claimed as (
-       select id from ai_runs
-       where id = $1 and status = 'running' and claim_token = $2 and expires_at > now()
-     ), matched as (
-       select id from items
-       where id = $3 and title = $4 and body = $5 and author = $6 and url = $7 and platform = $8
-     ), updated as (
-       update ai_runs r
-       set status = 'succeeded',
-           response_json = $9::jsonb,
-           model = $10,
-           prompt_version = $11,
-           skill_versions = $12::jsonb,
-           input_tokens = $13,
-           output_tokens = $14,
-           model_calls = $15,
-           tool_calls = $16,
-           finished_at = now()
-       from claimed c, matched m
-       where r.id = c.id
-       returning r.id
-     ), ins as (
-       insert into analyses (id, item_id, summary, topics, entities, insights, tags, model, run_id)
-       select $17, $3, $18, $19::jsonb, $20::jsonb, $21, $22::jsonb, $10, updated.id
-       from updated
-       returning id
-     )
-     update items set pipeline_status = 'analyzed'
-     where id = $3 and exists (select 1 from ins)
-     returning (select id from ins) as analysis_id`,
-    [
-      input.runId, input.claimToken, input.itemId, input.title, input.body, input.author, input.url, input.platform,
-      JSON.stringify(input.responseJson), input.model, input.promptVersion, JSON.stringify(input.skillVersions),
-      input.inputTokens, input.outputTokens, input.modelCalls, input.toolCalls,
-      input.analysisId, input.summary, JSON.stringify(input.topics), JSON.stringify(input.entities),
-      input.insights, JSON.stringify(input.tags),
-    ],
-  );
-  if (rows.length === 1) return "ok";
-  const [run] = await sql.query<{ status: string }>("select status from ai_runs where id = $1", [input.runId]);
-  if (run?.status === "running") return "input_changed";
-  return "persist_failed";
+  const result = await completeRun(sql, {
+    ...input, status: "succeeded",
+    validate: async tx => {
+      const [item] = await tx.query<Record<string, any>>("select * from items where id=$1 for update", [input.itemId]);
+      if (!item) return "input_changed";
+      const [source] = await tx.query<{ name: string }>("select name from sources where id=$1 for update", [item.source_id]);
+      const current = { ...item, source_name: source?.name ?? "", published_at: item.published_at ? new Date(item.published_at).toISOString() : null } as ItemRow;
+      if (input.materialHash) return materialFingerprint(current) === input.materialHash ? null : "input_changed";
+      return item.title === input.title && item.body === input.body && item.author === input.author && item.url === input.url
+        && item.platform === input.platform && source?.name === input.sourceName
+        && (input.publishedAt === undefined || current.published_at === input.publishedAt) ? null : "input_changed";
+    },
+    write: async tx => {
+      await tx.query(`insert into analyses (id,item_id,summary,topics,entities,insights,tags,model,run_id)
+        values ($1,$2,$3,$4::jsonb,$5::jsonb,$6,$7::jsonb,$8,$9)`,
+        [input.analysisId,input.itemId,input.summary,JSON.stringify(input.topics),JSON.stringify(input.entities),input.insights,JSON.stringify(input.tags),input.model,input.runId]);
+      await tx.query("update items set pipeline_status='analyzed' where id=$1", [input.itemId]);
+      return { analysis_id: input.analysisId };
+    },
+  });
+  return result.ok ? "ok" : result.error === "input_changed" ? "input_changed" : "persist_failed";
 }
 
 export async function finishNoteAtomically(sql: Queryable, input: {
@@ -313,37 +290,30 @@ export async function finishNoteAtomically(sql: Queryable, input: {
   modelCalls: number;
   toolCalls: number;
 }): Promise<boolean> {
-  const rows = await sql.query<{ id: string }>(
-    `with claimed as (
-       select id from ai_runs
-       where id = $1 and status = 'running' and claim_token = $2 and expires_at > now()
-     ), updated as (
-       update ai_runs r
-       set status = 'succeeded',
-           response_json = $3::jsonb,
-           model = $4,
-           prompt_version = $5,
-           skill_versions = $6::jsonb,
-           input_tokens = $7,
-           output_tokens = $8,
-           model_calls = $9,
-           tool_calls = $10,
-           finished_at = now()
-       from claimed c
-       where r.id = c.id
-       returning r.id
-     )
-     insert into knowledge_notes (id, title, content, kind, item_ids, run_id)
-     select $11, $12, $13, $14, $15::jsonb, updated.id
-     from updated
-     returning id`,
-    [
-      input.runId, input.claimToken, JSON.stringify(input.responseJson), input.model, input.promptVersion,
-      JSON.stringify(input.skillVersions), input.inputTokens, input.outputTokens, input.modelCalls, input.toolCalls,
-      input.noteId, input.title, input.content, input.kind, JSON.stringify(input.itemIds),
-    ],
-  );
-  return rows.length === 1;
+  return (await completeRun(sql, { ...input, status: "succeeded", write: async tx => {
+    await tx.query(`insert into knowledge_notes (id,title,content,kind,item_ids,run_id) values ($1,$2,$3,$4,$5::jsonb,$6)`,
+      [input.noteId,input.title,input.content,input.kind,JSON.stringify(input.itemIds),input.runId]);
+    return { note_id: input.noteId };
+  } })).ok;
+}
+
+export async function receiptsForRun(sql: Queryable, runId: string): Promise<Map<string, EvidenceReceipt>> {
+  const [run] = await sql.query<{ events_json: unknown }>("select events_json from ai_runs where id = $1", [runId]);
+  const events = Array.isArray(run?.events_json) ? run.events_json as Record<string, unknown>[] : [];
+  const map = new Map<string, EvidenceReceipt>();
+  for (const event of events) {
+    if (event.type !== "evidence") continue;
+    const id = String(event.evidence_id ?? "");
+    if (!id) continue;
+    map.set(id, {
+      evidence_id: id,
+      item_id: event.item_id == null ? null : String(event.item_id),
+      text: String(event.text ?? ""),
+      origin: event.origin === "mcp" ? "mcp" : "internal",
+      title: String(event.title ?? event.tool ?? "来源"), url: String(event.url ?? ""), platform: String(event.platform ?? ""), source_name: String(event.source_name ?? ""),
+    });
+  }
+  return map;
 }
 
 export async function appendEvidenceReceipt(sql: Queryable, input: {

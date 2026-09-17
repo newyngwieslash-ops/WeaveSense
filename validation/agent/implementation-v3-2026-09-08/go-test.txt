@@ -1,0 +1,12 @@
+?   	loom.local/agent/cmd/agent	[no test files]
+2026/09/08 13:30:50 agent complete ACK pending (attempt 1, status 500)
+2026/09/08 13:30:50 agent complete ACK pending (attempt 2, status 500)
+2026/09/08 13:30:51 agent complete ACK pending (attempt 3, status 500)
+--- FAIL: TestResearchToolLoop (0.00s)
+    research_test.go:87: research failed: {Code:agent_unavailable Message:agent_unavailable Retryable:true OutcomeUnknown:false}
+--- FAIL: TestResearchBudgetStopsToolLoop (0.00s)
+    research_test.go:129: tool should not be called
+    research_test.go:129: tool should not be called
+FAIL
+FAIL	loom.local/agent/internal/agent	5.682s
+FAIL

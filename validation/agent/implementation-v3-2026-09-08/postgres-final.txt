@@ -1,0 +1,38 @@
+
+> agent:pg
+> node --experimental-strip-types --test validation/agent/implementation-v3-2026-09-08/postgres.test.ts validation/agent/implementation-v3-2026-09-08/migration.test.ts
+
+✔ V9 real legacy upgrade preserves null run_id results; failed migration rolls back and repeat is no-op (948.4398ms)
+✔ PG-F01: SKIP LOCKED skips owned rows and two connections produce one winner (300.0614ms)
+✔ PG-F02: concurrent body update cannot receive stale analysis (280.9337ms)
+✔ PG-T03: simultaneous identical complete messages create exactly one note (339.288ms)
+✔ PG-T04: revoked claim cannot commit through a stale CTE snapshot (345.7675ms)
+✔ V3 concurrent terminal trusted release changes the daily ledger once (411.5769ms)
+ℹ two terminal transactions blocked on the same job; settlement follows ownership lock
+✔ V3 concurrent terminal settlement changes the daily ledger once (583.6844ms)
+ℹ two terminal transactions blocked on the same job; settlement follows ownership lock
+✔ V3 ai_jobs insertion failure rolls back the entire admission (224.4946ms)
+✔ V3 ai_budget_reservations insertion failure rolls back the entire admission (228.931ms)
+✔ V1 succeeded: revoked owner writes nothing after a real row-lock wait (241.4359ms)
+ℹ old completion blocked on job lock; new-generation committed before predicate recheck
+✔ V1 succeeded: simultaneous identical terminal messages have one consistent result (249.7512ms)
+ℹ both completion transactions blocked before run mutation
+✔ V1 failed: revoked owner writes nothing after a real row-lock wait (242.4758ms)
+ℹ old completion blocked on job lock; new-generation committed before predicate recheck
+✔ V1 failed: simultaneous identical terminal messages have one consistent result (251.0698ms)
+ℹ both completion transactions blocked before run mutation
+✔ V1 outcome_unknown: revoked owner writes nothing after a real row-lock wait (223.4425ms)
+ℹ old completion blocked on job lock; new-generation committed before predicate recheck
+✔ V1 outcome_unknown: simultaneous identical terminal messages have one consistent result (236.5787ms)
+ℹ both completion transactions blocked before run mutation
+✔ V1 SQL failure rolls back note, run and job together (205.0203ms)
+✔ V6 competing checkpoint payloads at the same sequence cannot overwrite one another (225.9056ms)
+✔ V3 two schedulers cannot reserve the last daily allowance twice (201.8406ms)
+ℹ tests 18
+ℹ suites 0
+ℹ pass 18
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5121.9213

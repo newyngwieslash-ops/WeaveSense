@@ -1,20 +1,37 @@
 #!/usr/bin/env node
-import { cpSync, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
-import { join } from "node:path";
+/**
+ * Pack a reviewable source bundle.
+ *
+ * Portable by design: the previous version hard-coded `/workspace`, `/tmp` and
+ * `python3`, so it could only run inside one Linux sandbox. This version stages
+ * and zips with Node only, writes next to the project, and enforces the T04
+ * exclusion policy before anything is added.
+ *
+ * The exclusion decision is imported from `deployment-policy.mjs`, so the pack
+ * and the tests can never disagree about what "excluded" means.
+ */
+import { cpSync, copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
+import { packExcluded } from "./deployment-policy.mjs";
+import { zipDirectory } from "./zip.mjs";
 
-const root = "/workspace";
-const staging = "/tmp/zhishi-loom";
+const root = process.cwd();
+const staging = resolve(root, "artifacts", ".pack-staging");
 const zipName = "zhishi-loom-source.zip";
-const destPublic = join(root, "public", zipName);
 const destArtifacts = join(root, "artifacts", zipName);
+// The in-app "download source" link serves this from public/ (src/routes/guide.tsx),
+// so the copy stays. It is excluded from the Docker build context, and the
+// exclusion policy above is what keeps it from carrying secrets into that URL.
+const destPublic = join(root, "public", zipName);
 
 const INCLUDE = [
   "README.md",
   "LICENSE",
   "Dockerfile",
+  ".dockerignore",
   "docker-compose.yml",
   "env.example",
+  "config/model.example.json",
   "package.json",
   "package-lock.json",
   "tsconfig.json",
@@ -35,39 +52,48 @@ const INCLUDE = [
 
 rmSync(staging, { recursive: true, force: true });
 mkdirSync(staging, { recursive: true });
-mkdirSync(join(staging, "public"), { recursive: true });
-mkdirSync(join(staging, ".grok"), { recursive: true });
 
+const skipped = [];
 for (const rel of INCLUDE) {
   const from = join(root, rel);
   if (!existsSync(from)) continue;
-  cpSync(from, join(staging, rel), { recursive: true });
+  cpSync(from, join(staging, rel), {
+    recursive: true,
+    filter: (source) => {
+      const relPath = relative(root, source).replaceAll("\\", "/");
+      if (!relPath) return true;
+      if (packExcluded(relPath)) {
+        skipped.push(relPath);
+        return false;
+      }
+      return true;
+    },
+  });
 }
 
-rmSync(join(staging, "workers/telethon/__pycache__"), { recursive: true, force: true });
+// Fail closed: if a policy-excluded path still reached staging, stop here rather
+// than ship it. Catches a future INCLUDE entry (or a copy edge case) that
+// bypasses the filter above.
+const walk = (dir, out = []) => {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) walk(full, out);
+    else out.push(full);
+  }
+  return out;
+};
+const leaked = walk(staging)
+  .map((file) => relative(staging, file).replaceAll("\\", "/"))
+  .filter((rel) => packExcluded(rel));
+if (leaked.length) {
+  console.error(`[pack] refusing to ship excluded paths: ${leaked.join(", ")}`);
+  process.exit(1);
+}
 
-const zipPath = `/tmp/${zipName}`;
-rmSync(zipPath, { force: true });
-
-const py = `
-import os, zipfile
-root = "/tmp/zhishi-loom"
-out = "/tmp/zhishi-loom-source.zip"
-with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in {".git", "__pycache__", "node_modules"}]
-        for name in filenames:
-            full = os.path.join(dirpath, name)
-            arc = os.path.join("zhishi-loom", os.path.relpath(full, root))
-            z.write(full, arc)
-print("wrote", os.path.getsize(out))
-`;
-writeFileSync("/tmp/pack-source.py", py);
-const packed = spawnSync("python3", ["/tmp/pack-source.py"], { stdio: "inherit" });
-if (packed.status !== 0) process.exit(packed.status ?? 1);
-
-mkdirSync(join(root, "artifacts"), { recursive: true });
-cpSync(zipPath, destPublic);
-cpSync(zipPath, destArtifacts);
-const bytes = statSync(destPublic).size;
-console.log(`[pack] ${zipName} ${(bytes / 1024).toFixed(0)} KB → public/ and artifacts/`);
+rmSync(destArtifacts, { force: true });
+const bytes = zipDirectory(staging, destArtifacts);
+mkdirSync(join(root, "public"), { recursive: true });
+copyFileSync(destArtifacts, destPublic);
+console.log(
+  `[pack] ${zipName} ${(bytes / 1024).toFixed(0)} KB → artifacts/ 和 public/ (${skipped.length} 个被排除路径已跳过)`,
+);

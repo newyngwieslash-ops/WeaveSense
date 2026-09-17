@@ -9,9 +9,9 @@ import (
 )
 
 const (
-	MaxRequestBytes  = 512 * 1024
-	MaxResponseBytes = 256 * 1024
-	DefaultListen    = "0.0.0.0:8791"
+	MaxRequestBytes   = 512 * 1024
+	MaxResponseBytes  = 256 * 1024
+	DefaultListen     = "0.0.0.0:8791"
 	DefaultConcurrent = 2
 	ExecuteTimeout    = 40 * time.Second
 )

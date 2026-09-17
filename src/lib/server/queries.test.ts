@@ -2,8 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 Object.defineProperty(globalThis, "window", { configurable: true, value: {} });
-const { mapJob } = await import("./queries.ts");
+const { mapJob, mapItem } = await import("./queries.ts");
 delete (globalThis as unknown as { window?: unknown }).window;
+
+test("old imported entities display decoded without changing stored evidence", () => {
+  const row = { id: 'old', title: '&#036;222', body: '正文&#33;', author: 'A &amp; B' };
+  const item = mapItem(row);
+  assert.equal(item.title, '$222'); assert.equal(item.body, '正文!'); assert.equal(item.author, 'A & B');
+  assert.equal(row.body, '正文&#33;');
+});
 
 test("mapJob exposes ordered attempts and paid attribution", () => {
   const job = mapJob({ id: "job-1", source_id: "wx-1", platform: "wechat",

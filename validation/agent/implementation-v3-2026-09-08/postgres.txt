@@ -1,0 +1,27 @@
+✔ PG-F01: SKIP LOCKED skips owned rows and two connections produce one winner (182.9409ms)
+✔ PG-F02: concurrent body update cannot receive stale analysis (286.2231ms)
+✔ PG-T03: simultaneous identical complete messages create exactly one note (348.3597ms)
+✔ PG-T04: revoked claim cannot commit through a stale CTE snapshot (378.3083ms)
+✔ V1 succeeded: revoked owner writes nothing after a real row-lock wait (383.7636ms)
+ℹ old completion blocked on job lock; new-generation committed before predicate recheck
+✔ V1 succeeded: simultaneous identical terminal messages have one consistent result (347.8704ms)
+ℹ both completion transactions blocked before run mutation
+✔ V1 failed: revoked owner writes nothing after a real row-lock wait (343.0273ms)
+ℹ old completion blocked on job lock; new-generation committed before predicate recheck
+✔ V1 failed: simultaneous identical terminal messages have one consistent result (364.3195ms)
+ℹ both completion transactions blocked before run mutation
+✔ V1 outcome_unknown: revoked owner writes nothing after a real row-lock wait (314.0733ms)
+ℹ old completion blocked on job lock; new-generation committed before predicate recheck
+✔ V1 outcome_unknown: simultaneous identical terminal messages have one consistent result (337.3349ms)
+ℹ both completion transactions blocked before run mutation
+✔ V1 SQL failure rolls back note, run and job together (305.4573ms)
+✔ V6 competing checkpoint payloads at the same sequence cannot overwrite one another (364.9071ms)
+✔ V3 two schedulers cannot reserve the last daily allowance twice (324.1142ms)
+ℹ tests 13
+ℹ suites 0
+ℹ pass 13
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4524.1073

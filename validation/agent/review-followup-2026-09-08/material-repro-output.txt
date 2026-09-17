@@ -1,0 +1,46 @@
+✖ M01 research eight long candidates fit shared source and text caps (3.6044ms)
+✖ M02 briefing twelve long candidates fit shared source cap (2.2693ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 0
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 114.2665
+
+✖ failing tests:
+
+test at validation\agent\review-followup-2026-09-08\material-repro.test.ts:13:1
+✖ M01 research eight long candidates fit shared source and text caps (3.6044ms)
+  AssertionError [ERR_ASSERTION]: {"sources":16,"chars":32000}
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-followup-2026-09-08/material-repro.test.ts:16:10)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.start (node:internal/test_runner/test:1003:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:358:17) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at validation\agent\review-followup-2026-09-08\material-repro.test.ts:18:1
+✖ M02 briefing twelve long candidates fit shared source cap (2.2693ms)
+  AssertionError [ERR_ASSERTION]: {"sources":24}
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-followup-2026-09-08/material-repro.test.ts:21:10)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

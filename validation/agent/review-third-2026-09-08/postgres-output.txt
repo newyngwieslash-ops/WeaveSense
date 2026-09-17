@@ -1,0 +1,62 @@
+✔ PG-F01: SKIP LOCKED skips owned rows and two connections produce one winner (154.2834ms)
+✖ PG-F02: concurrent body update cannot receive stale analysis (176.4064ms)
+✖ PG-T03: simultaneous identical complete messages create exactly one note (167.7483ms)
+✖ PG-T04: revoked claim cannot commit through a stale CTE snapshot (169.8975ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 1
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 891.0543
+
+✖ failing tests:
+
+test at validation\agent\review-third-2026-09-08\postgres-repro.test.ts:59:1
+✖ PG-F02: concurrent body update cannot receive stale analysis (176.4064ms)
+  AssertionError [ERR_ASSERTION]: {"result":"ok","rows":[{"body":"new body","pipeline_status":"analyzed"}]}
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-third-2026-09-08/postgres-repro.test.ts:75:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'ok',
+    expected: 'ok',
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }
+
+test at validation\agent\review-third-2026-09-08\postgres-repro.test.ts:78:1
+✖ PG-T03: simultaneous identical complete messages create exactly one note (167.7483ms)
+  AssertionError [ERR_ASSERTION]: [{"status":"fulfilled","value":{"status":200,"body":{"ok":true,"note_id":"f563c59c-aa1e-4838-bba6-a597ea45d009"}}},{"status":"rejected","reason":{"length":296,"name":"error","severity":"ERROR","code":"23505","detail":"Key (run_id)=(9edd6ce0-1e02-4690-9d74-2a2b1f5443b2) already exists.","schema":"followup_11e3ed4138054a6eb247d1c561a75a05","table":"knowledge_notes","constraint":"knowledge_notes_run_unique","file":"nbtinsert.c","line":"666","routine":"_bt_check_unique"}}]
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-third-2026-09-08/postgres-repro.test.ts:95:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at validation\agent\review-third-2026-09-08\postgres-repro.test.ts:98:1
+✖ PG-T04: revoked claim cannot commit through a stale CTE snapshot (169.8975ms)
+  AssertionError [ERR_ASSERTION]: {"result":{"status":200,"body":{"ok":true,"note_id":"c10d868c-a567-4bd8-ba33-f4af458c4c8f"}},"notes":[{"id":"c10d868c-a567-4bd8-ba33-f4af458c4c8f"}],"jobs":[{"status":"succeeded","claim_token":""}]}
+  
+  200 !== 409
+  
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-third-2026-09-08/postgres-repro.test.ts:113:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 200,
+    expected: 409,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

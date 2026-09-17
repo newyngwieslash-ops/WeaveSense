@@ -1,0 +1,45 @@
+✖ PG01: two real connections cannot both claim the same queued job (158.2749ms)
+✖ PG02: concurrent original-text update cannot be marked analyzed by stale snapshot (135.8474ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 0
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 470.9128
+
+✖ failing tests:
+
+test at validation\agent\review-2026-09-08\postgres-race.test.ts:44:1
+✖ PG01: two real connections cannot both claim the same queued job (158.2749ms)
+  AssertionError [ERR_ASSERTION]: [{"id":"4bbcf606-43fe-43b1-bb24-6d6970f4ee9e","item_id":"research:849e263b-953b-4542-bfd9-f675e4072263","material_hash":"m","policy_version":"loom-agent-v1","status":"running","claim_token":"0b06668a-1402-4459-9dbf-148de2f5668a","payload":{"question":"review"}},{"id":"4bbcf606-43fe-43b1-bb24-6d6970f4ee9e","item_id":"research:849e263b-953b-4542-bfd9-f675e4072263","material_hash":"m","policy_version":"loom-agent-v1","status":"running","claim_token":"45e4a698-fffe-46bf-9194-7890253499ec","payload":{"question":"review"}}]
+  
+  2 !== 1
+  
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-2026-09-08/postgres-race.test.ts:54:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 2,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at validation\agent\review-2026-09-08\postgres-race.test.ts:57:1
+✖ PG02: concurrent original-text update cannot be marked analyzed by stale snapshot (135.8474ms)
+  AssertionError [ERR_ASSERTION]: {"result":"ok","rows":[{"body":"new body","pipeline_status":"analyzed"}]}
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-2026-09-08/postgres-race.test.ts:73:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'ok',
+    expected: 'ok',
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }

@@ -1,4 +1,5 @@
 import { getSql } from "@/lib/db";
+import { publicFetch } from "./outbound-policy.ts";
 import { getObject } from "./storage";
 import { runExtractTargets, type ExtractTarget } from "./extract-targets";
 
@@ -14,11 +15,13 @@ export function xaiReady(): boolean {
 }
 
 async function fetchBytes(url: string): Promise<{ bytes: Buffer; contentType: string }> {
-  const res = await fetch(url, { signal: AbortSignal.timeout(20000), redirect: "follow" });
-  if (!res.ok) throw new Error(`下载媒体 HTTP ${res.status}`);
-  const bytes = Buffer.from(await res.arrayBuffer());
-  const contentType = res.headers.get("content-type") || "application/octet-stream";
-  return { bytes, contentType };
+  // Public media only: private/metadata targets and oversized payloads are
+  // refused by the outbound policy before any bytes are held in memory.
+  const fetched = await publicFetch(url, { timeoutMs: 20000, kind: "media", as: "bytes" });
+  return {
+    bytes: Buffer.from(fetched.bytes ?? new Uint8Array()),
+    contentType: fetched.contentType || "application/octet-stream",
+  };
 }
 
 async function loadMedia(row: {
@@ -36,12 +39,20 @@ async function loadMedia(row: {
   return fetchBytes(url);
 }
 
+/**
+ * Vision models accept a bounded image payload. A larger image is REFUSED, not
+ * trimmed: `bytes.subarray(0, N)` cuts a JPEG/PNG mid-stream, and the resulting
+ * data URL is a corrupt image that still bills a paid vision call (and returns
+ * nonsense or an error the operator has to diagnose). Refusing costs nothing.
+ */
+export const OCR_MAX_BYTES = 4_500_000;
+
 export async function ocrBytes(bytes: Buffer, contentType: string): Promise<{ text: string; model: string }> {
   const key = xaiKey();
   if (!key) throw new Error("未启用 XAI_API_KEY，无法 OCR");
+  if (bytes.length > OCR_MAX_BYTES) throw new Error("media_too_large");
   const mime = contentType.startsWith("image/") ? contentType : "image/jpeg";
-  const capped = bytes.length > 4_500_000 ? bytes.subarray(0, 4_500_000) : bytes;
-  const dataUrl = `data:${mime};base64,${capped.toString("base64")}`;
+  const dataUrl = `data:${mime};base64,${bytes.toString("base64")}`;
   const res = await fetch("https://api.x.ai/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },

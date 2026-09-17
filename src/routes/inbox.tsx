@@ -1,5 +1,6 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { Input, NativeSelect } from "@/components/ui/input";
 import { PlatformChip } from "@/components/platform-chip";
@@ -18,12 +19,23 @@ export const Route = createFileRoute("/inbox")({
     media: typeof search.media === "string" ? search.media : undefined,
     keyword: typeof search.keyword === "string" ? search.keyword : undefined,
   }),
-  component: InboxPage,
+  component: InboxRoute,
 });
+
+function InboxRoute() {
+  const hasDetail = useRouterState({ select: state => state.matches.some(match => match.routeId === "/inbox/$itemId") });
+  return hasDetail ? <Outlet /> : <InboxPage />;
+}
 
 function InboxPage() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
+  const [query, setQuery] = useState(search.q ?? "");
+  useEffect(() => setQuery(search.q ?? ""), [search.q]);
+  const [composition, setComposition] = useState<string | null>(null);
+  const updateQuery = (q: string) => {
+    void navigate({ search: (previous) => ({ ...previous, q: q || undefined }), replace: true });
+  };
   const items = useQuery({
     queryKey: ["items", search.platform, search.q, search.media, search.keyword],
     queryFn: () =>
@@ -42,14 +54,20 @@ function InboxPage() {
     <AppShell title="内容" kicker="Normalized inbox">
       <div className="flex flex-col gap-3 sm:flex-row">
         <Input
-          defaultValue={search.q ?? ""}
+          value={composition ?? query}
+          aria-label="检索标题、正文、作者（输入即搜索）"
           placeholder="检索标题、正文、作者"
           className="sm:max-w-sm"
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              const q = (e.target as HTMLInputElement).value;
-              void navigate({ search: { ...search, q: q || undefined } });
-            }
+          onCompositionStart={(e) => setComposition(e.currentTarget.value)}
+          onCompositionEnd={(e) => {
+            setComposition(null);
+            setQuery(e.currentTarget.value);
+            updateQuery(e.currentTarget.value);
+          }}
+          onChange={(e) => {
+            setQuery(e.currentTarget.value);
+            if (composition !== null) setComposition(e.currentTarget.value);
+            else updateQuery(e.currentTarget.value);
           }}
         />
         <NativeSelect
@@ -121,6 +139,7 @@ function InboxPage() {
               key={item.id}
               to="/inbox/$itemId"
               params={{ itemId: item.id }}
+              search={search}
               className="block px-4 py-4 transition-colors hover:bg-raised/60"
             >
               <div className="flex flex-wrap items-center gap-2">

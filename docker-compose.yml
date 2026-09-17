@@ -1,30 +1,39 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    # Pinned by digest (read from the image actually in use, 2026-09-16) so a
+    # redeploy cannot silently change the database engine version.
+    image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
     environment:
-      POSTGRES_USER: loom
-      POSTGRES_PASSWORD: loom
-      POSTGRES_DB: loom
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      # Required, no default: a published template default is a known password.
+      # Changing this on an existing volume needs the SQL/inside-service update in
+      # docs/operations/loom-backup-restore-runbook.md — editing the env alone
+      # does NOT rotate the password already stored in pgdata.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U loom -d loom"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
     restart: unless-stopped
 
   minio:
-    image: minio/minio:latest
+    image: minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-loom}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-loom-secret-change-me}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
     volumes:
       - miniodata:/data
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      # Loopback by default: the console/API are for the host operator, not the
+      # network. Widen explicitly (and only behind TLS) if a remote reader needs
+      # object URLs; see docs/operations/loom-backup-restore-runbook.md.
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     healthcheck:
       test: ["CMD-SHELL", "timeout 2 bash -c ':> /dev/tcp/127.0.0.1/9000' || exit 1"]
       interval: 10s
@@ -34,13 +43,18 @@ services:
     restart: unless-stopped
 
   minio-init:
-    image: minio/mc:latest
+    image: minio/mc:latest@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
     depends_on:
       - minio
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-loom}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-loom-secret-change-me}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
       MINIO_BUCKET: ${MINIO_BUCKET:-loom}
+      # "public" makes the bucket anonymously downloadable. It is only valid for
+      # explicitly public material: with any private material this must be
+      # "private", and existing public URLs will stop working (expected, not a
+      # regression). Do not describe turning this off as harmless.
+      MINIO_BUCKET_ACCESS: ${MINIO_BUCKET_ACCESS:-private}
     restart: on-failure
     entrypoint:
       - /bin/sh
@@ -49,7 +63,11 @@ services:
         sleep 4
         mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
         mc mb -p "local/$$MINIO_BUCKET" || true
-        mc anonymous set download "local/$$MINIO_BUCKET" || true
+        if [ "$$MINIO_BUCKET_ACCESS" = "public" ]; then
+          mc anonymous set download "local/$$MINIO_BUCKET"
+        else
+          mc anonymous set none "local/$$MINIO_BUCKET" || true
+        fi
 
 
   telethon:
@@ -61,8 +79,8 @@ services:
       TELEGRAM_SESSION: ${TELEGRAM_SESSION:-}
       TELEGRAM_SESSION_PATH: /data/loom.session
       MINIO_ENDPOINT: minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-loom}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-loom-secret-change-me}
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
       MINIO_BUCKET: ${MINIO_BUCKET:-loom}
       MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-http://127.0.0.1:9000/loom}
       TELETHON_CONCURRENCY: ${TELETHON_CONCURRENCY:-3}
@@ -124,6 +142,8 @@ services:
       AGENT_SKILLS_DIR: /app/skills
       AGENT_MCP_CONFIG: ${AGENT_MCP_CONFIG:-}
       AGENT_MAX_CONCURRENT_RUNS: ${AGENT_MAX_CONCURRENT_RUNS:-2}
+      AGENT_WORKER_ENABLED: ${AGENT_WORKER_ENABLED:-false}
+    read_only: true
     healthcheck:
       test: ["CMD", "/app/agent", "healthcheck"]
       interval: 15s
@@ -135,13 +155,19 @@ services:
   app:
     build: .
     ports:
-      - "8080:8080"
+      # Loopback by default. This app has no sign-in, so a host-wide bind
+      # publishes every write endpoint to the network. A remote entry point must
+      # be an explicit deployment decision (reverse proxy + auth), not a default.
+      - "127.0.0.1:8080:8080"
     environment:
+      # T02: refuse to start (and refuse to migrate) without a real database,
+      # instead of silently serving from the in-memory PGLite fallback.
+      LOOM_RUNTIME_MODE: production
       DATABASE_URL: postgres://loom:loom@postgres:5432/loom
       TELEGRAM_WORKER_URL: http://telethon:8787
       MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-loom}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-loom-secret-change-me}
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
       MINIO_BUCKET: ${MINIO_BUCKET:-loom}
       MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-http://127.0.0.1:9000/loom}
       XAI_API_KEY: ${XAI_API_KEY:-}
@@ -156,6 +182,12 @@ services:
       AGENT_SERVICE_URL: ${AGENT_SERVICE_URL:-http://agent:8791}
       AGENT_SERVICE_TOKEN: ${AGENT_SERVICE_TOKEN:-}
       AGENT_DATA_TOKEN: ${AGENT_DATA_TOKEN:-}
+      AGENT_WORKER_ENABLED: ${AGENT_WORKER_ENABLED:-false}
+      AGENT_ASYNC_RESEARCH_ENABLED: ${AGENT_ASYNC_RESEARCH_ENABLED:-false}
+      AGENT_MCP_ALLOWED_TOOLS: ${AGENT_MCP_ALLOWED_TOOLS:-}
+      AGENT_MODEL_NAME: ${AGENT_MODEL_NAME:-grok-4.5}
+      AGENT_PRICE_INPUT_RMB_PER_MILLION: ${AGENT_PRICE_INPUT_RMB_PER_MILLION:-}
+      AGENT_PRICE_OUTPUT_RMB_PER_MILLION: ${AGENT_PRICE_OUTPUT_RMB_PER_MILLION:-}
       WECHAT_GATEWAY_URL: ${WECHAT_GATEWAY_URL:-http://wechat-gateway:8790}
       WECHAT_GATEWAY_TOKEN: ${WECHAT_GATEWAY_TOKEN:?set WECHAT_GATEWAY_TOKEN}
       VITE_AUTH_ENABLED: "false"
@@ -184,7 +216,9 @@ services:
     environment:
       CRON_ENDPOINT: http://app:8080/api/cron/tick
       CRON_SECRET: ${CRON_SECRET:?set CRON_SECRET}
-      CRON_INTERVAL_MS: ${CRON_INTERVAL_MS:-1800000}
+      # Wake-up interval, not a collection frequency: sources keep their own
+      # interval_minutes and the heavy stages are window-gated (see env.example).
+      CRON_INTERVAL_MS: ${CRON_INTERVAL_MS:-60000}
     depends_on:
       app:
         condition: service_healthy

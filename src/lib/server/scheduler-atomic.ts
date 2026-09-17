@@ -188,3 +188,58 @@ export async function mergeExistingItem(sql: Queryable, itemId: string, item: {
     JSON.stringify(item.media_urls), item.thumbnail_url, item.views, item.likes, item.published_at,
     JSON.stringify(item.extra), JSON.stringify(matchedKeywords), incomingComplete]);
 }
+
+/**
+ * T07: tag the WHOLE corpus with one phrase, in a single set-based statement.
+ *
+ * The previous implementation selected candidates with `limit 200` and then
+ * skipped rows that already carried the tag, so a corpus bigger than one page
+ * (or one whose first page was already tagged) could never finish — and re-running
+ * it did not continue, it just re-scanned the same page. Here the database does
+ * the work in one statement:
+ *
+ *   - the match is `strpos(lower(...))`, so `%` and `_` are literal characters
+ *     rather than LIKE wildcards, and matching is case-insensitive;
+ *   - `not exists (... arrays ...)` makes re-runs idempotent and case-insensitive;
+ *   - `|| jsonb_build_array(...)` appends instead of overwriting, so concurrent
+ *     tagging of two different phrases cannot lose either tag (the read-modify-
+ *     write of the old code could);
+ *   - the tag is added only to rows this statement matched, so a concurrent
+ *     writer's own tags survive.
+ *
+ * Returns how many rows were newly tagged.
+ *
+ * ponytail: one statement over the whole corpus, so a very large items table
+ * holds a row lock for the duration. At the current corpus size that is well
+ * within budget; if it ever isn't, batch by an id cursor (`where id > $last
+ * order by id limit N`) rather than reintroducing a page-then-skip scan.
+ */
+export async function tagCorpusWithPhrase(
+  sql: Queryable,
+  phrase: string,
+  options: { platforms?: string[] } = {},
+): Promise<number> {
+  const trimmed = String(phrase ?? "").trim();
+  // Boundary validation: an empty or 1-character phrase would match almost
+  // everything, and is not a meaningful keyword (parseKeywordList uses the same
+  // 2..40 rule).
+  if (trimmed.length < 2 || trimmed.length > 40) throw new Error("invalid_phrase");
+
+  const platforms = (options.platforms ?? []).filter((p) => typeof p === "string" && p);
+  const rows = await sql.query<{ id: string }>(
+    `update items
+        set matched_keywords = coalesce(matched_keywords, '[]'::jsonb) || jsonb_build_array($1::text)
+      where strpos(lower(coalesce(title, '') || E'\n' || coalesce(body, '') || E'\n' || coalesce(author, '')),
+                  lower($1::text)) > 0
+        and not exists (
+          select 1 from jsonb_array_elements_text(coalesce(matched_keywords, '[]'::jsonb)) as kw(value)
+           where lower(kw.value) = lower($1::text)
+        )
+        and ($2::jsonb = '[]'::jsonb or platform = any (
+          select jsonb_array_elements_text($2::jsonb)
+        ))
+      returning id`,
+    [trimmed, JSON.stringify(platforms)],
+  );
+  return rows.length;
+}

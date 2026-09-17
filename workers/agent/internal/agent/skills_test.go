@@ -61,6 +61,18 @@ func TestSkillsRejectForkAndDuplicates(t *testing.T) {
 	}
 }
 
+func TestSkillsRejectAbsolutePathOutsideRoot(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "secret.txt")
+	if err := os.WriteFile(outside, []byte("sentinel"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := (osBackend{root: root}).Read(context.Background(), &filesystem.ReadRequest{FilePath: outside})
+	if err == nil {
+		t.Fatal("expected path_escape")
+	}
+}
+
 func TestSkillsRejectOversize(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "x")
@@ -70,8 +82,8 @@ func TestSkillsRejectOversize(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), make([]byte, 33*1024), 0o644); err != nil {
 		t.Fatal(err)
 	}
-		_, err := (osBackend{root: root}).Read(context.Background(), &filesystem.ReadRequest{FilePath: filepath.Join(dir, "SKILL.md")})
-		if err == nil {
-			t.Fatal("expected oversize reject")
-		}
+	_, err := (osBackend{root: root}).Read(context.Background(), &filesystem.ReadRequest{FilePath: filepath.Join(dir, "SKILL.md")})
+	if err == nil {
+		t.Fatal("expected oversize reject")
+	}
 }

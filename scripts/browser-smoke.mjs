@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import { chromium } from "playwright";
 import { checkedOutputPath, checkedUrl } from "./browser-guard.mjs";
 import { computeBrandWarnings } from "./brand-check.mjs";
@@ -27,10 +27,11 @@ if (args.error) {
 }
 
 const url = checkedUrl(args.url);
-const outPng = checkedOutputPath(args.outPng, ["/workspace"]);
+const screenshotRoot = process.platform === "win32" ? resolve("screenshots") : "/workspace/screenshots";
+const outPng = checkedOutputPath(args.outPng, [screenshotRoot]);
 const derived = derivedPaths(outPng);
-const mobilePng = checkedOutputPath(derived.mobilePng, ["/workspace"]);
-const outJson = checkedOutputPath(derived.verdictJson, ["/workspace"], "verdict JSON");
+const mobilePng = checkedOutputPath(derived.mobilePng, [screenshotRoot]);
+const outJson = checkedOutputPath(derived.verdictJson, [screenshotRoot], "verdict JSON");
 
 const MAX_BASELINE_BYTES = 1024 * 1024;
 const baselineRequested = Boolean(args.baseline);
@@ -38,7 +39,7 @@ let baselinePath = null;
 let baselineResolveError = null;
 if (baselineRequested) {
   try {
-    baselinePath = checkedOutputPath(realpathSync(args.baseline), ["/workspace"], "baseline");
+    baselinePath = checkedOutputPath(realpathSync(args.baseline), [screenshotRoot], "baseline");
   } catch (err) {
     baselineResolveError = err?.code ?? "unresolvable path";
   }
@@ -98,9 +99,15 @@ try {
   const viewports = {};
   for (const vp of VIEWPORTS) {
     const errors = { consoleErrors: [], pageErrors: [] };
-    const page = await browser.newPage({
-      viewport: { width: vp.width, height: vp.height },
-    });
+      const page = await browser.newPage({
+        viewport: { width: vp.width, height: vp.height },
+      });
+      if (process.env.AGENT_OFFLINE_SMOKE === "true") {
+        await page.route("**/*", route => {
+          const target = new URL(route.request().url());
+          return target.origin === new URL(url).origin ? route.continue() : route.fulfill({status:200,contentType:route.request().resourceType()==="stylesheet"?"text/css":"application/javascript",body:""});
+        });
+      }
     page.on("console", (msg) => {
       if (msg.type() === "error") errors.consoleErrors.push(msg.text());
     });

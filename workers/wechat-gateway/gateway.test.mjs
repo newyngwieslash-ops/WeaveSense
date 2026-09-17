@@ -530,8 +530,13 @@ test("serves authenticated source, health, and feed routes", async (t) => {
     <link href="https://mp.weixin.qq.com/s?__biz=MzA1&amp;mid=9&amp;idx=1&amp;sn=abc"/></entry></feed>`)).listen(0, "127.0.0.1");
   await once(upstream, "listening");
   const store = openStore(":memory:");
+  // The fixture's article is dated 2026-08-28, so the gateway must be told that
+  // 2026-08-28 is "now": its retention prunes items older than 30 days, and with
+  // the real wall clock the fixture silently ages out of the 7-day feed window
+  // (the entry disappears — a time-dependent fixture defect, not a product bug).
   const gateway = createGatewayServer({ store, token: "gateway-test",
-    allowedFeedHosts: new Set(["127.0.0.1"]) }).listen(0, "127.0.0.1");
+    allowedFeedHosts: new Set(["127.0.0.1"]),
+    now: () => new Date("2026-08-28T12:00:00.000Z") }).listen(0, "127.0.0.1");
   await once(gateway, "listening");
   t.after(() => { upstream.close(); gateway.close(); store.close(); });
   const upstreamPort = upstream.address().port;

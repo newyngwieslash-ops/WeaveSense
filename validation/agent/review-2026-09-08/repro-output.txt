@@ -1,0 +1,166 @@
+✖ R01: legacy analysis accepts the exact JSON shape its own prompt requests (1499.1676ms)
+✖ R02: completed request replays even if source body is later emptied (1080.3344ms)
+✖ R03: research persists a valid newly retrieved evidence receipt (1405.8239ms)
+✖ R04: get_item cannot escape a saved run time range (1258.8476ms)
+✖ R05: zero daily count and money budgets enqueue no analysis (1401.1032ms)
+✖ R06: an expired job lease cannot complete (1003.658ms)
+✖ R07: expired running requests are not reported in_progress forever (1051.6015ms)
+✖ R08: client timeout covers response body after headers arrive (91.1947ms)
+✖ R09: source metadata changes invalidate current-item analysis (1254.8073ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 0
+ℹ fail 9
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 10462.3619
+
+✖ failing tests:
+
+test at validation\agent\review-2026-09-08\repro.test.ts:40:1
+✖ R01: legacy analysis accepts the exact JSON shape its own prompt requests (1499.1676ms)
+  AssertionError [ERR_ASSERTION]: {"ok":false,"error":"Unrecognized keys: \"summary\", \"topics\", \"entities\", \"insights\", \"tags\"","error_code":"invalid_output","run_id":"1de2b483-b3da-4442-a3b2-135988ebb4dd"}
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-2026-09-08/repro.test.ts:55:12)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at validation\agent\review-2026-09-08\repro.test.ts:61:1
+✖ R02: completed request replays even if source body is later emptied (1080.3344ms)
+  AssertionError [ERR_ASSERTION]: {"ok":false,"error":"没有可分析的正文","error_code":"invalid_request"}
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-2026-09-08/repro.test.ts:71:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at validation\agent\review-2026-09-08\repro.test.ts:74:1
+✖ R03: research persists a valid newly retrieved evidence receipt (1405.8239ms)
+  AssertionError [ERR_ASSERTION]: {"ok":false,"error":"引用无效","error_code":"invalid_citation","run_id":"1d01166d-4f18-4535-9e1d-fcada4ad91b1","citations":[]}
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-2026-09-08/repro.test.ts:90:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at validation\agent\review-2026-09-08\repro.test.ts:93:1
+✖ R04: get_item cannot escape a saved run time range (1258.8476ms)
+  AssertionError [ERR_ASSERTION]: {"status":200,"body":{"item_id":"item-1","evidence_id":"item:item-1:0","start":0,"end":7,"text":"电池原始正文。","coverage":"full"}}
+  
+  200 !== 403
+  
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-2026-09-08/repro.test.ts:101:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 200,
+    expected: 403,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at validation\agent\review-2026-09-08\repro.test.ts:104:1
+✖ R05: zero daily count and money budgets enqueue no analysis (1401.1032ms)
+  AssertionError [ERR_ASSERTION]: {"result":{"enqueued":1},"budget":[{"day":"2026-09-08","price_version":"review","reserved_count":1,"reserved_rmb":"1","settled_count":0,"settled_rmb":"0"}]}
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-2026-09-08/repro.test.ts:109:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at validation\agent\review-2026-09-08\repro.test.ts:112:1
+✖ R06: an expired job lease cannot complete (1003.658ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  true !== false
+  
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-2026-09-08/repro.test.ts:118:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at validation\agent\review-2026-09-08\repro.test.ts:121:1
+✖ R07: expired running requests are not reported in_progress forever (1051.6015ms)
+  AssertionError [ERR_ASSERTION]: {"id":"95103aab-43d5-4a8f-a6be-15cd950983bd","request_id":"a6a1bf6f-64ba-47f6-b952-2c5fa0a1f694","mode":"research","provider":"eino","input_hash":"h","material_hash":"m","policy_version":"v1","request_json":{},"status":"running","claim_token":"996607a5-c203-46d5-9a41-ab2e3a839e8e","data_token_hash":"","expires_at":"2000-01-01T00:00:00.000Z","response_json":null,"events_json":[],"model":"","prompt_version":"","skill_versions":{},"input_tokens":null,"output_tokens":null,"model_calls":0,"tool_calls":0,"error_code":"","created_at":"2026-09-08T00:16:08.069Z","finished_at":null}
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-2026-09-08/repro.test.ts:128:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'in_progress',
+    expected: 'in_progress',
+    operator: 'notStrictEqual',
+    diff: 'simple'
+  }
+
+test at validation\agent\review-2026-09-08\repro.test.ts:131:1
+✖ R08: client timeout covers response body after headers arrive (91.1947ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-2026-09-08/repro.test.ts:136:3)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /timeout|aborted|Abort|model_timeout/i,
+    operator: 'rejects',
+    diff: 'simple'
+  }
+
+test at validation\agent\review-2026-09-08\repro.test.ts:140:1
+✖ R09: source metadata changes invalidate current-item analysis (1254.8073ms)
+  AssertionError [ERR_ASSERTION]: {"ok":true,"id":"d087c454-0c9e-49f5-9fa5-748f0fe1c9fd","run_id":"599df82c-ab75-43bd-8d21-594daf3905c1"}
+  
+  true !== false
+  
+      at TestContext.<anonymous> (file:///F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/validation/agent/review-2026-09-08/repro.test.ts:146:10)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

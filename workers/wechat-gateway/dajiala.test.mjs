@@ -67,8 +67,19 @@ test("lists today's articles with the exact provider request and no detail call"
   });
   assert.equal(JSON.stringify(result).includes("key-test"), false);
   assert.equal(JSON.stringify(result).includes("verify-test"), false);
-  assert.equal(client.estimatedListCost, 0.08);
-  assert.equal(client.estimatedDetailCost, 0.045);
+  // T13: the adapter no longer asserts a hardcoded price. The estimate is an
+  // operator-supplied upper bound; without one it is null and paid admission is
+  // refused (see t13-spend.test.mjs). The previous 0.08 was below the real 0.14
+  // charge in the incident record, which is why it must not be a default.
+  assert.equal(client.estimatedListCost, null);
+  assert.equal(client.estimatedDetailCost, null);
+  assert.equal(createDajialaClient({ key: "key-test", baseUrl: baseUrl + "/", fetchImpl: fetch,
+    estimatedListCost: 0.2, estimatedDetailCost: 0.1 }).estimatedListCost, 0.2);
+  // A zero/negative/garbage bound is refused rather than used as a price.
+  assert.equal(createDajialaClient({ key: "key-test", baseUrl: baseUrl + "/", fetchImpl: fetch,
+    estimatedListCost: 0 }).estimatedListCost, null);
+  assert.equal(createDajialaClient({ key: "key-test", baseUrl: baseUrl + "/", fetchImpl: fetch,
+    estimatedListCost: "abc" }).estimatedListCost, null);
 });
 
 test("uses a 20 second native timeout", async () => {
@@ -167,6 +178,8 @@ for (const [name, makeResponse, expectedStatus = 200] of mappingFailures) {
         operation: "list_today",
         status: "error",
         error_type: "mapping_error",
+        // T13: a stable, non-sensitive reason code (never provider text).
+        error_code: "invalid_response",
         http_status: expectedStatus,
       });
       return true;
@@ -174,14 +187,16 @@ for (const [name, makeResponse, expectedStatus = 200] of mappingFailures) {
   });
 }
 
+// T13: the sub-code is part of the contract — it is what tells an operator
+// whether to back off (rate limit), wait out an outage, or check connectivity.
 const technicalFailures = [
-  ["HTTP 429", async () => response({}, 429), 429],
-  ["HTTP 503", async () => response({}, 503), 503],
-  ["timeout", async () => { throw new DOMException("key-test", "TimeoutError"); }, null],
-  ["network", async () => { throw new Error("verify-test"); }, null],
+  ["HTTP 429", async () => response({}, 429), 429, "rate_limited"],
+  ["HTTP 503", async () => response({}, 503), 503, "provider_5xx"],
+  ["timeout", async () => { throw new DOMException("key-test", "TimeoutError"); }, null, "timeout"],
+  ["network", async () => { throw new Error("verify-test"); }, null, "network"],
 ];
 
-for (const [name, fetchImpl, httpStatus] of technicalFailures) {
+for (const [name, fetchImpl, httpStatus, expectedCode] of technicalFailures) {
   test(`${name} is a sanitized retryable technical error`, async () => {
     const client = clientWith(fetchImpl);
     await assert.rejects(client.listToday(source), (error) => {
@@ -195,6 +210,9 @@ for (const [name, fetchImpl, httpStatus] of technicalFailures) {
         operation: "list_today",
         status: "error",
         error_type: "technical_error",
+        // T13: a stable sub-code so an operator can tell a rate limit from a
+        // provider outage or a dead connection without reading provider text.
+        error_code: expectedCode,
         http_status: httpStatus,
       });
       return true;

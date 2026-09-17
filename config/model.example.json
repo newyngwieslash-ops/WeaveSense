@@ -1,0 +1,5 @@
+{
+  "baseURL": "http://localhost:10100/v1",
+  "model": "填写网关中的完整模型ID",
+  "apiKey": ""
+}

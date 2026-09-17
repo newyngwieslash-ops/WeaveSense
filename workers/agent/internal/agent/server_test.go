@@ -48,13 +48,13 @@ func validAnalyzeJSON() []byte {
 
 func testConfig() Config {
 	return Config{
-		ListenAddr:      "127.0.0.1:0",
-		ServiceToken:    "test-token",
-		ModelBaseURL:    "http://127.0.0.1:9",
-		ModelName:       "compat-model",
-		ModelAPIKey:     "k",
-		MaxConcurrent:   2,
-		SkillsDir:       "",
+		ListenAddr:    "127.0.0.1:0",
+		ServiceToken:  "test-token",
+		ModelBaseURL:  "http://127.0.0.1:9",
+		ModelName:     "compat-model",
+		ModelAPIKey:   "k",
+		MaxConcurrent: 2,
+		SkillsDir:     "",
 	}
 }
 
@@ -261,7 +261,7 @@ func successStub() ExecuteResponse {
 		RunID:         "6cb9226b-bf73-4e87-8d4a-1b121e24ab46",
 		OK:            true,
 		Result: &AgentResult{
-			Analysis: &Analysis{Summary: summary, Topics: []string{"主题"}, Entities: []string{}, Insights: "", Tags: []string{}},
+			Analysis:  &Analysis{Summary: summary, Topics: []string{"主题"}, Entities: []string{}, Insights: "", Tags: []string{}},
 			Citations: []EvidenceCitation{},
 			Coverage:  CoverageFull,
 			Warnings:  []string{},

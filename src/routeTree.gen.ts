@@ -15,10 +15,12 @@ import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as JobsRouteImport } from './routes/jobs'
 import { Route as KeywordsRouteImport } from './routes/keywords'
 import { Route as KnowledgeRouteImport } from './routes/knowledge'
+import { Route as ModelSettingsRouteImport } from './routes/model-settings'
 import { Route as NodesRouteImport } from './routes/nodes'
 import { Route as PipelineRouteImport } from './routes/pipeline'
 import { Route as PrdRouteImport } from './routes/prd'
 import { Route as SourcesRouteImport } from './routes/sources'
+import { Route as ApiModelSettingsRouteImport } from './routes/api/model-settings'
 import { Route as InboxItemIdRouteImport } from './routes/inbox.$itemId'
 import { Route as ApiCronTickRouteImport } from './routes/api/cron/tick'
 import { Route as ApiInternalAgentDataRouteImport } from './routes/api/internal/agent-data'
@@ -54,6 +56,11 @@ const KnowledgeRoute = KnowledgeRouteImport.update({
   path: '/knowledge',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ModelSettingsRoute = ModelSettingsRouteImport.update({
+  id: '/model-settings',
+  path: '/model-settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const NodesRoute = NodesRouteImport.update({
   id: '/nodes',
   path: '/nodes',
@@ -72,6 +79,11 @@ const PrdRoute = PrdRouteImport.update({
 const SourcesRoute = SourcesRouteImport.update({
   id: '/sources',
   path: '/sources',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiModelSettingsRoute = ApiModelSettingsRouteImport.update({
+  id: '/api/model-settings',
+  path: '/api/model-settings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InboxItemIdRoute = InboxItemIdRouteImport.update({
@@ -102,10 +114,12 @@ export interface FileRoutesByFullPath {
   '/jobs': typeof JobsRoute
   '/keywords': typeof KeywordsRoute
   '/knowledge': typeof KnowledgeRoute
+  '/model-settings': typeof ModelSettingsRoute
   '/nodes': typeof NodesRoute
   '/pipeline': typeof PipelineRoute
   '/prd': typeof PrdRoute
   '/sources': typeof SourcesRoute
+  '/api/model-settings': typeof ApiModelSettingsRoute
   '/inbox/$itemId': typeof InboxItemIdRoute
   '/api/cron/tick': typeof ApiCronTickRoute
   '/api/internal/agent-data': typeof ApiInternalAgentDataRoute
@@ -118,10 +132,12 @@ export interface FileRoutesByTo {
   '/jobs': typeof JobsRoute
   '/keywords': typeof KeywordsRoute
   '/knowledge': typeof KnowledgeRoute
+  '/model-settings': typeof ModelSettingsRoute
   '/nodes': typeof NodesRoute
   '/pipeline': typeof PipelineRoute
   '/prd': typeof PrdRoute
   '/sources': typeof SourcesRoute
+  '/api/model-settings': typeof ApiModelSettingsRoute
   '/inbox/$itemId': typeof InboxItemIdRoute
   '/api/cron/tick': typeof ApiCronTickRoute
   '/api/internal/agent-data': typeof ApiInternalAgentDataRoute
@@ -135,10 +151,12 @@ export interface FileRoutesById {
   '/jobs': typeof JobsRoute
   '/keywords': typeof KeywordsRoute
   '/knowledge': typeof KnowledgeRoute
+  '/model-settings': typeof ModelSettingsRoute
   '/nodes': typeof NodesRoute
   '/pipeline': typeof PipelineRoute
   '/prd': typeof PrdRoute
   '/sources': typeof SourcesRoute
+  '/api/model-settings': typeof ApiModelSettingsRoute
   '/inbox/$itemId': typeof InboxItemIdRoute
   '/api/cron/tick': typeof ApiCronTickRoute
   '/api/internal/agent-data': typeof ApiInternalAgentDataRoute
@@ -153,10 +171,12 @@ export interface FileRouteTypes {
     | '/jobs'
     | '/keywords'
     | '/knowledge'
+    | '/model-settings'
     | '/nodes'
     | '/pipeline'
     | '/prd'
     | '/sources'
+    | '/api/model-settings'
     | '/inbox/$itemId'
     | '/api/cron/tick'
     | '/api/internal/agent-data'
@@ -169,10 +189,12 @@ export interface FileRouteTypes {
     | '/jobs'
     | '/keywords'
     | '/knowledge'
+    | '/model-settings'
     | '/nodes'
     | '/pipeline'
     | '/prd'
     | '/sources'
+    | '/api/model-settings'
     | '/inbox/$itemId'
     | '/api/cron/tick'
     | '/api/internal/agent-data'
@@ -185,10 +207,12 @@ export interface FileRouteTypes {
     | '/jobs'
     | '/keywords'
     | '/knowledge'
+    | '/model-settings'
     | '/nodes'
     | '/pipeline'
     | '/prd'
     | '/sources'
+    | '/api/model-settings'
     | '/inbox/$itemId'
     | '/api/cron/tick'
     | '/api/internal/agent-data'
@@ -202,10 +226,12 @@ export interface RootRouteChildren {
   JobsRoute: typeof JobsRoute
   KeywordsRoute: typeof KeywordsRoute
   KnowledgeRoute: typeof KnowledgeRoute
+  ModelSettingsRoute: typeof ModelSettingsRoute
   NodesRoute: typeof NodesRoute
   PipelineRoute: typeof PipelineRoute
   PrdRoute: typeof PrdRoute
   SourcesRoute: typeof SourcesRoute
+  ApiModelSettingsRoute: typeof ApiModelSettingsRoute
   ApiCronTickRoute: typeof ApiCronTickRoute
   ApiInternalAgentDataRoute: typeof ApiInternalAgentDataRoute
   ApiInternalAgentJobsRoute: typeof ApiInternalAgentJobsRoute
@@ -255,6 +281,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof KnowledgeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/model-settings': {
+      id: '/model-settings'
+      path: '/model-settings'
+      fullPath: '/model-settings'
+      preLoaderRoute: typeof ModelSettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/nodes': {
       id: '/nodes'
       path: '/nodes'
@@ -281,6 +314,13 @@ declare module '@tanstack/react-router' {
       path: '/sources'
       fullPath: '/sources'
       preLoaderRoute: typeof SourcesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/model-settings': {
+      id: '/api/model-settings'
+      path: '/api/model-settings'
+      fullPath: '/api/model-settings'
+      preLoaderRoute: typeof ApiModelSettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/inbox/$itemId': {
@@ -331,10 +371,12 @@ const rootRouteChildren: RootRouteChildren = {
   JobsRoute: JobsRoute,
   KeywordsRoute: KeywordsRoute,
   KnowledgeRoute: KnowledgeRoute,
+  ModelSettingsRoute: ModelSettingsRoute,
   NodesRoute: NodesRoute,
   PipelineRoute: PipelineRoute,
   PrdRoute: PrdRoute,
   SourcesRoute: SourcesRoute,
+  ApiModelSettingsRoute: ApiModelSettingsRoute,
   ApiCronTickRoute: ApiCronTickRoute,
   ApiInternalAgentDataRoute: ApiInternalAgentDataRoute,
   ApiInternalAgentJobsRoute: ApiInternalAgentJobsRoute,

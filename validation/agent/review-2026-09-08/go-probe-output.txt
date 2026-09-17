@@ -1,0 +1,11 @@
+=== RUN   TestReviewStandardsResearchBudget
+    review_standards_probe_test.go:34: actual_http_model_calls=2 policy_calls=1 reported_runtime=&{Model:test PromptVersion:loom-agent-v1 SkillVersions:map[] InputTokens:<nil> OutputTokens:<nil> ModelCalls:0 ToolCalls:1 Events:[{Type:tool Name:search_items DurationMS:1 OK:true}]} max_output_transmitted=false result_ok=true err=<nil>
+    review_standards_probe_test.go:35: policy max_model_calls bypassed
+    review_standards_probe_test.go:36: policy max_output_tokens_per_call not sent
+--- FAIL: TestReviewStandardsResearchBudget (0.01s)
+=== RUN   TestReviewStandardsSkillRoot
+    review_standards_probe_test.go:44: read outside configured skills root: outside sentinel
+--- FAIL: TestReviewStandardsSkillRoot (0.00s)
+FAIL
+FAIL	loom.local/agent/internal/agent	3.674s
+FAIL

@@ -48,8 +48,9 @@ export async function executeAgent(
     throw new AgentClientError("agent_unconfigured");
   }
   const fetchImpl = config.fetchImpl ?? fetch;
+  const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), config.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let res: Response;
   try {
     res = await fetchImpl(`${config.serviceUrl.replace(/\/$/, "")}/v1/execute`, {
@@ -67,16 +68,45 @@ export async function executeAgent(
     const timeoutLike = error instanceof Error &&
       (error.name === "TimeoutError" || error.name === "AbortError" || error.message === "aborted");
     throw new AgentClientError(timeoutLike ? "model_timeout" : "agent_unavailable", message);
-  } finally {
-    clearTimeout(timeout);
   }
 
   const contentType = res.headers.get("content-type") ?? "";
-  const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.byteLength > MAX_RESPONSE_BYTES) {
-    throw new AgentClientError("invalid_output", "response_too_large");
+  let raw: string;
+  try {
+    if (!res.body) {
+      raw = await res.text();
+    } else {
+      const reader = res.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      const deadline = Date.now() + timeoutMs;
+      for (;;) {
+        if (Date.now() > deadline) {
+          controller.abort();
+          await reader.cancel().catch(() => undefined);
+          throw new AgentClientError("model_timeout", "aborted");
+        }
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          total += value.byteLength;
+          if (total > MAX_RESPONSE_BYTES) {
+            await reader.cancel();
+            throw new AgentClientError("invalid_output", "response_too_large");
+          }
+          chunks.push(value);
+        }
+      }
+      raw = Buffer.concat(chunks.map((c) => Buffer.from(c))).toString("utf8");
+    }
+  } catch (error) {
+    if (error instanceof AgentClientError) throw error;
+    const timeoutLike = error instanceof Error &&
+      (error.name === "TimeoutError" || error.name === "AbortError" || error.message === "aborted");
+    throw new AgentClientError(timeoutLike ? "model_timeout" : "agent_unavailable", "read_failed");
+  } finally {
+    clearTimeout(timeout);
   }
-  const raw = buf.toString("utf8");
   if (!contentType.includes("application/json")) {
     throw new AgentClientError("invalid_output", "non_json_response");
   }

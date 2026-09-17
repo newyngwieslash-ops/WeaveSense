@@ -185,6 +185,18 @@ async def resolve_channel(channel: str):
 
 
 async def history(channel: str, min_id: int, limit: int) -> dict[str, Any]:
+    """Fetch one bounded page of channel history, ascending from the cursor.
+
+    T10: the page must start at the *oldest* message after the cursor, not the
+    newest end of the channel. `get_messages(min_id=..., limit=N)` without
+    `reverse=True` returns the newest N messages above `min_id`, so a stored
+    cursor of 100 with messages 101..350 returned 251..350 and then advanced the
+    cursor to 350 — dropping 101..250 permanently.
+
+    With `reverse=True` the call yields 101..180, and `last_id` is that page's
+    maximum, so the next call continues from 181. The cursor only advances once
+    the caller has persisted this page.
+    """
     global paused_until
     if client is None or not client.is_connected():
         return {"error": "Telethon 未登录"}
@@ -193,27 +205,31 @@ async def history(channel: str, min_id: int, limit: int) -> dict[str, Any]:
     async with gate:
         try:
             entity = await resolve_channel(channel)
-            messages = await client.get_messages(entity, min_id=min_id, limit=limit)
+            messages = await client.get_messages(entity, min_id=min_id, limit=limit, reverse=True)
         except FloodWaitError as exc:
             paused_until = time.time() + int(exc.seconds) + 1
             return {"error": "flood_wait", "flood_wait": int(exc.seconds), "items": []}
         except ChannelPrivateError:
             try:
                 entity = await resolve_channel(channel)
-                messages = await client.get_messages(entity, min_id=min_id, limit=limit)
+                messages = await client.get_messages(
+                    entity, min_id=min_id, limit=limit, reverse=True
+                )
             except Exception as exc:
                 return {"error": str(exc), "items": []}
         except (UsernameNotOccupiedError, ValueError) as exc:
             return {"error": str(exc), "items": []}
         items = []
         last_id = min_id
-        for msg in reversed(list(messages)):
+        for msg in messages:
             if not isinstance(msg, Message):
                 continue
             if msg.id <= min_id:
                 continue
             items.append(await normalize(msg, channel))
             last_id = max(last_id, msg.id)
+        # `last_id` is a plain integer here and is serialized as a decimal
+        # string: message ids can exceed 2^53, where JSON numbers lose precision.
         return {"items": items, "last_id": str(last_id) if last_id else "0"}
 
 

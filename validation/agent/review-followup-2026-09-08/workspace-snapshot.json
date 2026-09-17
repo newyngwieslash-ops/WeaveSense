@@ -1,0 +1,155 @@
+{
+  "head": "76b6da1ac8a8d6d6c6a4b30e7f0309c9e18fd8b9",
+  "reviewed_at": "2026-09-08T10:14:54.8025532+08:00",
+  "scope": "uncommitted remediation; excludes existing restart.bat",
+  "files": [
+    {
+      "path": "docs/operations/agent-service.md",
+      "sha256": "e77b862244bad6d010c85edcbcc620fe1e02b180d7e3f652c3da18fa85a5cce7"
+    },
+    {
+      "path": "env.example",
+      "sha256": "1928c13621024a506711d4816318d78fdc4293d0fd585885c2dda89fae00cf68"
+    },
+    {
+      "path": "migrations/0014_agent_integrity.sql",
+      "sha256": "0f044dfc6724b27a79e0ee56f27a5d835b009722d6ce86c3e6f363397b3c6d0f"
+    },
+    {
+      "path": "migrations/0015_agent_budget_reservations.sql",
+      "sha256": "a0e0c57e5a9861076fab969bdfead9470b3d408bc33bd8348cf7ef601be732a0"
+    },
+    {
+      "path": "package.json",
+      "sha256": "dcddae38e08de5e646927ed9932e86dcf464808f6d2df06ce17fd79cff5a90f0"
+    },
+    {
+      "path": "scripts/agent-e2e.mjs",
+      "sha256": "88255f41417c44b1f79b61b7beba573e5e84f6600e9c4e761d727fb7ba735708"
+    },
+    {
+      "path": "scripts/agent-retrieval-eval.mjs",
+      "sha256": "366610f7ce41906f7b22cf6f956ea27af2b3bcc694ac8df582b48f75feb685c0"
+    },
+    {
+      "path": "src/lib/db.ts",
+      "sha256": "ff614050d38c05ceee03cf0bc10c2a7fa961850dab85d17f352ccb2a4fbb5090"
+    },
+    {
+      "path": "src/lib/server/agent-checkpoints.test.ts",
+      "sha256": "bdb87a0525d46af4ddb20f1343554b0edc9f263201abfef0708cad298d0de8f5"
+    },
+    {
+      "path": "src/lib/server/agent-checkpoints.ts",
+      "sha256": "d3981708174f95b6cddd3f6e07ff3e81ce0e6a3102cfd8e13f812265d1aa0b78"
+    },
+    {
+      "path": "src/lib/server/agent-client.test.ts",
+      "sha256": "0c9c30b2b5af29e4ef37b29bff64506b44ac24b04b6cdd474e5163cd0d773575"
+    },
+    {
+      "path": "src/lib/server/agent-client.ts",
+      "sha256": "68a04cbf01fce93cdd7246660f830f6e8fa62adcdb89a8a3a89e6841f4760a61"
+    },
+    {
+      "path": "src/lib/server/agent-context.ts",
+      "sha256": "bf5c5af39c3f3b6ed76075c51666a96a75b695a1fc3f19cb43452720ec83081e"
+    },
+    {
+      "path": "src/lib/server/agent-data.test.ts",
+      "sha256": "b2b0a3d4068029a05d486302072d9159223944bac7fdad2a2f1fc2886c731403"
+    },
+    {
+      "path": "src/lib/server/agent-data.ts",
+      "sha256": "2e4894143bdee92b79b6dec9dc1982e10576723371c0c5708228ed19927ef8d2"
+    },
+    {
+      "path": "src/lib/server/agent-integrity.test.ts",
+      "sha256": "000712f9ab5128a036a257536236e491f4263266b9447c6a224068e9399907f5"
+    },
+    {
+      "path": "src/lib/server/agent-jobs.test.ts",
+      "sha256": "a0a3855c2aa1bc283169c8db26b60a39c940c693bc6b6d832e57a87c244b4879"
+    },
+    {
+      "path": "src/lib/server/agent-jobs.ts",
+      "sha256": "e68513bdc0f119094fd5b7b9d10925241edd00d8840867b6d4b4bd274434c774"
+    },
+    {
+      "path": "src/lib/server/agent-queue.test.ts",
+      "sha256": "e59fc85dc6ccc1e1316fb1edab0397951db2591d274e9ce3e2fef228f09ef4d9"
+    },
+    {
+      "path": "src/lib/server/agent-queue.ts",
+      "sha256": "3835e4882c969b55f654bd0ccc51f80804a9dc57842040b349c6ad1c3618266b"
+    },
+    {
+      "path": "src/lib/server/agent-runs.test.ts",
+      "sha256": "f4c6984b98affaa70f61f2048dd8ec59c897e83a46ef1544c273359b5ea034e2"
+    },
+    {
+      "path": "src/lib/server/agent-runs.ts",
+      "sha256": "360bf20d254e6cf3ecd02c1d93452009c9fd43254291424962ea7b9fee277d51"
+    },
+    {
+      "path": "src/lib/server/analyze.test.ts",
+      "sha256": "095a4d6f858a497087e3bab45cd286e35b70d1d919ebba6b82d789ee5231beba"
+    },
+    {
+      "path": "src/lib/server/analyze.ts",
+      "sha256": "7f3f8d3b2f998fbed2c96b9f2662adf91bd357dbaa5be2415b0b3bd33c0a41e2"
+    },
+    {
+      "path": "src/lib/server/config.ts",
+      "sha256": "69af4377217befa3269ac7f4d7e55061d7b2dcb056a7f86a6caf09c06f017409"
+    },
+    {
+      "path": "src/lib/server/fns.ts",
+      "sha256": "722865b3fa6c99b3d4dfe084b5581ece3cac0501a2228eece18a7338e5987ff0"
+    },
+    {
+      "path": "src/routes/knowledge.tsx",
+      "sha256": "0eda4a327bd09569be4a7ef6afc168d42de7af95507f14f0c4a9441b2092dd0e"
+    },
+    {
+      "path": "workers/agent/cmd/agent/main.go",
+      "sha256": "1fed184ba5c164a589b70ca5cc72619731f83b7268108cad2fa94205acc5d774"
+    },
+    {
+      "path": "workers/agent/internal/agent/mcp.go",
+      "sha256": "0ba93b9b42712855ea5b9000c0d8453812b67eb2c841af6dfa9677bc7ab414b4"
+    },
+    {
+      "path": "workers/agent/internal/agent/model.go",
+      "sha256": "029357e759b8c34b4e0124a901d47f46b6baae3c33647475b6619537aceea3c6"
+    },
+    {
+      "path": "workers/agent/internal/agent/research.go",
+      "sha256": "4305fda8a4e4308087d20e9dba33ca851b725fe483501e1da0f4d4f8958ad8cb"
+    },
+    {
+      "path": "workers/agent/internal/agent/server.go",
+      "sha256": "c17f28e496b5d3ad3d33bc986a4a3115c2663ba71fed13fa92c5fda16d48e5c5"
+    },
+    {
+      "path": "workers/agent/internal/agent/skills_test.go",
+      "sha256": "c3c1b91de53f1a8aa2621c2729fa903e4c78fcad5269f23b5fa4012dc9d3280d"
+    },
+    {
+      "path": "workers/agent/internal/agent/skills.go",
+      "sha256": "6f36bf2dd53f180d15c746dc05f72e1107c9f3bc36e7300129b00309ded3fae6"
+    },
+    {
+      "path": "workers/agent/internal/agent/tools.go",
+      "sha256": "a23d1a4eb54694d5276d67352f12fe9b35b6f161ada6dc0db3ad9811e9a013a3"
+    },
+    {
+      "path": "workers/agent/internal/agent/worker.go",
+      "sha256": "2abfa58d3f457c18a3276fa7620723aae26864b781a4fbcc94e1c63d5424e834"
+    },
+    {
+      "path": "workers/agent/internal/agent/workflow.go",
+      "sha256": "ea6df23f4f38d60fabb847904d29f32ce07eff191cb3bd24ddccb1514c45aec9"
+    }
+  ]
+}

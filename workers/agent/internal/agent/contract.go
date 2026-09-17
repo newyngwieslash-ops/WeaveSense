@@ -40,17 +40,17 @@ const (
 )
 
 type Source struct {
-	EvidenceID  string    `json:"evidence_id"`
-	ItemID      string    `json:"item_id"`
-	Title       string    `json:"title"`
-	Platform    string    `json:"platform"`
-	SourceName  string    `json:"source_name"`
-	URL         string    `json:"url"`
-	PublishedAt *string   `json:"published_at"`
-	Text        string    `json:"text"`
-	Start       int       `json:"start"`
-	End         int       `json:"end"`
-	Coverage    Coverage  `json:"coverage"`
+	EvidenceID  string   `json:"evidence_id"`
+	ItemID      string   `json:"item_id"`
+	Title       string   `json:"title"`
+	Platform    string   `json:"platform"`
+	SourceName  string   `json:"source_name"`
+	URL         string   `json:"url"`
+	PublishedAt *string  `json:"published_at"`
+	Text        string   `json:"text"`
+	Start       int      `json:"start"`
+	End         int      `json:"end"`
+	Coverage    Coverage `json:"coverage"`
 }
 
 type DateRange struct {
@@ -73,12 +73,12 @@ type Policy struct {
 }
 
 type ExecuteRequest struct {
-	SchemaVersion    int          `json:"schema_version"`
-	RunID            string       `json:"run_id"`
-	Mode             Mode         `json:"mode"`
-	Input            ExecuteInput `json:"input"`
-	Policy           Policy       `json:"policy"`
-	DataAccessToken  string       `json:"data_access_token,omitempty"`
+	SchemaVersion   int          `json:"schema_version"`
+	RunID           string       `json:"run_id"`
+	Mode            Mode         `json:"mode"`
+	Input           ExecuteInput `json:"input"`
+	Policy          Policy       `json:"policy"`
+	DataAccessToken string       `json:"data_access_token,omitempty"`
 }
 
 type Analysis struct {
@@ -113,39 +113,39 @@ type Runtime struct {
 }
 
 type Evidence struct {
-	EvidenceID string `json:"evidence_id"`
+	EvidenceID string  `json:"evidence_id"`
 	ItemID     *string `json:"item_id"`
-	Title      string `json:"title"`
-	URL        string `json:"url"`
-	Text       string `json:"text"`
-	Origin     Origin `json:"origin"`
+	Title      string  `json:"title"`
+	URL        string  `json:"url"`
+	Text       string  `json:"text"`
+	Origin     Origin  `json:"origin"`
 }
 
 type AgentResult struct {
-	Analysis             *Analysis           `json:"analysis,omitempty"`
-	Title                *string             `json:"title,omitempty"`
-	Content              *string             `json:"content,omitempty"`
-	Citations            []EvidenceCitation  `json:"citations"`
-	InsufficientEvidence bool                `json:"insufficient_evidence"`
-	Coverage             Coverage            `json:"coverage"`
-	Warnings             []string            `json:"warnings"`
+	Analysis             *Analysis          `json:"analysis,omitempty"`
+	Title                *string            `json:"title,omitempty"`
+	Content              *string            `json:"content,omitempty"`
+	Citations            []EvidenceCitation `json:"citations"`
+	InsufficientEvidence bool               `json:"insufficient_evidence"`
+	Coverage             Coverage           `json:"coverage"`
+	Warnings             []string           `json:"warnings"`
 }
 
 type ExecuteError struct {
-	Code            string `json:"code"`
-	Message         string `json:"message"`
-	Retryable       bool   `json:"retryable"`
-	OutcomeUnknown  bool   `json:"outcome_unknown"`
+	Code           string `json:"code"`
+	Message        string `json:"message"`
+	Retryable      bool   `json:"retryable"`
+	OutcomeUnknown bool   `json:"outcome_unknown"`
 }
 
 type ExecuteResponse struct {
-	SchemaVersion int            `json:"schema_version"`
-	RunID         string         `json:"run_id"`
-	OK            bool           `json:"ok"`
-	Result        *AgentResult   `json:"result,omitempty"`
-	Runtime       *Runtime       `json:"runtime,omitempty"`
-	Evidence      []Evidence     `json:"evidence,omitempty"`
-	Error         *ExecuteError  `json:"error,omitempty"`
+	SchemaVersion int           `json:"schema_version"`
+	RunID         string        `json:"run_id"`
+	OK            bool          `json:"ok"`
+	Result        *AgentResult  `json:"result,omitempty"`
+	Runtime       *Runtime      `json:"runtime,omitempty"`
+	Evidence      []Evidence    `json:"evidence,omitempty"`
+	Error         *ExecuteError `json:"error,omitempty"`
 }
 
 func runeLen(s string) int { return utf8.RuneCountInString(s) }
@@ -327,7 +327,7 @@ func ValidateResponse(resp ExecuteResponse, mode Mode) error {
 		if resp.Error == nil || strings.TrimSpace(resp.Error.Code) == "" || strings.TrimSpace(resp.Error.Message) == "" {
 			return errors.New("invalid_error")
 		}
-		if resp.Result != nil || resp.Runtime != nil {
+		if resp.Result != nil {
 			return errors.New("error_has_result")
 		}
 		return nil

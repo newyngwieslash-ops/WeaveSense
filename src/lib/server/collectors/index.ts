@@ -3,7 +3,7 @@ import { fetchRss } from "../rss";
 import { fetchTelegramChannel } from "../telegram";
 import { fetchTelethonHistory, telethonReady } from "../telethon";
 import { prod, wechatGatewayConfigured } from "../config";
-import { fetchJson } from "../http";
+import { fetchJson, type FetchIo } from "../http";
 import { parseFeedXml } from "../rss-parser";
 import { WECHAT_GATEWAY_FEED_TIMEOUT_MS } from "../cron";
 import { providerFromItems } from "../wechat-meta.ts";
@@ -14,6 +14,10 @@ import { CollectorBatchError, collectorMeta,
 const batch = (items: NormalizedItem[], adapter: string): CollectorBatch => ({
   items, meta: { provider: "", attempts: [adapter], paid_call: false },
 });
+
+// Gateway feed ceiling: generous for a WeChat Atom feed (bodies included), but
+// far below "unbounded". Kept next to the caller it guards.
+const WECHAT_GATEWAY_FEED_MAX_CHARS = 8 * 1024 * 1024;
 
 function gatewayMeta(headers: Headers): CollectorMeta {
   const provider = headers.get("x-loom-provider");
@@ -55,10 +59,10 @@ function youtubeFeedUrl(source: SourceRecord): string {
 
 const rssAdapter: CollectorAdapter = {
   id: "rss",
-  async fetch(source) {
+  async fetch(source, io = {}) {
     const url = source.feed_url || source.handle || source.url;
     if (!url.startsWith("http")) throw new Error("需要有效的 RSS / Atom 地址");
-    return batch(await fetchRss(url, source.id, source.platform), "rss");
+    return batch(await fetchRss(url, source.id, source.platform, io), "rss");
   },
 };
 
@@ -66,12 +70,17 @@ const wechatGatewayAdapter: CollectorAdapter = {
   id: "wechat_gateway",
   async fetch(source) {
     if (!wechatGatewayConfigured()) throw new Error("微信公众号源网关未配置");
+    // The WeChat gateway is an operator-configured INTERNAL service (compose
+    // network / loopback), so it deliberately does NOT go through the public
+    // outbound policy. Its redirect behaviour is tightened instead: the request
+    // carries a bearer token, so following a redirect would hand that token to
+    // whatever host the redirect names.
     let response: Response;
     try {
       response = await fetch(gatewayFeedUrl(source.id), {
         headers: { Accept: "application/atom+xml", Authorization: `Bearer ${prod.wechatGatewayToken}` },
         signal: AbortSignal.timeout(WECHAT_GATEWAY_FEED_TIMEOUT_MS),
-        redirect: "follow",
+        redirect: "error",
       });
     } catch {
       throw new CollectorBatchError("wechat_gateway_unavailable",
@@ -85,7 +94,11 @@ const wechatGatewayAdapter: CollectorAdapter = {
     if (!meta.provider) throw new CollectorBatchError("wechat_gateway_invalid_metadata", meta);
     let items: NormalizedItem[];
     try {
-      items = parseFeedXml(await response.text(), source.id, "wechat");
+      // A gateway feed is text; an explicit ceiling keeps a wedged gateway from
+      // streaming an unbounded body into memory before the parse.
+      const text = await response.text();
+      if (text.length > WECHAT_GATEWAY_FEED_MAX_CHARS) throw new Error("wechat_gateway_feed_too_large");
+      items = parseFeedXml(text, source.id, "wechat");
     } catch {
       throw new CollectorBatchError("wechat_gateway_invalid_feed", meta);
     }
@@ -95,9 +108,9 @@ const wechatGatewayAdapter: CollectorAdapter = {
 
 const telegramAdapter: CollectorAdapter = {
   id: "telegram_web",
-  async fetch(source) {
+  async fetch(source, io = {}) {
     if (source.feed_url.startsWith("http")) {
-      return batch(await fetchRss(source.feed_url, source.id, "telegram"), "telegram_web");
+      return batch(await fetchRss(source.feed_url, source.id, "telegram", io), "telegram_web");
     }
     const handle = source.handle.replace(/^@/, "") || source.url.replace(/https?:\/\/t\.me\/(s\/)?/, "");
     const minId = source.last_external_id ?? "";
@@ -109,14 +122,14 @@ const telegramAdapter: CollectorAdapter = {
         if (msg.includes("FloodWait") || msg.includes("未登录")) throw err;
       }
     }
-    return batch(await fetchTelegramChannel(handle), "telegram_web");
+    return batch(await fetchTelegramChannel(handle, io), "telegram_web");
   },
 };
 
 const youtubeAdapter: CollectorAdapter = {
   id: "youtube",
-  async fetch(source) {
-    return batch(await fetchRss(youtubeFeedUrl(source), source.id, "youtube"), "youtube");
+  async fetch(source, io = {}) {
+    return batch(await fetchRss(youtubeFeedUrl(source), source.id, "youtube", io), "youtube");
   },
 };
 
@@ -140,21 +153,84 @@ type BiliList = {
   };
 };
 
+// B站 page size and the ceiling on how many pages one scan may read. The cap
+// exists so a high-volume channel cannot make a scan unbounded; when it is hit
+// the batch reports `complete: false` and the cursor must not advance.
+const BILI_PAGE_SIZE = 20;
+const BILI_MAX_PAGES = 5;
+
+/**
+ * Bilibili business codes that mean "you are going too fast, back off".
+ *
+ * The API answers HTTP 200 with these as JSON — so a status check alone sees
+ * success, and the previous code treated the body as a generic failure. That made
+ * a throttled scan indistinguishable from a broken one: the scheduler would
+ * re-try at the same cadence and stay throttled. Naming it lets the operator see
+ * "throttled" and lets the retry logic back off instead of hammering.
+ *
+ * `-799` was observed live on 2026-09-17 ("请求过于频繁，请稍后再试"); `-412` is the
+ * long-standing "请求被拦截" code the corpus already documents.
+ */
+const BILI_RATE_LIMIT_CODES = new Set([-799, -412, -509]);
+
+function biliError(code: number, message: string): Error {
+  if (BILI_RATE_LIMIT_CODES.has(code)) {
+    const error = new Error(`B站接口限流 rate_limited (${code})`);
+    (error as Error & { code?: string }).code = "rate_limited";
+    return error;
+  }
+  return new Error(message || `B站 ${code}`);
+}
+
 const biliAdapter: CollectorAdapter = {
   id: "bilibili",
-  async fetch(source) {
+  async fetch(source, io = {}) {
     if (source.feed_url.startsWith("http")) {
-      return batch(await fetchRss(source.feed_url, source.id, "bilibili"), "bilibili");
+      return batch(await fetchRss(source.feed_url, source.id, "bilibili", io), "bilibili");
     }
     const mid = (source.handle || source.url).replace(/\D/g, "");
     if (!mid) throw new Error("需要 B 站 mid");
-    const json = await fetchJson<BiliList>(
-      `https://api.bilibili.com/x/space/arc/search?mid=${mid}&ps=20&pn=1`,
-    );
-    if (json.code && json.code !== 0) throw new Error(json.message || `B站 ${json.code}`);
-    const list = json.data?.list?.vlist ?? [];
-    if (!list.length) throw new Error("B站接口未返回视频（可能被风控）");
-    return batch(list.map((v) => ({
+
+    // Walk pages until a known item is reached (or the page cap). Previously only
+    // page 1 was read; the cursor then advanced to the newest item in it, so any
+    // videos published between the stored cursor and this page were never seen.
+    const seenIds = new Set<string>();
+    type BiliRow = NonNullable<NonNullable<NonNullable<BiliList["data"]>["list"]>["vlist"]>[number];
+    const rows: BiliRow[] = [];
+    const previous = source.last_external_id ?? "";
+    let complete = false;
+    let note = "";
+
+    for (let page = 1; page <= BILI_MAX_PAGES; page += 1) {
+      const json = await fetchJson<BiliList>(
+        `https://api.bilibili.com/x/space/arc/search?mid=${mid}&ps=${BILI_PAGE_SIZE}&pn=${page}`,
+        10000,
+        io,
+      );
+      if (json.code && json.code !== 0) throw biliError(json.code, json.message ?? "");
+      const list = json.data?.list?.vlist ?? [];
+      if (!list.length) {
+        // Ran out of items: the boundary is reached (or the channel is empty).
+        complete = true;
+        break;
+      }
+      for (const video of list) {
+        if (!video.bvid || seenIds.has(video.bvid)) continue;
+        seenIds.add(video.bvid);
+        rows.push(video);
+        // Reaching the previously known newest video proves there is no gap.
+        if (previous && video.bvid === previous) complete = true;
+      }
+      if (complete) break;
+      if (list.length < BILI_PAGE_SIZE) {
+        // A short page means the channel ends here.
+        complete = true;
+        break;
+      }
+    }
+    if (!complete) note = "page_cap";
+    if (!rows.length) throw new Error("B站接口未返回视频（可能被风控）");
+    const result = batch(rows.map((v) => ({
       external_id: v.bvid,
       title: v.title,
       body: v.description ?? "",
@@ -168,17 +244,18 @@ const biliAdapter: CollectorAdapter = {
       published_at: v.created ? new Date(v.created * 1000).toISOString() : null,
       extra: { bvid: v.bvid, mid: v.mid },
     })), "bilibili");
+    return { ...result, coverage: { complete, note } };
   },
 };
 
 const rsshubAdapter: CollectorAdapter = {
   id: "rsshub",
-  async fetch(source) {
+  async fetch(source, io = {}) {
     const url = source.feed_url || source.handle;
     if (!url.startsWith("http")) {
       throw new Error("该平台需要 RSSHub / WeWe 订阅地址，或等待浏览器采集节点");
     }
-    return batch(await fetchRss(url, source.id, source.platform), "rsshub");
+    return batch(await fetchRss(url, source.id, source.platform, io), "rsshub");
   },
 };
 
@@ -191,17 +268,24 @@ const ADAPTERS: Record<string, CollectorAdapter> = {
   rsshub: rsshubAdapter,
 };
 
-export async function collectSource(source: SourceRecord): Promise<CollectorBatch> {
+/**
+ * Collect one source.
+ *
+ * `io` is a test seam only: production callers omit it and use the real
+ * resolver/transport under the outbound policy. Only public-fetch adapters
+ * consume it — the WeChat gateway keeps its own internal transport.
+ */
+export async function collectSource(source: SourceRecord, io: FetchIo = {}): Promise<CollectorBatch> {
   const adapter = ADAPTERS[source.adapter] ?? rssAdapter;
   try {
-    return await adapter.fetch(source);
+    return await adapter.fetch(source, io);
   } catch (err) {
     const failed = collectorMeta(err);
     const attempted = failed.attempts.length ? failed.attempts : [adapter.id];
     if (source.feed_url.startsWith("http") && adapter.id !== "rss") {
       const attempts = [...new Set([...attempted, "rss"])];
       try {
-        const fallback = await rssAdapter.fetch({ ...source, adapter: "rss" });
+        const fallback = await rssAdapter.fetch({ ...source, adapter: "rss" }, io);
         return { ...fallback, meta: { ...fallback.meta,
           attempts,
           paid_call: failed.paid_call || fallback.meta.paid_call } };

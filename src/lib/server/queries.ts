@@ -1,4 +1,5 @@
 import { getSql } from "../db.ts";
+import { decodeHtmlEntities } from "../format.ts";
 import { parsePlatformList } from "../keyword.ts";
 import type { PlatformId } from "../platforms.ts";
 import { isPlatform } from "../platforms.ts";
@@ -82,9 +83,9 @@ export function mapItem(row: Record<string, unknown>): ItemRow {
     source_id: String(row.source_id),
     platform: platformOf(row.platform),
     external_id: String(row.external_id),
-    title: String(row.title ?? ""),
-    body: String(row.body ?? ""),
-    author: String(row.author ?? ""),
+    title: decodeHtmlEntities(String(row.title ?? "")),
+    body: decodeHtmlEntities(String(row.body ?? "")),
+    author: decodeHtmlEntities(String(row.author ?? "")),
     url: String(row.url ?? ""),
     media_type: (row.media_type as ItemRow["media_type"]) ?? "article",
     media_urls: asJson<string[]>(row.media_urls, []),
@@ -158,6 +159,11 @@ export function mapNote(row: Record<string, unknown>): KnowledgeNote {
   const meta = runMeta(row);
   const response = asJson<Record<string, unknown>>(row.response_json, {});
   const result = asJson<Record<string, unknown>>(response.result, {});
+  const evidence = asJson<Record<string, unknown>[]>(response.verified_evidence, []);
+  const citations = asJson<{ evidence_id: string; quote: string }[]>(result.citations, []).flatMap(c => {
+    const source = evidence.find(e => e.evidence_id === c.evidence_id);
+    return source ? [{ evidence_id:c.evidence_id, item_id:source.item_id == null ? null : String(source.item_id), title:String(source.title ?? "来源"),url:String(source.url ?? ""),quote:c.quote }] : [];
+  });
   return {
     id: String(row.id),
     title: String(row.title),
@@ -169,6 +175,7 @@ export function mapNote(row: Record<string, unknown>): KnowledgeNote {
     coverage: meta.coverage,
     warnings: meta.warnings,
     insufficient_evidence: Boolean(result.insufficient_evidence),
+    citations,
   };
 }
 

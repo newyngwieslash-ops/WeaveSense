@@ -118,8 +118,17 @@ export function parseFeedXml(xml: string, sourceId: string, platform: PlatformId
     const rawBody = textOf(
       raw["content:encoded"] ?? raw.content ?? raw.description ?? raw.summary ?? raw["media:description"],
     );
-    const tooLarge = platform === "wechat" && Buffer.byteLength(rawBody, "utf8") > MAX_BODY_BYTES;
-    const body = tooLarge ? "" : platform === "wechat" ? stripHtml(rawBody) : stripHtml(rawBody).slice(0, 8000);
+    // T11: the stored body is not truncated. The 8,000-char cut that used to be
+    // applied to non-WeChat feeds silently destroyed the tail of long articles at
+    // ingestion, before any model context budget ran — so no downstream fixture
+    // could ever see the missing text. The model layer keeps its own budget
+    // (agent-context); the storage layer keeps the material.
+    //
+    // The one remaining bound is a transport-level safety net: a body whose UTF-8
+    // payload exceeds MAX_BODY_BYTES is refused explicitly (marked `body_too_large`
+    // + `body_complete: false`) rather than silently trimmed, for every platform.
+    const tooLarge = Buffer.byteLength(rawBody, "utf8") > MAX_BODY_BYTES;
+    const body = tooLarge ? "" : stripHtml(rawBody);
     const author = stripHtml(authorOf(raw));
     const published = textOf(raw.pubDate ?? raw.published ?? raw.updated ?? raw["dc:date"] ?? "") || null;
     const thumb = pickThumb(raw);

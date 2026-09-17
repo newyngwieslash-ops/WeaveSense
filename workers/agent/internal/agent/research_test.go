@@ -31,7 +31,6 @@ func researchReq() ExecuteRequest {
 func TestResearchToolLoop(t *testing.T) {
 	var dataCalls int32
 	data := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&dataCalls, 1)
 		if r.Header.Get("X-Agent-Run-Token") != "run-token" {
 			http.Error(w, "no token", 403)
 			return
@@ -41,6 +40,11 @@ func TestResearchToolLoop(t *testing.T) {
 			Params map[string]any `json:"params"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body.Action == "model_call" {
+			_, _ = w.Write([]byte(`{"ok":true}`))
+			return
+		}
+		atomic.AddInt32(&dataCalls, 1)
 		w.Header().Set("Content-Type", "application/json")
 		switch body.Action {
 		case "search_items":
@@ -82,13 +86,13 @@ func TestResearchToolLoop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-		if !resp.OK {
-			if resp.Error != nil {
-				t.Fatalf("research failed: %+v", *resp.Error)
-			}
-			t.Fatalf("%+v", resp)
+	if !resp.OK {
+		if resp.Error != nil {
+			t.Fatalf("research failed: %+v", *resp.Error)
 		}
-		if atomic.LoadInt32(&dataCalls) < 2 {
+		t.Fatalf("%+v", resp)
+	}
+	if atomic.LoadInt32(&dataCalls) < 2 {
 		t.Fatalf("data calls %d", dataCalls)
 	}
 	if atomic.LoadInt32(&modelCalls) < 3 {
@@ -125,7 +129,15 @@ func TestResearchBudgetStopsToolLoop(t *testing.T) {
 	req := researchReq()
 	req.Policy.MaxToolCalls = 0
 	req.Policy.MaxModelCalls = 1
-	data := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	data := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Action string `json:"action"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body.Action == "model_call" {
+			_, _ = w.Write([]byte(`{"ok":true}`))
+			return
+		}
 		t.Error("tool should not be called")
 	}))
 	t.Cleanup(data.Close)

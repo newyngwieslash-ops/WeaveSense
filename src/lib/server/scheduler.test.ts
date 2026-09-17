@@ -138,3 +138,34 @@ test("duplicate merge preserves body and cover while extending provider history"
   assert.deepEqual(result.rows[0]?.extra.providers_seen, ["primary", "dajiala"]);
   await pg.close();
 });
+
+test("merging an existing item stores a long body in full (T11)", async () => {
+  // The merge path is the second ingestion entry point. It must not re-introduce
+  // the 8,000-character cut that was removed from the insert path and the parser.
+  const pg = new PGlite();
+  await pg.waitReady;
+  await pg.exec(`create table items (
+    id text primary key, title text not null default '', body text not null default '',
+    author text not null default '', url text not null default '', media_type text not null default 'article',
+    media_urls jsonb not null default '[]', thumbnail_url text not null default '', views integer, likes integer,
+    published_at timestamptz, extra jsonb not null default '{}', matched_keywords jsonb not null default '[]'
+  )`);
+  await pg.query(
+    "insert into items (id, title, body, author, url, media_type, extra) values ('long','t','','a','u','article','{}')",
+  );
+  const sql = {
+    async query<T = Record<string, unknown>>(text: string, params: unknown[] = []): Promise<T[]> {
+      return (await pg.query<T>(text, params)).rows;
+    },
+  };
+  const body = `${"正文段落。".repeat(1100)}${"补充说明。".repeat(1400)}TAIL-READINESS-12500`;
+  assert.ok(body.length > 12_000, `fixture too short: ${body.length}`);
+  await mergeExistingItem(sql, "long", {
+    title: "", body, author: "", url: "", media_type: "article", media_urls: [],
+    thumbnail_url: "", views: null, likes: null, published_at: null, extra: { body_complete: true },
+  }, []);
+  const { rows } = await pg.query<{ body: string }>("select body from items where id = 'long'");
+  assert.equal(rows[0].body.length, body.length, "the merged body must keep its tail");
+  assert.ok(rows[0].body.endsWith("TAIL-READINESS-12500"));
+  await pg.close();
+});

@@ -11,6 +11,7 @@ import {
   ScanSearch,
   Timer,
   Server,
+  Settings,
 } from "lucide-react";
 import { LoomMark } from "./mark";
 import { cn } from "@/lib/utils";
@@ -23,6 +24,7 @@ const NAV = [
   { to: "/knowledge", label: "知识库", icon: Library },
   { to: "/jobs", label: "任务", icon: Timer },
   { to: "/nodes", label: "节点", icon: Server },
+  { to: "/model-settings", label: "模型设置", icon: Settings },
   { to: "/pipeline", label: "管道", icon: GitBranch },
   { to: "/guide", label: "指南", icon: BookOpenText },
   { to: "/prd", label: "规格", icon: FileText },
@@ -113,15 +115,15 @@ export function AppShell({
             <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted">
               {kicker ?? "Media Matrix"}
             </p>
-            <h1 className="font-display text-2xl leading-tight tracking-tight">{title}</h1>
+            <h1 className="font-display text-2xl leading-tight tracking-tight [overflow-wrap:anywhere]">{title}</h1>
           </div>
-          <div className="ml-auto flex items-center gap-2">{action}</div>
+          <div className="ml-auto flex items-center gap-2"><Link to="/model-settings" aria-label="模型设置" className="p-3 lg:hidden"><Settings className="size-5" /></Link>{action}</div>
         </header>
 
         <main className={cn(cinema ? "pb-24 lg:pb-0" : "px-4 pb-28 pt-5 lg:px-8 lg:pb-12 lg:pt-8")}>
           {cinema ? null : (
             <div className="mb-5 lg:hidden">
-              <h1 className="font-display text-3xl tracking-tight">{title}</h1>
+              <h1 className="font-display text-3xl tracking-tight [overflow-wrap:anywhere]">{title}</h1>
             </div>
           )}
           {children}

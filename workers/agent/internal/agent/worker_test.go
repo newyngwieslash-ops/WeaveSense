@@ -78,7 +78,7 @@ func TestWorkerLiveClaimCanComplete(t *testing.T) {
 	cfg := Config{DataURL: srv.URL + "/agent-data", DataToken: "t"}
 	err := RunWorkerOnce(context.Background(), cfg, func(context.Context, ExecuteRequest) (ExecuteResponse, error) {
 		return ExecuteResponse{SchemaVersion: 1, RunID: "6cb9226b-bf73-4e87-8d4a-1b121e24ab46", OK: true,
-			Result: &AgentResult{Content: strPtr("ok"), Citations: []EvidenceCitation{}, Coverage: CoveragePartial, Warnings: []string{}},
+			Result:  &AgentResult{Content: strPtr("ok"), Citations: []EvidenceCitation{}, Coverage: CoveragePartial, Warnings: []string{}},
 			Runtime: &Runtime{SkillVersions: map[string]string{}, Events: []RuntimeEvent{}},
 		}, nil
 	})
