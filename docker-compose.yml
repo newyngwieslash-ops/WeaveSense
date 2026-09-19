@@ -135,11 +135,20 @@ services:
     restart: unless-stopped
 
   app:
-    build: .
+    # T24: built from the worktree (the readiness fixes live there); the root tree
+    # still holds the pre-fix code, so `build: .` would deploy the old behaviour.
+    image: loom-app:readiness-20260917
     ports:
       - "8080:8080"
     environment:
+      # T02: a production runtime must refuse to start without a real database.
+      LOOM_RUNTIME_MODE: production
       DATABASE_URL: postgres://loom:loom@postgres:5432/loom
+      # T05: this host resolves public domains into the proxy's fake-IP range
+      # (198.18.0.0/15); without this declaration the SSRF policy blocks ALL
+      # collection. Verified in rehearsal: with it, requests reach upstream
+      # (real 404/412/429 responses) and nothing reports blocked_address.
+      LOOM_EGRESS_CIDRS: 198.18.0.0/15
       TELEGRAM_WORKER_URL: http://telethon:8787
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-loom}
@@ -185,14 +194,20 @@ services:
     restart: unless-stopped
 
   scheduler:
-    build: .
+    # T24: same image as app — it runs the readiness scheduler code.
+    image: loom-app:readiness-20260917
     command: ["npm", "run", "cron:start"]
     deploy:
       replicas: 1
     environment:
       CRON_ENDPOINT: http://app:8080/api/cron/tick
       CRON_SECRET: ${CRON_SECRET:?set CRON_SECRET}
-      CRON_INTERVAL_MS: ${CRON_INTERVAL_MS:-1800000}
+      # T09: wake up every 60 s so due sources are noticed promptly; the heavy
+      # stages keep their own cadence via the persistent window table.
+      CRON_INTERVAL_MS: ${CRON_INTERVAL_MS:-60000}
+      # T05: same egress declaration as app — the scheduler makes the outbound
+      # collection requests.
+      LOOM_EGRESS_CIDRS: 198.18.0.0/15
     depends_on:
       app:
         condition: service_healthy
