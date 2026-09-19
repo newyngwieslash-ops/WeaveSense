@@ -111,6 +111,21 @@ services:
     command: ["node", "workers/wechat-gateway/fixture-server.mjs"]
 
   agent:
+    # Optional service, not started by default.
+    #
+    # Why: it refuses to start without AGENT_SERVICE_TOKEN (the app's default is
+    # empty), so `restart: unless-stopped` turned a missing configuration into a
+    # permanent restart loop — 581 restarts since the 2026-09-09 deploy, roughly
+    # one every 30 seconds, with a log line each time.
+    #
+    # It is also not on any live path: app runs AI_ENGINE=legacy, and both
+    # AGENT_WORKER_ENABLED and AGENT_ASYNC_RESEARCH_ENABLED are false, so nothing
+    # calls it. Enabling it is a separate decision (it means switching the engine
+    # to eino), which is why this is a profile rather than a delete.
+    #
+    # Start it explicitly when that decision is made:
+    #   docker compose --profile agent up -d agent
+    profiles: ["agent"]
     build:
       context: ./workers/agent
     environment:
