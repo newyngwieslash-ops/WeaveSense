@@ -179,3 +179,92 @@ docker compose up -d --force-recreate --no-deps app scheduler
 3. **部署前应先备份 `docker inspect` 的完整环境**（本次 `minio-init` 意外成为唯一的凭据来源，
    纯属运气——若它也需重建，MinIO 密码将永久丢失）。
 4. **正式部署不应依赖无副本的凭据**：应统一使用工作树外的 env 文件（本次已建立 `.env.t24`）。
+
+
+---
+
+# ⚠️ 未处理的安全加固项（用户决定暂缓，2026-09-17）
+
+**用户明确选择"先不改，记录待办"。以下是完整现状与操作步骤，供后续执行。**
+
+## 现状（实测，非推测）
+
+| 服务 | 变量 | 当前值 | 风险 |
+|---|---|---|---|
+| **postgres** | `POSTGRES_PASSWORD` | `loom` | **公开的默认值**（compose 文件里就有） |
+| **minio** | `MINIO_ROOT_PASSWORD` | `loom-secret-change-me` | 同上 |
+| app / telethon | `MINIO_SECRET_KEY` | 同上 | 同上 |
+| scheduler / wechat-gateway | — | ✓ 未发现弱默认值 | — |
+| agent | `AGENT_SERVICE_TOKEN` | 空 | 已通过 profile 停用，不再重启 |
+
+## 暴露面评估（如实，不夸大也不掩饰）
+
+**当前缓解因素**：
+- PostgreSQL **未发布宿主端口**（只在 compose 内网 `postgres:5432`），外部无法直连
+- MinIO 端口（9000/9001）映射到宿主，但**仅本机可达**（无公网映射）
+- 部署方式是单机 Docker，未暴露到互联网
+
+**仍然存在的风险**：
+- 同一宿主上的**任何进程/容器**都能用这套公开凭据读写数据库与对象存储
+- 任何拿到 `docker-compose.yml` 的人（它已在 git 里）都知道密码
+- 若将来把服务暴露到内网/公网，风险会立刻放大
+- **本批事故已证明**：弱默认值 + 无凭据副本 = 最难恢复的组合
+
+## 加固步骤（执行时照此操作）
+
+**前置**：先做一次备份（`F:\loom-backups`），并确认 `minio` 数据卷完好。
+
+### 1. 生成强随机密码（写入工作树外的凭据文件）
+
+```bash
+NEW_PG_PW=$(openssl rand -hex 24)
+NEW_MINIO_PW=$(openssl rand -hex 24)
+# 追加到 F:\loom-backups\.env.t24（600 权限、工作树外、绝不入 git）
+```
+
+### 2. PostgreSQL（**不改数据，只改角色密码**）
+
+```bash
+# 2a. 改密码（幂等，可重复执行）
+docker exec gig5cyrba5yn3tsi-grok-workspace-postgres-1   psql -U loom -d loom -c "ALTER USER loom WITH PASSWORD '<新密码>';"
+
+# 2b. 更新连接方（app / scheduler）——每个服务单独重建，不牵动依赖
+#     必须用 --no-deps，且只指定一个服务（见本文件 T24 事故教训）
+docker compose up -d --force-recreate --no-deps app
+docker compose up -d --force-recreate --no-deps scheduler
+```
+
+**注意**：`docker-compose.yml` 里 app/scheduler 的 `DATABASE_URL` 当前是硬编码
+`postgres://loom:loom@postgres:5432/loom`，需改为从环境变量取值。
+
+### 3. MinIO（改凭据后必须同步 minio-init，否则桶策略失配）
+
+```bash
+docker compose up -d --force-recreate --no-deps minio
+docker compose up -d --force-recreate --no-deps minio-init
+docker compose up -d --force-recreate --no-deps app       # 它用 MINIO_* 凭据
+docker compose up -d --force-recreate --no-deps telethon
+```
+
+**关键**：MinIO 密码**不能只改环境变量**——`minio-init` 会用同一凭据设置桶策略，
+若两处不一致，媒体落盘会失败（本次事故已演示过这个失败模式）。
+
+### 4. 验证清单
+
+- [ ] `docker exec <pg> psql -U loom -d loom -c "select 1"` 用新密码可连
+- [ ] app 健康（`/` 返回 200）、scheduler 日志显示 tick 成功
+- [ ] MinIO `mc du` 可列出 340 对象
+- [ ] 手动触发 tick：`items_new > 0` 且 `collection_errors: 0`
+- [ ] 媒体落盘：新条目的 `media_objects.status='stored'` 能增加
+- [ ] 旧密码**不再可用**（用旧密码连接应失败）
+
+### 5. 回滚
+
+- 镜像/配置：`F:\loom-backups\docker-compose.yml.pre-t24-backup`
+- 数据：迁移前/后 dump + 异地副本 `G:\QBXT_0917\loom-backup-20260917\`
+- **注意**：PG 密码改错会导致 app 连不上；此时用 `ALTER USER` 改回即可（数据不受影响）
+
+## 为什么当时没做（用户原话）
+
+用户选择 **B：先不改，记录待办**。推测考虑：可能要先做手动测试，不想在此期间引入变动。
+**记录在案，不做评判。**
