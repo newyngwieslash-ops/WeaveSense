@@ -1,14 +1,29 @@
 services:
+  # ---------------------------------------------------------------------------
+  # 2026-09-21 加固（两项，均由实测发现）：
+  #
+  # 1) 端口收窄：app/minio 原为 "8080:8080" 式全网卡发布，实测同网段设备可直接
+  #    打开应用（无登录）与 MinIO 控制台，媒体桶且为匿名可读。现改为仅回环。
+  #    需要远程访问时必须显式改这一行，并先解决"应用无登录"这件事。
+  #
+  # 2) 凭据外部注入：原为 ${VAR:-公开默认值}，实际部署用的是公开默认口令。现统一
+  #    由工作树外的 env_file 提供（F:\loom-backups\loom-prod.env，600、不入 git）。
+  #    用 env_file 而不是命令行变量，是为了消除 T24 事故的复现路径——`compose up`
+  #    会把命令行变量注入全栈，曾导致 MinIO 密码被占位值覆盖、整栈重启循环。
+  #
+  # 注意：restart.bat 不改（它只补 CRON_SECRET 等三个变量，不再被 compose 读取，
+  # 因为下面已改为必填从 env_file 取值）。
+  # ---------------------------------------------------------------------------
   postgres:
     image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: loom
-      POSTGRES_PASSWORD: loom
-      POSTGRES_DB: loom
+    # 凭据由 env_file 直供容器。注意不能用 ${VAR:?} 插值——compose 的插值不读
+    # env_file，那样会因"变量缺失"直接拒绝启动（实测过）。
+    env_file:
+      - F:/loom-backups/env/postgres.env
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U loom -d loom"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -17,14 +32,14 @@ services:
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-loom}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-loom-secret-change-me}
+    env_file:
+      - F:/loom-backups/env/minio.env
     volumes:
       - miniodata:/data
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      # 仅回环：控制台与 API 是给宿主运维用的，不是给网络用的。
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     healthcheck:
       test: ["CMD-SHELL", "timeout 2 bash -c ':> /dev/tcp/127.0.0.1/9000' || exit 1"]
       interval: 10s
@@ -37,10 +52,12 @@ services:
     image: minio/mc:latest
     depends_on:
       - minio
+    env_file:
+      - F:/loom-backups/env/minio-init.env
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-loom}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-loom-secret-change-me}
-      MINIO_BUCKET: ${MINIO_BUCKET:-loom}
+      # public = 匿名可下载。仅因端口已收窄到回环才可接受：浏览器在宿主上，
+      # 仍能显示媒体。若日后要远程访问，必须先改 private 或改用签名 URL。
+      MINIO_BUCKET_ACCESS: public
     restart: on-failure
     entrypoint:
       - /bin/sh
@@ -49,22 +66,24 @@ services:
         sleep 4
         mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
         mc mb -p "local/$$MINIO_BUCKET" || true
-        mc anonymous set download "local/$$MINIO_BUCKET" || true
+        if [ "$$MINIO_BUCKET_ACCESS" = "public" ]; then
+          mc anonymous set download "local/$$MINIO_BUCKET"
+        else
+          mc anonymous set none "local/$$MINIO_BUCKET" || true
+        fi
 
 
   telethon:
     build:
       context: ./workers/telethon
+    env_file:
+      - F:/loom-backups/env/telethon.env
     environment:
       TELEGRAM_API_ID: ${TELEGRAM_API_ID:-}
       TELEGRAM_API_HASH: ${TELEGRAM_API_HASH:-}
       TELEGRAM_SESSION: ${TELEGRAM_SESSION:-}
       TELEGRAM_SESSION_PATH: /data/loom.session
       MINIO_ENDPOINT: minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-loom}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-loom-secret-change-me}
-      MINIO_BUCKET: ${MINIO_BUCKET:-loom}
-      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-http://127.0.0.1:9000/loom}
       TELETHON_CONCURRENCY: ${TELETHON_CONCURRENCY:-3}
       PORT: "8787"
     volumes:
@@ -91,9 +110,9 @@ services:
     command: ["npm", "run", "gateway:start"]
     deploy:
       replicas: 1
+    env_file:
+      - F:/loom-backups/env/wechat-gateway.env
     environment:
-      WECHAT_GATEWAY_TOKEN: ${WECHAT_GATEWAY_TOKEN:?set WECHAT_GATEWAY_TOKEN}
-      WECHAT_PRIMARY_ALLOWED_HOSTS: ${WECHAT_PRIMARY_ALLOWED_HOSTS:?set WECHAT_PRIMARY_ALLOWED_HOSTS}
       DAJIALA_KEY: ${DAJIALA_KEY:-}
       DAJIALA_VERIFYCODE: ${DAJIALA_VERIFYCODE:-}
       DAJIALA_BASE_URL: ${DAJIALA_BASE_URL:-https://www.dajiala.com/fbmain/monitor/v3}
@@ -153,26 +172,37 @@ services:
     # T24: built from the worktree (the readiness fixes live there); the root tree
     # still holds the pre-fix code, so `build: .` would deploy the old behaviour.
     image: loom-app:readiness-20260917
+    # 凭据从工作树外的文件读入，不经命令行、不进仓库（见文件头注释）。
+    env_file:
+      - F:/loom-backups/env/app.env
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
+    # 容器内 localhost 默认指向容器自己；模型网关只接受来自回环的请求（它的
+    # DNS-rebinding 防护），所以把 localhost 额外指向宿主网关，让模型调用以
+    # 回环身份发出。实测：这样 /v1/models 与 /v1/chat/completions 均 200。
+    # 注意 /etc/hosts 里原有的 127.0.0.1 localhost 仍在，健康检查不受影响。
+    extra_hosts:
+      - "localhost:host-gateway"
     environment:
       # T02: a production runtime must refuse to start without a real database.
       LOOM_RUNTIME_MODE: production
-      DATABASE_URL: postgres://loom:loom@postgres:5432/loom
       # T05: this host resolves public domains into the proxy's fake-IP range
       # (198.18.0.0/15); without this declaration the SSRF policy blocks ALL
       # collection. Verified in rehearsal: with it, requests reach upstream
       # (real 404/412/429 responses) and nothing reports blocked_address.
       LOOM_EGRESS_CIDRS: 198.18.0.0/15
+      # 2026-09-21: 让应用读取模型配置。只作用于同步入口（分析/简报/问答的
+      # legacy 路径）；OCR/ASR 仍走 XAI_API_KEY。配置由下面的只读挂载提供。
+      #
+      # 关于「模型设置」页：它在生产里是只读的，这是设计要求而非故障。
+      # scripts/with-app-env.mjs 会删除 LOOM_MODEL_LOOPBACK_ONLY，只在显式绑定
+      # 回环（--host 127.0.0.1）时才重新签发；容器内必须绑 0.0.0.0 才能被端口
+      # 映射，因此该证明不成立。改模型请看 F:/loom-backups/model.local.json。
+      LOOM_MODEL_CONFIG: /app/config/model.local.json
       TELEGRAM_WORKER_URL: http://telethon:8787
       MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-loom}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-loom-secret-change-me}
-      MINIO_BUCKET: ${MINIO_BUCKET:-loom}
-      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-http://127.0.0.1:9000/loom}
       XAI_API_KEY: ${XAI_API_KEY:-}
       TICK_LIMIT: ${TICK_LIMIT:-20}
-      CRON_SECRET: ${CRON_SECRET:?set CRON_SECRET}
       CRON_TICK_LIMIT: ${CRON_TICK_LIMIT:-200}
       EXTRACT_AUTO: ${EXTRACT_AUTO:-false}
       AUTO_ANALYZE: ${AUTO_ANALYZE:-false}
@@ -189,8 +219,11 @@ services:
       AGENT_PRICE_INPUT_RMB_PER_MILLION: ${AGENT_PRICE_INPUT_RMB_PER_MILLION:-}
       AGENT_PRICE_OUTPUT_RMB_PER_MILLION: ${AGENT_PRICE_OUTPUT_RMB_PER_MILLION:-}
       WECHAT_GATEWAY_URL: ${WECHAT_GATEWAY_URL:-http://wechat-gateway:8790}
-      WECHAT_GATEWAY_TOKEN: ${WECHAT_GATEWAY_TOKEN:?set WECHAT_GATEWAY_TOKEN}
       VITE_AUTH_ENABLED: "false"
+    volumes:
+      # 模型配置只读挂载（它含 Key），来自工作树外：宿主上可改可轮换，不进镜像层、
+      # 不进仓库。含 Key，故不放在仓库目录内。
+      - F:/loom-backups/model.local.json:/app/config/model.local.json:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -214,9 +247,10 @@ services:
     command: ["npm", "run", "cron:start"]
     deploy:
       replicas: 1
+    env_file:
+      - F:/loom-backups/env/scheduler.env
     environment:
       CRON_ENDPOINT: http://app:8080/api/cron/tick
-      CRON_SECRET: ${CRON_SECRET:?set CRON_SECRET}
       # T09: wake up every 60 s so due sources are noticed promptly; the heavy
       # stages keep their own cadence via the persistent window table.
       CRON_INTERVAL_MS: ${CRON_INTERVAL_MS:-60000}
