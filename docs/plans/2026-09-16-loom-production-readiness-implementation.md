@@ -1,5 +1,7 @@
 # Loom PRD Completion and Production Readiness Implementation Plan
 
+> **当前状态（2026-09-21）以[统一交付状态](../operations/loom-current-status.md)为准。** 本文下方为历史方案或执行快照；其中“未发布、待授权、未修复”只适用于当时，不覆盖后续证据。T21 部分通过、T22 已验证、T23 未完成、T24 已发布但完整回滚验收未闭环；完整 PRD 尚未完成。本次文档修订尚未发布到生产镜像或下载源码包。
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 > 其他Agent：使用可用的 `executing-plans` 技能逐任务执行；技能不可用时按本文相同检查点执行，不虚构技能调用。用户已选择另一个Agent实施，本会话只编写计划。
 

@@ -1,11 +1,13 @@
 # 织识 Loom 生产就绪执行记录
 
+> 当前结论更新至 **2026-09-21**，见 [统一交付状态](loom-current-status.md)。下文按时间保留历史事实；早期“待授权/未执行”不覆盖后续已完成结果。文末总表为当前任务状态。T21 部分通过、T22 已验证、T23 未完成、T24 已发布；完整 PRD 尚未收尾。
+
 计划：`R/docs/plans/2026-09-16-loom-production-readiness-implementation.md`（T01—T25）
 业务工作树：`B = F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace/.worktrees/local-model-settings`（分支 `comet/local-model-settings`）
 根目录：`R = F:/AI-TG-PINGTAI-0826/GIG5cYRBa5yN3Tsi-grok-workspace`
 执行批次：`pr-20260916-a1`，证据目录 `B/artifacts/production-readiness/pr-20260916-a1/`
 
-状态取值：`not_started / implementing / offline_pass / awaiting_authorization / real_pass / blocked / deferred_by_scope`
+状态取值：`not_started / implementing / offline_pass / awaiting_authorization / real_pass / partial_real_pass / partial_delivery / blocked / deferred_by_scope`
 
 ---
 
@@ -1000,7 +1002,9 @@
 
 ---
 
-## 汇总状态表（最终）
+## 汇总状态表（2026-09-21）
+
+离线通过仅覆盖对应代码与夹具，不等于真实平台或长期生产验收。`partial_real_pass` 表示部分真实范围通过；已执行的授权不需要重复申请，但不自动扩展为新的付费或规模授权。
 
 | 任务 | 名称 | 状态 | 说明 |
 |---|---|---|---|
@@ -1017,15 +1021,15 @@
 | T11 | 全文保存与历史修复预览 | offline_pass | 10/10 + 235/235；三处 8000 截断已除；预览只读且不造尾 |
 | T12 | 媒体类型、提取输入与幂等 | offline_pass | 22/22 + 235/235；封面误送 STT、扩展名优先级、超大图截断三缺陷已修 |
 | T13 | 微信费用保守预留与诊断 | offline_pass | 9/9 + 116/116；unknown 保留、overrun 记录、跨日归属已固化；既有夹具老化已修 |
-| T14 | C05 准备与模型配置来源核对 | awaiting_authorization | 来源表已实测核对；C05 本身待 Gate A |
+| T14 | C05 准备与模型配置来源核对 | offline_pass | 配置来源表已完成；真实验收结果归 T21，不再把准备任务标为待授权 |
 | T15 | 引用契约与检索评测 | offline_pass | 26 例全通过（c11 0.5→1.0，零回归）；术语等价机制为数据驱动 |
 | T16 | 阶段日志、只读状态与告警闭环 | offline_pass | 9/9 + 10/10 + 238；分阶段可见、敏感信息不泄漏、本地告警非0退出 |
 | T17 | 100/1000 源离线容量评测 | offline_pass | 100/1000 各轮通过：每源 20 条、重放 0 新增、重复 0、错误 0；P95 门槛仍未验证 |
 | T18 | 汇总自动门禁与新迁移验证 | offline_pass | 8 道门全绿；新增测试已入聚合命令；迁移 0021 升级路径 5 项验证；应用代码 lint 0 error |
 | T19 | 候选构建与 dev/built 端到端 | offline_pass | 构建+agent:e2e+10 项 UI 检查×2 视口（dev/built）；**无法目视查看截图（本会话模型无图像输入），已用像素与 DOM 级检查替代并如实标注** |
 | T20 | 离线候选审计与真实门清单 | offline_pass | manifest+候选说明+授权清单已出；L0 达成 |
-| T21 | 真实服务最小验收（Gate A） | **部分 real_pass** | 分析 2/3✅、问答 1/3✅（引用 2/2 可核验）、RSS/Telegram/YouTube 采集✅；微信❌上游风控；B站限流已识别并降频至 360 分钟；MCP/OCR/ASR 未授权；费用 unknown |
-| T22 | 业务数据迁移与恢复验收（Gate B） | awaiting_authorization | 待用户指定源库/目标/窗口 |
+| T21 | 真实服务最小验收（Gate A） | partial_real_pass | 修复后分析与库内问答各 1/1 通过、usage 已落库；9/21 生产分析成功。RSS/Telegram 网页/YouTube 频道 RSS 有真实证据；Telegram 账号未接入，微信不可用，B站限流，MCP/OCR/ASR 未测，真实费用未对账 |
+| T22 | 业务数据迁移与恢复验收（Gate B） | real_pass | 9/17 完成 PG/MinIO/网关 SQLite 备份及副本恢复，迁移 0021 已应用；Telethon 当时无会话。自动/加密/跨机器备份与持续 RPO/RTO 不在已通过结论内 |
 | T23 | 长期试运行与扩大范围（Gate C） | awaiting_authorization | 待用户指定账号/窗口/预算 |
-| T24 | 正式发布与受控回滚（Gate D） | awaiting_authorization | 依赖 T18/T19/T21—T23 |
-| T25 | 使用指南、运营手册与最终交接 | offline_pass | 指南路径 11/11 步实走通过；quickstart/handoff/README/指南页已同步本轮改动 |
+| T24 | 正式发布与受控回滚（Gate D） | partial_real_pass | 9/17 app/scheduler 已发布并验证，事故已恢复；旧镜像及备份保留。9/21 加固及生产模型接入已验证。完整发布回滚演练未独立闭环，不能因已发布跳过 T23 或宣布 L2 |
+| T25 | 使用指南、运营手册与最终交接 | partial_delivery | 历史指南交付已完成；9/21 PRD 源码、当前状态与任务总表口径统一。新版页面/源码包尚未发布；完整 PRD 最终交付依赖剩余验收 |

@@ -9,7 +9,7 @@ function PrdPage() {
     <AppShell title="产品规格" kicker="PRD · 织识 Loom">
       <article className="mx-auto max-w-3xl space-y-12 text-sm leading-relaxed text-muted">
         <header>
-          <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-faint">PRD / v1.1 / 2026</p>
+          <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-faint">PRD / v1.2 / 2026-09-21</p>
           <h2 className="mt-2 font-display text-4xl text-fg tracking-tight">织识 · 行业媒体矩阵采集与知识引擎</h2>
           <p className="mt-4">
             把 Telegram、微信公众号、B 站、抖音、小红书、YouTube、西瓜与 RSS
@@ -154,20 +154,20 @@ PostgreSQL.matched_keywords
 
         <Section title="9. 本部署实现状态">
           <p className="mb-3">
-            控制平面完整可运行。关键词定时收集已作为一等能力落地。公开 RSS 与 Telegram 网页预览为实采；风控平台保留适配器，填入 WeWe / RSSHub 即走同一管道。
+            核心流程已实现并发布，完整 PRD 尚未验收。以下区分代码实现与真实服务证据（截至 2026-09-21）：L0 已交付，L1 部分条件达成，L2 未达成；100–1000 信源持续运行仍待验证。
           </p>
           <SpecTable
             rows={[
               ["关键词定时收集", "已实现", "设定词、间隔、平台；到期扫描；立即收集。"],
-              ["信源增量", "已实现", "external_id 去重，5/10/30 分钟。"],
-              ["RSS / 新闻", "实采", "36氪、量子位、HN、Google News 等。"],
-              ["Telegram 公开频道", "实采", "Telethon GetHistory（Docker）；未连接回退 t.me/s。"],
-              ["B 站 / YouTube", "适配器", "搜索与频道 RSS 可用；接口可能风控。"],
-              ["微信 / 抖音 / 小红书 / 西瓜", "适配器", "填 WeWe 或 RSSHub 即实采。"],
+              ["信源增量", "已实现", "external_id 去重、分页游标修复；后台唤醒 60 秒，实际延迟待持续验收。"],
+              ["RSS / 新闻", "实采", "爱范儿、少数派真实 Feed 已验证；其他站点逐源验收。"],
+              ["Telegram 公开频道", "实采", "已验证 t.me/s 公开预览；Telethon 账号尚未配置登录，健康不等于账号可采。"],
+              ["B 站 / YouTube", "适配器", "YouTube 频道 RSS 已实测；B 站接口限流，当前封面不代表视频音轨。"],
+              ["微信 / 抖音 / 小红书 / 西瓜", "适配器", "微信上次验收无正文，移出首版；其他平台依赖外部 Feed，未独立真实验收。"],
               ["文本 / 作者 / 时间 / 浏览量", "已实现", "归一化字段。"],
               ["图片 / 视频文件落盘", "已实现", "MinIO 节点；未连接时保留远程 URL，可稍后落盘。"],
-              ["ASR / OCR", "已实现", "Grok 视觉 OCR + STT；条目页按键或节点页批量。"],
-              ["LLM 分析 / 简报 / 问答", "已实现", "按键触发 Grok。"],
+              ["ASR / OCR", "已实现", "提取与幂等代码已实现，真实图片/音视频验收未完成；配置独立于同步模型。"],
+              ["LLM 分析 / 简报 / 问答", "已实现", "用户触发；分析与库内问答已真实验证，简报真实验收未独立闭环；费用待对账。"],
             ]}
           />
         </Section>
@@ -177,7 +177,7 @@ PostgreSQL.matched_keywords
             <li>Docker Compose：Postgres + MinIO + Telethon worker + 控制面。</li>
             <li>
               Telegram：<span className="font-mono text-xs">docker compose run --rm -it telethon python login.py</span>{" "}
-              后，GetHistory 按 last_external_id 增量扫描 100–1000 频道。
+              后，先验证少量公开频道的 GetHistory、去重与增量；100–1000 频道只完成离线突发评测，持续规模待验收。
             </li>
             <li>媒体：MinIO bucket loom；节点页可批量落盘。</li>
             <li>OCR / ASR：XAI_API_KEY；EXTRACT_AUTO=true 才在 tick 时自动提取。</li>
@@ -197,11 +197,11 @@ PostgreSQL.matched_keywords
 const MATRIX: [string, string, string, string][] = [
   ["Telegram", "Telethon / t.me/s", "MIT", "实采"],
   ["微信公众号", "WeWe RSS fork", "MIT", "适配器"],
-  ["B 站", "bilibili-cli / bilibee", "MIT", "适配器"],
-  ["抖音", "cmsjin/douyin", "MIT", "适配器"],
-  ["小红书", "xhs-downloader", "MIT", "适配器"],
-  ["YouTube", "yt-dlp source", "Unlicense", "适配器"],
-  ["西瓜", "自研 collector-xigua", "自研", "适配器"],
+  ["B 站", "UP 主 / 搜索接口、外部 Feed", "平台条款另核对", "限流待验收"],
+  ["抖音", "外部 RSSHub / Feed", "由提供方核对", "未验收"],
+  ["小红书", "外部 RSSHub / Feed", "由提供方核对", "未验收"],
+  ["YouTube", "频道 RSS / 新闻索引", "平台条款另核对", "频道 RSS 实测"],
+  ["西瓜", "外部 RSSHub / Feed", "由提供方核对", "未验收"],
   ["RSS", "RSSHub / 原生 feed", "MIT", "实采"],
   ["关键词雷达", "News RSS + 搜索 + 本地打标", "自研", "实采"],
 ];
