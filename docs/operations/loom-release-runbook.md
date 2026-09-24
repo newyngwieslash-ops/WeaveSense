@@ -183,6 +183,55 @@ docker compose up -d --force-recreate --no-deps app scheduler
 
 ---
 
+# ✅ 镜像重建（2026-09-24）：让线上 PRD 文案与源码一致
+
+## 为什么重建
+
+2026-09-21 的文档校正把 PRD 页面里"适配器存在 = 平台可用"的误导表述改成了实测状态
+（微信无正文移出首版、Telegram 未登录、B 站限流、抖音/小红书/西瓜未验收等）。
+但那只是**源码改动**——生产镜像仍是 2026-09-17 构建的版本，页面显示的仍是 v1.1 旧文案。
+
+## 做了什么
+
+| 步骤 | 结果 |
+|---|---|
+| 构建前备份 | `F:/loom-backups/loom-prod-prerebuild-20260924-122508.dump`（2.38 MB，`pg_restore --list` 117 条目可读） |
+| 给旧镜像打回滚标签 | `loom-rollback:app-20260924`（= 切换前的 `loom-app:readiness-20260917`） |
+| 修正构建源 | B 的 README 是旧版（写着"L0 离线候选、尚未验收"）且链接指向仓库外；已用 R 的校正版覆盖，并把 3 份新文档同步进 B |
+| 构建 | 从工作树 B 构建 `loom-app:readiness-20260924`（`sha256:a0790e04b401…`）；唯一 warning 是 `VITE_AUTH_ENABLED`，非敏感值 |
+| **切换前演练** | 起隔离 PG（回环 60111）+ 恢复备份 → 新镜像连它启动 → 页面 200、**PRD 显示 v1.2 与"限流待验收"**（旧镜像对照为 v1.1、10 处"适配器"） |
+| 切换 | app 与 scheduler **各自单独** `--force-recreate --no-deps`；app 用时 **4.4 秒** |
+
+## 事后核验
+
+- 6 个服务全部健康；`items` 从 3230 增至 3232（切换期间采集未中断）
+- 生产 `/prd` 现在返回 `PRD / v1.2 / 2026-09-21`，含"限流待验收""频道 RSS 实测"等实测表述
+- 演练容器与隔离库已删除，未接入生产
+
+## ⚠️ 切换时观察到的两件与本次重建无关的事
+
+1. **本机模型网关（`127.0.0.1:10100`）已停止运行**——进程退出，端口无监听。
+   新旧镜像连它**都失败**（已用回滚镜像对照验证），所以不是重建引入的。
+   影响：分析与问答暂时不可用，直到该服务重新启动。属外部依赖，不在本仓库内。
+2. **3 个 RSS 源（36氪 / Solidot / 量子位）报 `socket disconnected before TLS connect`**——
+   同样在新旧镜像上都复现，属本机网络/代理对该域名的瞬时问题，与镜像无关。
+   任务页会如实显示该错误，下一轮 tick 会自动重试。
+
+## 回滚
+
+```bash
+# 镜像：把 compose 里的 readiness-20260924 改回 readiness-20260917，然后逐服务重建
+docker compose up -d --force-recreate --no-deps app
+docker compose up -d --force-recreate --no-deps scheduler
+
+# 或直接把回滚标签重新打回
+docker tag loom-rollback:app-20260924 loom-app:readiness-20260917
+```
+
+compose 备份：`F:/loom-backups/docker-compose.yml.pre-rebuild-<时间戳>`
+
+---
+
 # 安全加固（2026-09-21 已执行完成）
 
 **状态：已完成并验证。** 本节原为「未处理的安全加固项（用户决定暂缓）」；
