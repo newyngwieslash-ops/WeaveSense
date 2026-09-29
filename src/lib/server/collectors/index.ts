@@ -1,7 +1,7 @@
 import type { PlatformId } from "@/lib/platforms";
 import { fetchRss } from "../rss";
 import { fetchTelegramChannel } from "../telegram";
-import { fetchTelethonHistory, telethonReady } from "../telethon";
+import { fetchTelethonHistory, telethonHealth } from "../telethon";
 import { prod, wechatGatewayConfigured } from "../config";
 import { fetchJson, type FetchIo } from "../http";
 import { parseFeedXml } from "../rss-parser";
@@ -110,19 +110,34 @@ const telegramAdapter: CollectorAdapter = {
   id: "telegram_web",
   async fetch(source, io = {}) {
     if (source.feed_url.startsWith("http")) {
-      return batch(await fetchRss(source.feed_url, source.id, "telegram", io), "telegram_web");
+      return batch(await fetchRss(source.feed_url, source.id, "telegram", io), "rss");
     }
     const handle = source.handle.replace(/^@/, "") || source.url.replace(/https?:\/\/t\.me\/(s\/)?/, "");
     const minId = source.last_external_id ?? "";
-    if (await telethonReady()) {
+    const health = await telethonHealth();
+    if (health.authorized) {
+      if (health.paused_until && health.paused_until > 0) {
+        throw new CollectorBatchError(`Telethon FloodWait ${health.paused_until}s`, {
+          provider: "", attempts: ["telethon"], paid_call: false,
+        });
+      }
       try {
-        return batch(await fetchTelethonHistory(handle, minId, 80), "telegram_web");
+        return batch(await fetchTelethonHistory(handle, minId, 80), "telethon");
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        if (msg.includes("FloodWait") || msg.includes("未登录")) throw err;
+        throw new CollectorBatchError(msg, {
+          provider: "", attempts: ["telethon"], paid_call: false,
+        });
       }
     }
-    return batch(await fetchTelegramChannel(handle, io), "telegram_web");
+    try {
+      return batch(await fetchTelegramChannel(handle, io), "t.me/s");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new CollectorBatchError(msg, {
+        provider: "", attempts: ["t.me/s"], paid_call: false,
+      });
+    }
   },
 };
 

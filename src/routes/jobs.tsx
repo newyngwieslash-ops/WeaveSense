@@ -6,6 +6,7 @@ import { PlatformChip } from "@/components/platform-chip";
 import { listJobsFn } from "@/lib/server/fns";
 import { formatDateTime } from "@/lib/format";
 import { isPlatform } from "@/lib/platforms";
+import { attemptLabel, telegramChannelKind, telegramChannelLabel } from "@/lib/telegram-channel";
 
 export const Route = createFileRoute("/jobs")({ component: JobsPage });
 
@@ -25,6 +26,13 @@ function JobsPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-medium">{job.keyword_id ? `关键词 · ${job.source_name}` : job.source_name}</span>
                 <PlatformChip platform={isPlatform(job.platform) ? job.platform : "rss"} />
+                {job.platform === "telegram" ? (() => {
+                  const channel = telegramChannelKind(job.attempts);
+                  const label = telegramChannelLabel(channel);
+                  return label ? (
+                    <Badge tone={channel === "telethon" ? "live" : "warn"}>{label}</Badge>
+                  ) : null;
+                })() : null}
                 <Badge tone={job.status === "ok" ? "live" : job.status === "error" ? "danger" : "warn"}>
                   {job.status}
                 </Badge>
@@ -32,7 +40,7 @@ function JobsPage() {
               </div>
               <p className="mt-1 font-mono text-xs text-muted">{formatDateTime(job.started_at)}</p>
               <p className="mt-1 break-words text-xs text-muted">
-                Provider {job.provider || "—"} · 尝试 {job.attempts.join(" → ") || "—"}
+                Provider {job.provider || "—"} · 尝试 {job.attempts.map(attemptLabel).join(" → ") || "—"}
               </p>
               <p className="mt-1 break-words text-xs text-muted">{job.error || job.kind}</p>
             </div>

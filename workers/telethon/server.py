@@ -109,40 +109,12 @@ def media_kind(message: Message) -> str:
     return "text" if (message.raw_text or "").strip() else "link"
 
 
-async def save_media(message: Message, channel: str) -> tuple[list[str], str]:
-    urls: list[str] = []
-    thumb = ""
-    if not message.media:
-        return urls, thumb
-    try:
-        data = await message.download_media(file=bytes)
-    except Exception:
-        return urls, thumb
-    if not data:
-        return urls, thumb
-    mime = "application/octet-stream"
-    ext = "bin"
-    if isinstance(message.media, MessageMediaPhoto):
-        mime, ext = "image/jpeg", "jpg"
-    elif message.document is not None:
-        mime = getattr(message.document, "mime_type", "") or mime
-        if "mp4" in mime:
-            ext = "mp4"
-        elif "png" in mime:
-            ext = "png"
-        elif "webp" in mime:
-            ext = "webp"
-        elif "pdf" in mime:
-            ext = "pdf"
-        elif "audio" in mime:
-            ext = "mp3"
-    key = f"telegram/{channel}/{message.id}.{ext}"
-    url = await upload_bytes(key, data, mime)
-    if url:
-        urls.append(url)
-        if ext in {"jpg", "png", "webp"}:
-            thumb = url
-    return urls, thumb
+async def save_media(_message: Message, _channel: str) -> tuple[list[str], str]:
+    # ponytail: inline video/photo download exceeds the app's 60s /v1/history
+    # budget, so authorized scans silently fall back to t.me/s (~20 preview
+    # items, items_new=0). History returns type/text only; binary ingest is
+    # the nodes-page 媒体落盘 path.
+    return [], ""
 
 
 async def normalize(message: Message, channel: str) -> dict[str, Any]:
