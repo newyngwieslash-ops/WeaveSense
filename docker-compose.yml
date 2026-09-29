@@ -171,7 +171,7 @@ services:
   app:
     # T24: built from the worktree (the readiness fixes live there); the root tree
     # still holds the pre-fix code, so `build: .` would deploy the old behaviour.
-    image: loom-app:readiness-20260924
+    image: loom-app:readiness-20260929-tg-channel
     # 凭据从工作树外的文件读入，不经命令行、不进仓库（见文件头注释）。
     env_file:
       - F:/loom-backups/env/app.env
@@ -243,7 +243,7 @@ services:
 
   scheduler:
     # T24: same image as app — it runs the readiness scheduler code.
-    image: loom-app:readiness-20260924
+    image: loom-app:readiness-20260929-tg-channel
     command: ["npm", "run", "cron:start"]
     deploy:
       replicas: 1
