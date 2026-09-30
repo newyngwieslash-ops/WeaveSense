@@ -27,3 +27,7 @@
 .env
 .env.*
 !.env.example
+
+# ZCode session plans (local tooling state)
+/.zcode/
+/.zcodeignore

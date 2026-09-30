@@ -5,10 +5,14 @@
 ## 1. 它是什么，为什么生产依赖它
 
 织识 Loom 的「分析 / 简报 / 问答」走 **legacy 同步入口**，模型地址来自
-`F:/loom-backups/model.local.json` 的 `baseURL`：
+`F:/loom-backups/model-config/model.local.json`（2026-09-30 起为多档案格式，
+应用内「模型设置」页可直接增删改与切换）：
 
 ```json
-{ "baseURL": "http://localhost:10100/v1", "model": "gpt-5.6-luna", "apiKey": "…" }
+{ "active": "8e097bfa", "profiles": [
+  { "id": "default", "name": "默认配置", "baseURL": "http://localhost:10100/v1", "model": "gpt-5.6-luna", "apiKey": "…" },
+  { "id": "8e097bfa", "name": "cli-proxy", "baseURL": "http://localhost:8317/v1", "model": "grok-4.5", "apiKey": "…" }
+] }
 ```
 
 `localhost:10100` **不是** Loom 自己的组件，而是本机的 **opencodex** 代理
@@ -107,11 +111,15 @@ ocx restore     # 只恢复 Codex 指向，不停代理
 
 | 配置 | 位置 | 值 |
 |---|---|---|
-| 模型配置文件 | `F:/loom-backups/model.local.json`（只读挂载进容器） | `baseURL: http://localhost:10100/v1` |
+| 模型配置目录 | `F:/loom-backups/model-config/`（**可写**挂载进容器 `/app/config`，2026-09-30 起为多档案格式） | 默认档案 `baseURL: http://localhost:10100/v1` |
+| 应用内管理 UI | 「模型设置」页（`/model-settings`），多档案增删改 + 一键切换 | 由 `LOOM_MODEL_MANAGE_ALLOWED=true` 门控 |
 | 容器内 localhost 指向宿主 | `docker-compose.yml` → `extra_hosts: localhost:host-gateway` | — |
 
 **注意**：容器的这个挂载与 `extra_hosts` 只在 app 服务上；改完要
 `docker compose up -d --force-recreate --no-deps app` 才生效。
+2026-09-30 起配置迁移到目录挂载（`F:/loom-backups/model-config/model.local.json`，
+多档案 JSON：`{active, profiles:[...]}`）；旧单文件 `F:/loom-backups/model.local.json`
+原地保留作回滚备份。模型可直接在 UI 里改，无需再登服务器编辑文件。
 
 ## 7. 排障速查
 
@@ -122,7 +130,7 @@ ocx restore     # 只恢复 Codex 指向，不停代理
 | `ocx status` 说 running、但端口无监听 | 多半是 `ocx.pid` 陈旧记录；以 `netstat` + `healthz` 为准 |
 | 代理进程被反复杀掉 | 是否被 `timeout`/脚本包住前台进程；改用 `service install` |
 | 模型能连但报 provider 错误 | `ocx doctor`；`ocx provider` 查看 provider 与配额 |
-| 端口被别的程序占用 | 改 `config.json` 的 `port` **并同步** `F:/loom-backups/model.local.json` 的 `baseURL` |
+| 端口被别的程序占用 | 改 `config.json` 的 `port` **并同步** 模型档案的 `baseURL`（UI 或 `F:/loom-backups/model-config/model.local.json`） |
 
 ## 8. 与 Loom 重建镜像的关系
 

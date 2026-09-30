@@ -213,7 +213,10 @@ async def handle_health(_: web.Request) -> web.Response:
 
 
 async def handle_history(request: web.Request) -> web.Response:
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "请求不是 JSON"}, status=400)
     channel = str(body.get("channel") or "").lstrip("@").strip()
     if not channel:
         return web.json_response({"error": "缺少 channel"}, status=400)
@@ -221,7 +224,10 @@ async def handle_history(request: web.Request) -> web.Response:
     digits = "".join(ch for ch in raw_min if ch.isdigit())
     min_id = int(digits or 0)
     limit = min(100, max(1, int(body.get("limit") or 80)))
-    result = await history(channel, min_id, limit)
+    try:
+        result = await history(channel, min_id, limit)
+    except Exception as exc:
+        return web.json_response({"error": str(exc)[:180], "items": []}, status=400)
     status = 429 if result.get("flood_wait") else 200
     if result.get("error") and result.get("error") not in {"flood_wait"} and not result.get("items"):
         status = 400

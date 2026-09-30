@@ -171,7 +171,7 @@ services:
   app:
     # T24: built from the worktree (the readiness fixes live there); the root tree
     # still holds the pre-fix code, so `build: .` would deploy the old behaviour.
-    image: loom-app:readiness-20260929-tg-channel
+    image: loom-app:readiness-20260930-modelui
     # 凭据从工作树外的文件读入，不经命令行、不进仓库（见文件头注释）。
     env_file:
       - F:/loom-backups/env/app.env
@@ -192,13 +192,15 @@ services:
       # (real 404/412/429 responses) and nothing reports blocked_address.
       LOOM_EGRESS_CIDRS: 198.18.0.0/15
       # 2026-09-21: 让应用读取模型配置。只作用于同步入口（分析/简报/问答的
-      # legacy 路径）；OCR/ASR 仍走 XAI_API_KEY。配置由下面的只读挂载提供。
+      # legacy 路径）；OCR/ASR 仍走 XAI_API_KEY。配置由下面的目录挂载提供。
       #
-      # 关于「模型设置」页：它在生产里是只读的，这是设计要求而非故障。
-      # scripts/with-app-env.mjs 会删除 LOOM_MODEL_LOOPBACK_ONLY，只在显式绑定
-      # 回环（--host 127.0.0.1）时才重新签发；容器内必须绑 0.0.0.0 才能被端口
-      # 映射，因此该证明不成立。改模型请看 F:/loom-backups/model.local.json。
+      # 关于「模型设置」页：2026-09-30 起在生产开放编辑（多档案管理）。
+      # LOOM_MODEL_MANAGE_ALLOWED 放宽了"对端必须是回环"的证明——容器内该证明
+      # 无法成立；安全边界改为端口绑定：应用只发布在宿主 127.0.0.1:8080，能到达
+      # 管理接口的只有本机进程。写操作仍强制同 origin（CSRF），VERCEL 环境恒拒绝。
+      # 配置目录可写（模型档案由 UI 保存，原子写 + 乐观并发），含 Key，不进仓库。
       LOOM_MODEL_CONFIG: /app/config/model.local.json
+      LOOM_MODEL_MANAGE_ALLOWED: "true"
       TELEGRAM_WORKER_URL: http://telethon:8787
       MINIO_ENDPOINT: http://minio:9000
       XAI_API_KEY: ${XAI_API_KEY:-}
@@ -221,9 +223,10 @@ services:
       WECHAT_GATEWAY_URL: ${WECHAT_GATEWAY_URL:-http://wechat-gateway:8790}
       VITE_AUTH_ENABLED: "false"
     volumes:
-      # 模型配置只读挂载（它含 Key），来自工作树外：宿主上可改可轮换，不进镜像层、
-      # 不进仓库。含 Key，故不放在仓库目录内。
-      - F:/loom-backups/model.local.json:/app/config/model.local.json:ro
+      # 模型配置目录（可写）：UI 多档案保存需要目录写权限（原子写 = 临时文件 +
+      # rename）。来自工作树外，含 Key，不进镜像层、不进仓库。旧单文件
+      # F:/loom-backups/model.local.json 原地保留作回滚备份。
+      - F:/loom-backups/model-config:/app/config
     depends_on:
       postgres:
         condition: service_healthy
@@ -243,7 +246,7 @@ services:
 
   scheduler:
     # T24: same image as app — it runs the readiness scheduler code.
-    image: loom-app:readiness-20260929-tg-channel
+    image: loom-app:readiness-20260930-modelui
     command: ["npm", "run", "cron:start"]
     deploy:
       replicas: 1
