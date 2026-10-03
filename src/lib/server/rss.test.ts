@@ -75,12 +75,20 @@ describe("parseFeedXml", () => {
     assert.equal(item.extra.body_complete, false);
   });
 
-  it("keeps the legacy 8,000-character limit for non-WeChat feeds", () => {
+  // T11 changed this expectation deliberately, and the change is a product fix
+  // rather than a test being bent to fit: the old 8,000-character cut applied to
+  // non-WeChat feeds destroyed the tail of long articles at ingestion, so the
+  // material could never be searched or quoted afterwards. The storage layer now
+  // keeps the body; the model context budget (agent-context) is where a limit
+  // belongs. See src/lib/server/content-integrity.test.ts for the tail assertion
+  // this used to make impossible.
+  it("keeps a long non-WeChat body in full (no 8,000-character ingestion cut)", () => {
     const body = "正文".repeat(5000);
     const [item] = parseFeedXml(atomEntry(body), "source-1", "rss");
 
-    assert.equal(item.body.length, 8000);
+    assert.equal(item.body.length, body.length);
     assert.equal(item.extra.body_error, undefined);
+    assert.equal(item.extra.body_complete, true);
   });
 
   it("uses the first non-empty name from repeated Atom authors", () => {

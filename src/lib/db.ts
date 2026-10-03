@@ -1,4 +1,5 @@
 import { pendingMigrations } from "../../scripts/migration-plan.mjs";
+import { assertRuntimeDatabase } from "../../scripts/runtime-policy.mjs";
 
 /** Which database backend is active. */
 export type DbSource = "neon" | "pglite";
@@ -9,6 +10,12 @@ const rawDatabaseUrl =
   typeof process !== "undefined" ? process.env.DATABASE_URL : undefined;
 const databaseUrl =
   rawDatabaseUrl && rawDatabaseUrl.trim() ? rawDatabaseUrl : undefined;
+
+// Before deciding the backend: a declared production runtime with no database
+// must fail here rather than fall through to the in-memory PGLite fallback,
+// whose writes vanish on restart. Checked at module load, so the first request
+// can never reach a database-less production process.
+if (typeof process !== "undefined") assertRuntimeDatabase(process.env);
 
 /**
  * Active backend: real **Neon** when `DATABASE_URL` is set (deployed / configured

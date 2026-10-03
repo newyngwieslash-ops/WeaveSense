@@ -1,17 +1,20 @@
 import { createHash } from "node:crypto";
+import { guessKind } from "./media-kind.ts";
 import { getSql } from "@/lib/db";
 import { shortId } from "@/lib/utils";
 import { asJson } from "./serialize";
 import { minioConfigured } from "./config";
+import { publicFetch } from "./outbound-policy.ts";
 import { putObject } from "./storage";
 
-function guessKind(url: string, mediaType: string): string {
-  const u = url.toLowerCase();
-  if (mediaType === "image" || /\.(jpg|jpeg|png|gif|webp|bmp)(\?|$)/.test(u)) return "image";
-  if (mediaType === "video" || /\.(mp4|mov|webm|mkv)(\?|$)/.test(u)) return "video";
-  if (/\.(mp3|wav|m4a|aac|ogg)(\?|$)/.test(u)) return "audio";
-  return mediaType === "file" ? "file" : "file";
-}
+/**
+ * Classify a media URL by its *file*, falling back to the entry's declared
+ * `mediaType` only when the extension says nothing.
+ *
+ * T12: the declared shape describes the item, not the file — a B 站 "video" entry
+ * carries a JPEG cover, and classifying by `mediaType` alone would file that cover
+ * as a video and later send it to a speech model.
+ */
 
 export async function enqueueItemMedia(itemId: string, urls: string[], mediaType: string): Promise<number> {
   const sql = await getSql();
@@ -56,10 +59,16 @@ export async function ingestPending(limit = 6): Promise<{ stored: number; errors
         errors += 1;
         continue;
       }
-      const res = await fetch(row.source_url, { signal: AbortSignal.timeout(20000), redirect: "follow" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const buf = Buffer.from(await res.arrayBuffer());
-      const contentType = res.headers.get("content-type") || "application/octet-stream";
+      // Public media only, capped while streaming (25 MiB default). A private/
+      // metadata address or an oversized object is rejected here instead of
+      // being fetched into memory first.
+      const fetched = await publicFetch(row.source_url, {
+        timeoutMs: 20000,
+        kind: "media",
+        as: "bytes",
+      });
+      const buf = Buffer.from(fetched.bytes ?? new Uint8Array());
+      const contentType = fetched.contentType || "application/octet-stream";
       const sha = createHash("sha256").update(buf).digest("hex");
       const ext = contentType.includes("png")
         ? "png"

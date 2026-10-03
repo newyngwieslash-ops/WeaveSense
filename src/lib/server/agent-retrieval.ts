@@ -1,4 +1,5 @@
 import { splitQueryTerms, rangePredicate, rankRetrievedItems } from "./agent-context.ts";
+import { expandTerms } from "./term-glossary.ts";
 import type { ItemRow } from "../types.ts";
 import type { AgentSql } from "./agent-transaction.ts";
 
@@ -14,7 +15,11 @@ export async function retrieveAgentItems(sql: AgentSql, query: string, range: { 
   const terms = splitQueryTerms(query);
   const params: unknown[] = [];
   const matches: string[] = [], scores: string[] = [];
-  for (const term of terms.length ? terms : [query]) {
+  // T15: search each term AND its declared equivalent forms (电动垂直起降 → eVTOL).
+  // Without this the SQL candidate stage never returns a document that only uses
+  // the acronym, so the scoring fix alone could not have recovered it.
+  const searched = [...new Set((terms.length ? terms : [query]).flatMap((term) => [term, ...expandTerms(term)]))];
+  for (const term of searched) {
     params.push(`%${term.replace(/[\\%_]/g, ch => `\\${ch}`)}%`);
     const n = params.length;
     matches.push(`(i.title ilike $${n} escape '\\' or i.body ilike $${n} escape '\\' or i.author ilike $${n} escape '\\')`);

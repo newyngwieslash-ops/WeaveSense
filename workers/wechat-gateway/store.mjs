@@ -89,13 +89,19 @@ function rollback(db) {
   try { db.exec("rollback"); } catch { /* preserve the transaction error */ }
 }
 
+// T13: `unknown` is a first-class outcome. A request that was sent but whose
+// result never arrived may have been charged, so its conservative reservation
+// stays on the books instead of being settled at the estimate (which would erase
+// money that was probably spent) or released to zero (which would do the same and
+// also free budget for another call).
 const RESERVATIONS_SQL = `create table provider_reservations (
   id integer primary key autoincrement,
   day text not null,
   provider text not null,
   estimate real not null check (estimate >= 0),
   actual real check (actual is null or actual >= 0),
-  status text not null default 'open' check (status in ('open', 'settled', 'overrun')),
+  status text not null default 'open' check (status in ('open', 'settled', 'overrun', 'unknown')),
+  reason text not null default '',
   created_at text not null,
   settled_at text
 )`;
@@ -103,17 +109,29 @@ const RESERVATIONS_SQL = `create table provider_reservations (
 function migrateReservations(db) {
   const schema = db.prepare("select sql from sqlite_master where type = 'table' and name = 'provider_reservations'")
     .get()?.sql;
-  if (!schema) db.exec(RESERVATIONS_SQL);
-  else {
+  if (!schema) {
+    db.exec(RESERVATIONS_SQL);
+  } else {
     const columns = db.prepare("pragma table_info(provider_reservations)").all();
-    if (!columns.some(({ name }) => name === "actual") || !schema.includes("'overrun'")) {
-      const actual = columns.some(({ name }) => name === "actual") ? "actual" : "null";
+    const needsActual = !columns.some(({ name }) => name === "actual");
+    const needsOverrun = !schema.includes("'overrun'");
+    // T13 additions: the `unknown` outcome and its reason.
+    const needsUnknown = !schema.includes("'unknown'");
+    const needsReason = !columns.some(({ name }) => name === "reason");
+    if (needsActual || needsOverrun || needsUnknown || needsReason) {
+      // Rebuild with the current shape. Historical rows are carried over
+      // verbatim: an old 'settled' row keeps its amount and status, and no
+      // historical cost is rewritten to 0.
       db.exec(`drop index if exists provider_reservations_open;
         alter table provider_reservations rename to provider_reservations_legacy;
         ${RESERVATIONS_SQL};
         insert into provider_reservations
-          (id, day, provider, estimate, actual, status, created_at, settled_at)
-          select id, day, provider, estimate, ${actual}, status, created_at, settled_at
+          (id, day, provider, estimate, actual, status, reason, created_at, settled_at)
+          select id, day, provider, estimate,
+                 ${needsActual ? "null" : "actual"},
+                 status,
+                 ${needsReason ? "''" : "reason"},
+                 created_at, settled_at
           from provider_reservations_legacy;
         drop table provider_reservations_legacy`);
     }
@@ -283,10 +301,15 @@ function createStore(db) {
     where day = ? and provider = ?`);
   const addReservation = db.prepare(`insert into provider_reservations
     (day, provider, estimate, status, created_at) values (?, ?, ?, 'open', ?)`);
-  const getReservation = db.prepare(`select id, day, provider, estimate, actual, status
+  const getReservation = db.prepare(`select id, day, provider, estimate, actual, status, reason
     from provider_reservations where id = ?`);
   const settleReservation = db.prepare(`update provider_reservations
-    set status = ?, actual = ?, settled_at = ? where id = ? and status = 'open'`);
+    set status = ?, actual = ?, reason = ?, settled_at = ? where id = ? and status = 'open'`);
+  const lastReservation = db.prepare("select id from provider_reservations order by id desc limit 1");
+  const listOverrunRows = db.prepare(`select id, day, provider, estimate, actual, reason, settled_at
+    from provider_reservations
+    where day = ? and provider = ? and status = 'overrun'
+    order by id`);
   const getItem = db.prepare(`select account_id, provider, providers_seen, body_text, body_complete, cover_url
     from gateway_items where source_id = ? and canonical_id = ?`);
   const upsertItem = db.prepare(`insert into gateway_items
@@ -401,7 +424,12 @@ function createStore(db) {
     tryReserveSpend(day, provider, estimate, dailyRmbCap, dailyCallCap) {
       day = key(day, "day");
       provider = key(provider, "provider");
+      // T13: without a real, verified price bound a paid call cannot reserve
+      // honestly. Defaulting to a guessed number is exactly how a daily cap gets
+      // exceeded, so an absent estimate refuses admission instead.
+      if (estimate == null || estimate === "") return false;
       estimate = money(estimate, "estimate");
+      if (!(estimate > 0)) return false;
       dailyRmbCap = money(dailyRmbCap, "dailyRmbCap");
       dailyCallCap = callCap(dailyCallCap);
       db.exec("begin immediate");
@@ -434,6 +462,12 @@ function createStore(db) {
             db.exec("commit");
             return reservation.status;
           }
+          // T13: a reservation closed as `unknown` may not be reopened to a lower
+          // amount. The conservative figure is the record of money that may have
+          // been spent; lowering it would free budget that was never freed.
+          if (reservation.status === "unknown") {
+            throw new Error("provider spend reservation settled unknown; not replayable");
+          }
           throw new Error("provider spend reservation replay conflict");
         }
         const current = getUsage.get(reservation.day, reservation.provider);
@@ -441,7 +475,8 @@ function createStore(db) {
         const now = new Date().toISOString();
         const amount = money(Math.max(0, Number(current.amount) - Number(reservation.estimate) + actual));
         const status = actual > Number(reservation.estimate) ? "overrun" : "settled";
-        if (Number(settleReservation.run(status, actual, now, id).changes) !== 1) {
+        const reason = status === "overrun" ? "cost_above_estimate" : "";
+        if (Number(settleReservation.run(status, actual, reason, now, id).changes) !== 1) {
           throw new Error("provider spend reservation was already settled");
         }
         adjustUsage.run(amount, now, reservation.day, reservation.provider);
@@ -451,6 +486,56 @@ function createStore(db) {
         rollback(db);
         throw error;
       }
+    },
+    /**
+     * T13: close a reservation whose outcome never arrived.
+     *
+     * The conservative estimate stays on the books: the provider may well have
+     * charged it, and releasing it would both hide the possible spend and free
+     * budget for another call. The status is `unknown` (distinct from `settled`
+     * and `overrun`) so an operator can see the uncertainty.
+     */
+    settleUnknown(id, { reason = "outcome_unknown" } = {}) {
+      id = reservationId(id);
+      db.exec("begin immediate");
+      try {
+        const reservation = getReservation.get(id);
+        if (!reservation) throw new Error("provider spend reservation not found");
+        if (reservation.status === "unknown") {
+          db.exec("commit");
+          return "unknown";
+        }
+        if (reservation.status !== "open") throw new Error("provider spend reservation replay conflict");
+        const now = new Date().toISOString();
+        const estimate = Number(reservation.estimate);
+        if (Number(settleReservation.run("unknown", estimate, key(reason, "reason"), now, id).changes) !== 1) {
+          throw new Error("provider spend reservation was already settled");
+        }
+        db.exec("commit");
+        return "unknown";
+      } catch (error) {
+        rollback(db);
+        throw error;
+      }
+    },
+    /** Reservations whose real cost exceeded the estimate, for operator review. */
+    listOverruns(day, provider) {
+      day = key(day, "day");
+      provider = key(provider, "provider");
+      return listOverrunRows.all(day, provider).map((row) => ({
+        id: String(row.id),
+        day: String(row.day),
+        provider: String(row.provider),
+        estimate: money(Number(row.estimate)),
+        actual: money(Number(row.actual)),
+        excess: money(Math.max(0, Number(row.actual) - Number(row.estimate))),
+        settled_at: String(row.settled_at ?? ""),
+      }));
+    },
+    /** The id of the most recent reservation (test/ops convenience). */
+    lastReservationId() {
+      const row = lastReservation.get();
+      return row ? String(row.id) : null;
     },
     getProviderUsage: providerUsage,
     listProviderUsage(fromDay, toDay, provider) {

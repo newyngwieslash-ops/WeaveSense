@@ -1,44 +1,328 @@
 {
   "corpus": [
-    { "id": "batt-1", "title": "固态电池量产卡点", "body": "电解液界面仍不稳定，良率低于中试目标。", "author": "产业组" },
-    { "id": "batt-2", "title": "产业纪要", "body": "会议前半段讨论产能。AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA 固态电池量产仍缺电解液。", "author": "纪要" },
-    { "id": "syn-1", "title": "全固态电芯中试", "body": "硫化物路线接近量产，成本仍高。", "author": "材料所" },
-    { "id": "ev-1", "title": "新能源汽车补贴退坡", "body": "地方补贴减少后经销库存上升。", "author": "政策组" },
-    { "id": "chip-1", "title": "先进封装产能", "body": "CoWoS 交期拉长到 40 周。", "author": "半导体" },
-    { "id": "chip-2", "title": "周报", "body": "前半段是人事。BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB 先进封装交期继续恶化。", "author": "晶圆厂" },
-    { "id": "ai-1", "title": "推理芯片招标", "body": "国产加速卡进入二供名单。", "author": "算力" },
-    { "id": "none-1", "title": "今日天气", "body": "上海多云转晴。", "author": "气象" },
-    { "id": "cross-1", "title": "宁德与车企纪要", "body": "宁德时代与某车企讨论固态电池上车时间表。", "author": "车企" },
-    { "id": "cross-2", "title": "车企财报电话会", "body": "对方提到与宁德联合验证固态电池。", "author": "IR" },
-    { "id": "phrase-1", "title": "低空经济试点", "body": "eVTOL 适航审定仍是瓶颈。", "author": "民航" },
-    { "id": "phrase-2", "title": "适航审定进度", "body": "电动垂直起降航空器尚未拿到型号合格证。", "author": "适航" },
-    { "id": "long-1", "title": "长文调研", "body": "开篇铺垫。CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC 关键事实：钠电已经切入两轮车替换市场。", "author": "调研" },
-    { "id": "wx-1", "title": "公众号：固态电池", "body": "硫化物电解质量产设备交货延期。", "author": "微信" },
-    { "id": "rss-1", "title": "RSS：电池周报", "body": "硫化物电解质设备延期三个月。", "author": "RSS" },
-    { "id": "noise-2", "title": "足球赛果", "body": "主队一比零取胜。", "author": "体育" }
+    {
+      "id": "batt-1",
+      "title": "固态电池量产卡点",
+      "body": "电解液界面仍不稳定，良率低于中试目标。",
+      "author": "产业组"
+    },
+    {
+      "id": "batt-2",
+      "title": "产业纪要",
+      "body": "会议前半段讨论产能。AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA 固态电池量产仍缺电解液。",
+      "author": "纪要"
+    },
+    {
+      "id": "syn-1",
+      "title": "全固态电芯中试",
+      "body": "硫化物路线接近量产，成本仍高。",
+      "author": "材料所"
+    },
+    {
+      "id": "ev-1",
+      "title": "新能源汽车补贴退坡",
+      "body": "地方补贴减少后经销库存上升。",
+      "author": "政策组"
+    },
+    {
+      "id": "chip-1",
+      "title": "先进封装产能",
+      "body": "CoWoS 交期拉长到 40 周。",
+      "author": "半导体"
+    },
+    {
+      "id": "chip-2",
+      "title": "周报",
+      "body": "前半段是人事。BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB 先进封装交期继续恶化。",
+      "author": "晶圆厂"
+    },
+    {
+      "id": "ai-1",
+      "title": "推理芯片招标",
+      "body": "国产加速卡进入二供名单。",
+      "author": "算力"
+    },
+    {
+      "id": "none-1",
+      "title": "今日天气",
+      "body": "上海多云转晴。",
+      "author": "气象"
+    },
+    {
+      "id": "cross-1",
+      "title": "宁德与车企纪要",
+      "body": "宁德时代与某车企讨论固态电池上车时间表。",
+      "author": "车企"
+    },
+    {
+      "id": "cross-2",
+      "title": "车企财报电话会",
+      "body": "对方提到与宁德联合验证固态电池。",
+      "author": "IR"
+    },
+    {
+      "id": "phrase-1",
+      "title": "低空经济试点",
+      "body": "eVTOL 适航审定仍是瓶颈。",
+      "author": "民航"
+    },
+    {
+      "id": "phrase-2",
+      "title": "适航审定进度",
+      "body": "电动垂直起降航空器尚未拿到型号合格证。",
+      "author": "适航"
+    },
+    {
+      "id": "long-1",
+      "title": "长文调研",
+      "body": "开篇铺垫。CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC 关键事实：钠电已经切入两轮车替换市场。",
+      "author": "调研"
+    },
+    {
+      "id": "wx-1",
+      "title": "公众号：固态电池",
+      "body": "硫化物电解质量产设备交货延期。",
+      "author": "微信"
+    },
+    {
+      "id": "rss-1",
+      "title": "RSS：电池周报",
+      "body": "硫化物电解质设备延期三个月。",
+      "author": "RSS"
+    },
+    {
+      "id": "noise-2",
+      "title": "足球赛果",
+      "body": "主队一比零取胜。",
+      "author": "体育"
+    },
+    {
+      "id": "conf-a",
+      "title": "产线良率快报",
+      "body": "A 线良率约 92%。",
+      "author": "产业组"
+    },
+    {
+      "id": "conf-b",
+      "title": "产线良率复核",
+      "body": "A 线良率复核为 88%，与快报口径不同。",
+      "author": "质控组"
+    },
+    {
+      "id": "scope-wx",
+      "title": "公众号：电解液涨价",
+      "body": "电解液价格上调 5%。",
+      "author": "微信"
+    },
+    {
+      "id": "scope-rss",
+      "title": "RSS：电解液涨价",
+      "body": "电解液价格上调 5%。",
+      "author": "RSS"
+    }
   ],
   "cases": [
-    { "id": "c01", "query": "固态电池量产卡点", "expected_ids": ["batt-1", "batt-2"], "none": false },
-    { "id": "c02", "query": "全固态电芯中试", "expected_ids": ["syn-1"], "none": false },
-    { "id": "c03", "query": "电解液界面", "expected_ids": ["batt-1"], "none": false },
-    { "id": "c04", "query": "新能源汽车补贴退坡", "expected_ids": ["ev-1"], "none": false },
-    { "id": "c05", "query": "先进封装交期", "expected_ids": ["chip-1", "chip-2"], "none": false },
-    { "id": "c06", "query": "CoWoS", "expected_ids": ["chip-1"], "none": false },
-    { "id": "c07", "query": "国产推理芯片", "expected_ids": ["ai-1"], "none": false },
-    { "id": "c08", "query": "上海天气", "expected_ids": ["none-1"], "none": false },
-    { "id": "c09", "query": "宁德固态电池上车", "expected_ids": ["cross-1", "cross-2"], "none": false },
-    { "id": "c10", "query": "eVTOL 适航", "expected_ids": ["phrase-1", "phrase-2"], "none": false },
-    { "id": "c11", "query": "电动垂直起降", "expected_ids": ["phrase-2", "phrase-1"], "none": false },
-    { "id": "c12", "query": "钠电两轮车", "expected_ids": ["long-1"], "none": false },
-    { "id": "c13", "query": "硫化物电解质设备延期", "expected_ids": ["wx-1", "rss-1"], "none": false },
-    { "id": "c14", "query": "固态电池", "expected_ids": ["batt-1", "wx-1", "cross-1"], "none": false },
-    { "id": "c15", "query": "没有这回事的火星矿业分红", "expected_ids": [], "none": true },
-    { "id": "c16", "query": "足球比分", "expected_ids": ["noise-2"], "none": false },
-    { "id": "c17", "query": "量产缺电解液", "expected_ids": ["batt-2"], "none": false },
-    { "id": "c18", "query": "封装交期恶化", "expected_ids": ["chip-2"], "none": false },
-    { "id": "c19", "query": "车企联合验证固态", "expected_ids": ["cross-2"], "none": false },
-    { "id": "c20", "query": "低空经济试点", "expected_ids": ["phrase-1"], "none": false },
-    { "id": "c21", "query": "型号合格证", "expected_ids": ["phrase-2"], "none": false },
-    { "id": "c22", "query": "今日天气", "expected_ids": ["none-1"], "none": false }
+    {
+      "id": "c01",
+      "query": "固态电池量产卡点",
+      "expected_ids": [
+        "batt-1",
+        "batt-2"
+      ],
+      "none": false
+    },
+    {
+      "id": "c02",
+      "query": "全固态电芯中试",
+      "expected_ids": [
+        "syn-1"
+      ],
+      "none": false
+    },
+    {
+      "id": "c03",
+      "query": "电解液界面",
+      "expected_ids": [
+        "batt-1"
+      ],
+      "none": false
+    },
+    {
+      "id": "c04",
+      "query": "新能源汽车补贴退坡",
+      "expected_ids": [
+        "ev-1"
+      ],
+      "none": false
+    },
+    {
+      "id": "c05",
+      "query": "先进封装交期",
+      "expected_ids": [
+        "chip-1",
+        "chip-2"
+      ],
+      "none": false
+    },
+    {
+      "id": "c06",
+      "query": "CoWoS",
+      "expected_ids": [
+        "chip-1"
+      ],
+      "none": false
+    },
+    {
+      "id": "c07",
+      "query": "国产推理芯片",
+      "expected_ids": [
+        "ai-1"
+      ],
+      "none": false
+    },
+    {
+      "id": "c08",
+      "query": "上海天气",
+      "expected_ids": [
+        "none-1"
+      ],
+      "none": false
+    },
+    {
+      "id": "c09",
+      "query": "宁德固态电池上车",
+      "expected_ids": [
+        "cross-1",
+        "cross-2"
+      ],
+      "none": false
+    },
+    {
+      "id": "c10",
+      "query": "eVTOL 适航",
+      "expected_ids": [
+        "phrase-1",
+        "phrase-2"
+      ],
+      "none": false
+    },
+    {
+      "id": "c11",
+      "query": "电动垂直起降",
+      "expected_ids": [
+        "phrase-2",
+        "phrase-1"
+      ],
+      "none": false
+    },
+    {
+      "id": "c12",
+      "query": "钠电两轮车",
+      "expected_ids": [
+        "long-1"
+      ],
+      "none": false
+    },
+    {
+      "id": "c13",
+      "query": "硫化物电解质设备延期",
+      "expected_ids": [
+        "wx-1",
+        "rss-1"
+      ],
+      "none": false
+    },
+    {
+      "id": "c14",
+      "query": "固态电池",
+      "expected_ids": [
+        "batt-1",
+        "wx-1",
+        "cross-1"
+      ],
+      "none": false
+    },
+    {
+      "id": "c15",
+      "query": "没有这回事的火星矿业分红",
+      "expected_ids": [],
+      "none": true
+    },
+    {
+      "id": "c16",
+      "query": "足球比分",
+      "expected_ids": [
+        "noise-2"
+      ],
+      "none": false
+    },
+    {
+      "id": "c17",
+      "query": "量产缺电解液",
+      "expected_ids": [
+        "batt-2"
+      ],
+      "none": false
+    },
+    {
+      "id": "c18",
+      "query": "封装交期恶化",
+      "expected_ids": [
+        "chip-2"
+      ],
+      "none": false
+    },
+    {
+      "id": "c19",
+      "query": "车企联合验证固态",
+      "expected_ids": [
+        "cross-2"
+      ],
+      "none": false
+    },
+    {
+      "id": "c20",
+      "query": "低空经济试点",
+      "expected_ids": [
+        "phrase-1"
+      ],
+      "none": false
+    },
+    {
+      "id": "c21",
+      "query": "型号合格证",
+      "expected_ids": [
+        "phrase-2"
+      ],
+      "none": false
+    },
+    {
+      "id": "c22",
+      "query": "今日天气",
+      "expected_ids": [
+        "none-1"
+      ],
+      "none": false
+    },
+    {
+      "id": "c23",
+      "query": "A 线良率",
+      "expected_ids": [
+        "conf-a",
+        "conf-b"
+      ],
+      "none": false,
+      "note": "数字冲突：两份材料给出不同数值，应同时召回以便对账"
+    },
+    {
+      "id": "c24",
+      "query": "电解液涨价",
+      "expected_ids": [
+        "scope-wx",
+        "scope-rss"
+      ],
+      "none": false,
+      "note": "平台范围：同一短语在两个平台各一条，均应在无平台过滤时召回"
+    }
   ]
 }

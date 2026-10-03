@@ -3,14 +3,17 @@ import { itemMatchesPhrase, RADAR_SOURCE_ID } from "@/lib/keyword";
 import { isPlatform, type PlatformId } from "@/lib/platforms";
 import { shortId } from "@/lib/utils";
 import { normalizeWechatUrl } from "@/lib/wechat-canonical";
+import { canAdvanceCursor, compareNumericIds, isNumericId } from "./cursor.ts";
 import type { TickResult } from "@/lib/types";
 import { collectSource } from "./collectors";
-import { collectKeyword } from "./collectors/keyword";
+import type { FetchIo } from "./http.ts";
+import { collectKeyword } from "./collectors/keyword.ts";
 import { collectorMeta, type CollectorMeta, type NormalizedItem, type SourceRecord } from "./collectors/types";
 import { cronDueQuotas, CRON_SOURCE_CONCURRENCY, runCronBatch, type CronBatchOptions } from "./cron";
 import { enqueueItemMedia } from "./media";
 import { mapKeyword, mapSource } from "./queries";
 import {
+  tagCorpusWithPhrase as atomicTagCorpus,
   claimKeyword,
   claimSource,
   completeKeywordClaim,
@@ -24,16 +27,33 @@ import {
   SCHEDULER_LEASE_MINUTES,
 } from "./scheduler-atomic";
 import { ensureRadarSource, ensureSeeded } from "./seed";
+import { keywordRunOutcome } from "./scheduler-outcome.ts";
 import { asJson } from "./serialize";
 import { mergeProvidersSeen } from "./wechat-meta";
 
+/**
+ * The item whose external id should become the source's new cursor.
+ *
+ * T10: numeric ids are compared as decimal strings (`compareNumericIds`), not
+ * through `Number()`. Platform ids can exceed 2^53, where two distinct ids round
+ * to the same double — the old reduce could then hand back a different item than
+ * the true maximum, and the stored cursor would either skip content or re-fetch
+ * it with no error anywhere.
+ */
 function pickCursor(items: NormalizedItem[]): NormalizedItem | undefined {
   if (!items.length) return undefined;
-  const numeric = items.filter((it) => /^\d+$/.test(it.external_id));
+  const numeric = items.filter((it) => isNumericId(it.external_id));
   if (numeric.length) {
-    return numeric.reduce((a, b) => (Number(a.external_id) >= Number(b.external_id) ? a : b));
+    return numeric.reduce((a, b) =>
+      compareNumericIds(a.external_id, b.external_id) >= 0 ? a : b);
   }
   return items[0];
+}
+
+/** The published time of the item that owns `externalId`, if it is in the batch. */
+function latestPublished(items: NormalizedItem[], externalId: string): string | null {
+  const match = items.find((it) => it.external_id === externalId);
+  return match?.published_at ?? null;
 }
 
 function errMessage(err: unknown): string {
@@ -124,7 +144,10 @@ async function persistHit(
       platform,
       ext,
       it.title.slice(0, 500),
-      platform === "wechat" ? it.body : it.body.slice(0, 8000),
+      // T11: no body truncation at the storage layer, for any platform. The
+      // model context budget lives in agent-context; silently cutting here lost
+      // the tail before anything downstream could notice.
+      it.body,
       it.author.slice(0, 200),
       url,
       it.media_type,
@@ -142,34 +165,31 @@ async function persistHit(
     : "skip";
 }
 
-export async function tagCorpusWithPhrase(phrase: string): Promise<number> {
+/**
+ * Tag the whole corpus with one phrase.
+ *
+ * The SQL lives in `scheduler-atomic.ts` so the set-based, concurrency-safe
+ * update is testable on its own; this wrapper supplies the shared `sql` handle
+ * and the platform scope.
+ *
+ * `platforms` comes from the keyword record. An empty list means "all platforms"
+ * — matching the collector, where an empty `platforms` means "no filter".
+ * Passing "local" platforms through keeps a keyword scoped to WeChat/Telegram
+ * from tagging unrelated RSS rows in the local corpus.
+ */
+export async function tagCorpusWithPhrase(
+  phrase: string,
+  options: { platforms?: PlatformId[] } = {},
+): Promise<number> {
   const sql = await getSql();
-  const like = `%${phrase.replace(/[%_]/g, "")}%`;
-  const rows = await sql.query<Record<string, unknown>>(
-    `select id, title, body, author, matched_keywords from items
-     where title ilike $1 or body ilike $1 or author ilike $1
-     limit 200`,
-    [like],
-  );
-  let tagged = 0;
-  for (const row of rows) {
-    const current = asJson<string[]>(row.matched_keywords, []);
-    if (current.some((k) => k.toLowerCase() === phrase.toLowerCase())) continue;
-    if (!itemMatchesPhrase(String(row.title ?? ""), String(row.body ?? ""), String(row.author ?? ""), phrase)) {
-      continue;
-    }
-    await sql.query("update items set matched_keywords = $2::jsonb where id = $1", [
-      String(row.id),
-      JSON.stringify(mergeKeywords(current, [phrase])),
-    ]);
-    tagged += 1;
-  }
-  return tagged;
+  return atomicTagCorpus(sql, phrase, { platforms: options.platforms ?? [] });
 }
 
 export async function runSourceJob(
   sourceId: string,
   kind: "incremental" | "manual" | "reconcile" = "incremental",
+  /** Test seam (see `FetchIo`); production callers omit it. */
+  io: FetchIo = {},
 ): Promise<{ items_found: number; items_new: number; error: string }> {
   const sql = await getSql();
   const jobId = shortId();
@@ -201,7 +221,7 @@ export async function runSourceJob(
       adapter: source.adapter,
       last_external_id: source.last_external_id,
     };
-    const collected = await collectSource(record);
+    const collected = await collectSource(record, io);
     const fetched = collected.items;
     meta = collected.meta;
     const existing = await sql.query<{ id: string; external_id: string; url: string; extra: unknown }>(
@@ -256,7 +276,8 @@ export async function runSourceJob(
           source.platform,
           it.external_id.slice(0, 320),
           it.title.slice(0, 500),
-          source.platform === "wechat" ? it.body : it.body.slice(0, 8000),
+          // T11: see the note on the keyword insert above — storage keeps the body.
+          it.body,
           it.author.slice(0, 200),
           it.url.slice(0, 1000),
           it.media_type,
@@ -279,13 +300,27 @@ export async function runSourceJob(
       }
     }
 
-    const latest = pickCursor(fetched);
+    // T10: the cursor may only advance to a boundary the fetch actually proved
+    // it reached. A batch that stopped at its page cap (or is inherently a
+    // limited window) reports `complete: false`; advancing then would skip
+    // everything between the old cursor and this page, permanently and silently.
+    const coverage = collected.coverage;
+    const cursorSafe = coverage === undefined ? true : coverage.complete;
+    const previousCursor = source.last_external_id ?? "";
+    let nextCursor = previousCursor;
+    if (cursorSafe) {
+      const latest = pickCursor(fetched);
+      if (latest && canAdvanceCursor(previousCursor, latest.external_id)) {
+        nextCursor = latest.external_id;
+      }
+    }
+    const cursorItem = fetched.find((it) => it.external_id === nextCursor);
     const completed = await completeSourceClaim(
       sql,
       source.id,
       jobId,
-      latest?.external_id ?? "",
-      latest?.published_at ?? null,
+      nextCursor,
+      cursorItem?.published_at ?? (nextCursor === previousCursor ? null : latestPublished(fetched, nextCursor)),
     );
     if (!completed) {
       await finishSourceJob(sql, jobId, "error", SCHEDULER_LEASE_LOST, 0, 0, meta);
@@ -309,6 +344,8 @@ export async function runSourceJob(
 export async function runKeywordJob(
   keywordId: string,
   kind: "keyword" | "manual" = "keyword",
+  /** Test seam (see `FetchIo`); production callers omit it. */
+  io: FetchIo = {},
 ): Promise<{ items_found: number; items_new: number; error: string; phrase: string }> {
   await ensureRadarSource();
   const sql = await getSql();
@@ -332,20 +369,24 @@ export async function runKeywordJob(
       [jobId, RADAR_SOURCE_ID, kind, kw.id],
     );
     jobCreated = true;
-    const fetched = await collectKeyword(kw.phrase, kw.platforms);
+    const batch = await collectKeyword(kw.phrase, kw.platforms, io);
+    const fetched = batch.items;
     let itemsNew = 0;
     for (const it of fetched) {
       const result = await persistHit(it, kw.phrase, "rss");
       if (result === "new") itemsNew += 1;
     }
-    const localTagged = await tagCorpusWithPhrase(kw.phrase);
+    const localTagged = await tagCorpusWithPhrase(kw.phrase, { platforms: kw.platforms });
     const hits = await recountKeywordHits(kw.phrase, false);
-    const note =
-      fetched.length === 0 && localTagged === 0
-        ? "检索源暂无新结果，已扫描本地库"
-        : fetched.length === 0
-          ? `外部检索受限，本地命中 ${localTagged} 条`
-          : "";
+
+    // T08: the run's status must reflect what actually happened (see
+    // scheduler-outcome.ts). Previously every outcome collapsed into "ok", so a
+    // total outage looked like a clean zero-hit scan.
+    const { status: jobStatus, note } = keywordRunOutcome(batch.attempts, {
+      externalItems: fetched.length,
+      localTagged,
+    });
+
     const completed = await completeKeywordClaim(sql, kw.id, jobId, note, hits);
     if (!completed) {
       await sql.query(
@@ -355,9 +396,9 @@ export async function runKeywordJob(
       return { items_found: 0, items_new: 0, error: SCHEDULER_LEASE_LOST, phrase: kw.phrase };
     }
     await sql.query(
-      `update jobs set status = 'ok', finished_at = now(), items_found = $2, items_new = $3, error = $4
+      `update jobs set status = $5, finished_at = now(), items_found = $2, items_new = $3, error = $4
        where id = $1`,
-      [jobId, fetched.length + localTagged, itemsNew, note],
+      [jobId, fetched.length + localTagged, itemsNew, note, jobStatus],
     );
     return { items_found: fetched.length + localTagged, items_new: itemsNew, error: note, phrase: kw.phrase };
   } catch (err) {
@@ -374,7 +415,12 @@ export async function runKeywordJob(
   }
 }
 
-export async function tickDueSources(limit = 5, budget: CronBatchOptions = {}): Promise<TickResult & { deferred: number }> {
+export async function tickDueSources(
+  limit = 5,
+  budget: CronBatchOptions = {},
+  /** Test seam (see `FetchIo`); production callers omit it. */
+  io: FetchIo = {},
+): Promise<TickResult & { deferred: number }> {
   await ensureSeeded();
   const sql = await getSql();
   const { sources: sourceLimit, keywords: keywordLimit } = cronDueQuotas(limit);
@@ -418,7 +464,7 @@ export async function tickDueSources(limit = 5, budget: CronBatchOptions = {}): 
   // Fixed pools let keyword and source work share the same bounded window without either backlog starving.
   const [keywordBatch, sourceBatch] = await Promise.all([runCronBatch(dueKw, async (row) => {
     const kw = mapKeyword(row);
-    const result = await runKeywordJob(kw.id, "keyword");
+    const result = await runKeywordJob(kw.id, "keyword", io);
     return {
       source_id: kw.id,
       name: `关键词 · ${kw.phrase}`,
@@ -428,7 +474,7 @@ export async function tickDueSources(limit = 5, budget: CronBatchOptions = {}): 
     };
   }, budget), runCronBatch(due, async (row) => {
     const source = mapSource(row);
-    const result = await runSourceJob(source.id, "incremental");
+    const result = await runSourceJob(source.id, "incremental", io);
     return {
       source_id: source.id,
       name: source.name,

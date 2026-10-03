@@ -27,8 +27,12 @@ test("ships a QA-only primary fixture and wires its host allowlist", async () =>
   assert.ok(entries.some((entry) => String(entry.content ?? "").length > 8_000));
   assert.ok(entries.some((entry) => entry["media:thumbnail"]?.["@_url"]));
   assert.match(compose, /wechat-fixture:\s*[\s\S]*profiles:\s*\["qa"\]/);
-  assert.match(compose, /WECHAT_PRIMARY_ALLOWED_HOSTS:\s*\$\{WECHAT_PRIMARY_ALLOWED_HOSTS:\?[^}]+\}/);
-  assert.equal((compose.match(/WECHAT_GATEWAY_TOKEN:\s*\$\{WECHAT_GATEWAY_TOKEN:\?[^}]+\}/g) ?? []).length, 2);
+  // 2026-09-30 merge: secrets moved from ${VAR:?} interpolation to env_file
+  // (T24 hardening, see compose header). The allowlist now lives in
+  // F:/loom-backups/env/wechat-gateway.env (template: env-templates/).
+  assert.match(compose, /env_file:\s*[\s\S]*?F:\/loom-backups\/env\/wechat-gateway\.env/);
+  // WECHAT_GATEWAY_TOKEN reaches the gateway via that env_file (app side reads
+  // it from app.env), and the gateway URL default stays interpolatable:
   assert.match(compose, /WECHAT_GATEWAY_URL:\s*\$\{WECHAT_GATEWAY_URL:-http:\/\/wechat-gateway:8790\}/);
 });
 
@@ -530,8 +534,13 @@ test("serves authenticated source, health, and feed routes", async (t) => {
     <link href="https://mp.weixin.qq.com/s?__biz=MzA1&amp;mid=9&amp;idx=1&amp;sn=abc"/></entry></feed>`)).listen(0, "127.0.0.1");
   await once(upstream, "listening");
   const store = openStore(":memory:");
+  // The fixture's article is dated 2026-08-28, so the gateway must be told that
+  // 2026-08-28 is "now": its retention prunes items older than 30 days, and with
+  // the real wall clock the fixture silently ages out of the 7-day feed window
+  // (the entry disappears — a time-dependent fixture defect, not a product bug).
   const gateway = createGatewayServer({ store, token: "gateway-test",
-    allowedFeedHosts: new Set(["127.0.0.1"]) }).listen(0, "127.0.0.1");
+    allowedFeedHosts: new Set(["127.0.0.1"]),
+    now: () => new Date("2026-08-28T12:00:00.000Z") }).listen(0, "127.0.0.1");
   await once(gateway, "listening");
   t.after(() => { upstream.close(); gateway.close(); store.close(); });
   const upstreamPort = upstream.address().port;

@@ -153,12 +153,12 @@ export async function readValidationGateway(baseUrl, token, window, fetchImpl = 
       redirect: "error", signal: AbortSignal.timeout(30_000) });
   } catch { fail("wechat_validation_gateway_unavailable"); }
   if (!response.ok) {
-    try { await response.body?.cancel(); } catch {}
+    try { await response.body?.cancel(); } catch { /* best-effort */ }
     fail("wechat_validation_gateway_unavailable");
   }
   const declared = Number(response.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > MAX_GATEWAY_BYTES) {
-    try { await response.body?.cancel(); } catch {}
+    try { await response.body?.cancel(); } catch { /* best-effort */ }
     fail("wechat_validation_gateway_unavailable");
   }
   let bytes = 0, body = "";

@@ -36,7 +36,7 @@ type SeedKeyword = {
   platforms: PlatformId[];
 };
 
-const SOURCES: SeedSource[] = [
+export const SOURCES: SeedSource[] = [
   {
     id: RADAR_SOURCE_ID,
     platform: "rss",
@@ -207,24 +207,30 @@ const SOURCES: SeedSource[] = [
   },
   {
     id: "src_bili_hetongxue",
+    // T21: Bilibili throttles this API (-799) even at low volume, so its default
+    // interval is doubled versus other platforms. Throttling is also now
+    // recognised (see collectors/index.ts) rather than retried at full speed.
     platform: "bilibili",
     name: "老师好我叫何同学",
     handle: "163637592",
     url: "https://space.bilibili.com/163637592",
     feed_url: "",
-    interval_minutes: 180,
+    interval_minutes: 360,
     adapter: "bilibili",
     notes: "UP 主视频增量 · 生产接 bilibili-cli",
     live: false,
   },
   {
     id: "src_bili_paperclip",
+    // T21: Bilibili throttles this API (-799) even at low volume, so its default
+    // interval is doubled versus other platforms. Throttling is also now
+    // recognised (see collectors/index.ts) rather than retried at full speed.
     platform: "bilibili",
     name: "回形针PaperClip",
     handle: "25876945",
     url: "https://space.bilibili.com/25876945",
     feed_url: "",
-    interval_minutes: 180,
+    interval_minutes: 360,
     adapter: "bilibili",
     notes: "知识影像 · 字幕可接 bilibee",
     live: false,
@@ -392,6 +398,9 @@ const ITEMS: SeedItem[] = [
   },
   {
     source_id: "src_bili_hetongxue",
+    // T21: Bilibili throttles this API (-799) even at low volume, so its default
+    // interval is doubled versus other platforms. Throttling is also now
+    // recognised (see collectors/index.ts) rather than retried at full speed.
     platform: "bilibili",
     external_id: "BV1SEED01",
     title: "我做了一个真正能跑的媒体采集矩阵",
@@ -404,6 +413,9 @@ const ITEMS: SeedItem[] = [
   },
   {
     source_id: "src_bili_hetongxue",
+    // T21: Bilibili throttles this API (-799) even at low volume, so its default
+    // interval is doubled versus other platforms. Throttling is also now
+    // recognised (see collectors/index.ts) rather than retried at full speed.
     platform: "bilibili",
     external_id: "BV1SEED02",
     title: "为什么我不推荐「全能 Telegram Scraper」",
@@ -416,6 +428,9 @@ const ITEMS: SeedItem[] = [
   },
   {
     source_id: "src_bili_paperclip",
+    // T21: Bilibili throttles this API (-799) even at low volume, so its default
+    // interval is doubled versus other platforms. Throttling is also now
+    // recognised (see collectors/index.ts) rather than retried at full speed.
     platform: "bilibili",
     external_id: "BV1SEED03",
     title: "一条视频如何进入行业知识图谱",
@@ -428,6 +443,9 @@ const ITEMS: SeedItem[] = [
   },
   {
     source_id: "src_bili_paperclip",
+    // T21: Bilibili throttles this API (-799) even at low volume, so its default
+    // interval is doubled versus other platforms. Throttling is also now
+    // recognised (see collectors/index.ts) rather than retried at full speed.
     platform: "bilibili",
     external_id: "BV1SEED04",
     title: "固态电池量产卡点：电解质、界面与良率",

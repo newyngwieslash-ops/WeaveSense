@@ -183,235 +183,88 @@ docker compose up -d --force-recreate --no-deps app scheduler
 
 ---
 
-# ✅ 镜像重建（2026-09-24）：让线上 PRD 文案与源码一致
+# ⚠️ 未处理的安全加固项（用户决定暂缓，2026-09-17）
 
-## 为什么重建
+**用户明确选择"先不改，记录待办"。以下是完整现状与操作步骤，供后续执行。**
 
-2026-09-21 的文档校正把 PRD 页面里"适配器存在 = 平台可用"的误导表述改成了实测状态
-（微信无正文移出首版、Telegram 未登录、B 站限流、抖音/小红书/西瓜未验收等）。
-但那只是**源码改动**——生产镜像仍是 2026-09-17 构建的版本，页面显示的仍是 v1.1 旧文案。
+## 现状（实测，非推测）
 
-## 做了什么
-
-| 步骤 | 结果 |
-|---|---|
-| 构建前备份 | `F:/loom-backups/loom-prod-prerebuild-20260924-122508.dump`（2.38 MB，`pg_restore --list` 117 条目可读） |
-| 给旧镜像打回滚标签 | `loom-rollback:app-20260924`（= 切换前的 `loom-app:readiness-20260917`） |
-| 修正构建源 | B 的 README 是旧版（写着"L0 离线候选、尚未验收"）且链接指向仓库外；已用 R 的校正版覆盖，并把 3 份新文档同步进 B |
-| 构建 | 从工作树 B 构建 `loom-app:readiness-20260924`（`sha256:a0790e04b401…`）；唯一 warning 是 `VITE_AUTH_ENABLED`，非敏感值 |
-| **切换前演练** | 起隔离 PG（回环 60111）+ 恢复备份 → 新镜像连它启动 → 页面 200、**PRD 显示 v1.2 与"限流待验收"**（旧镜像对照为 v1.1、10 处"适配器"） |
-| 切换 | app 与 scheduler **各自单独** `--force-recreate --no-deps`；app 用时 **4.4 秒** |
-
-## 事后核验
-
-- 6 个服务全部健康；`items` 从 3230 增至 3232（切换期间采集未中断）
-- 生产 `/prd` 现在返回 `PRD / v1.2 / 2026-09-21`，含"限流待验收""频道 RSS 实测"等实测表述
-- 演练容器与隔离库已删除，未接入生产
-
-## ⚠️ 切换时观察到的两件与本次重建无关的事
-
-1. **本机模型网关（`127.0.0.1:10100`）已停止运行**——进程退出，端口无监听。
-   新旧镜像连它**都失败**（已用回滚镜像对照验证），所以不是重建引入的。
-   影响：分析与问答暂时不可用，直到该服务重新启动。属外部依赖，不在本仓库内。
-2. **3 个 RSS 源（36氪 / Solidot / 量子位）报 `socket disconnected before TLS connect`**——
-   同样在新旧镜像上都复现，属本机网络/代理对该域名的瞬时问题，与镜像无关。
-   任务页会如实显示该错误，下一轮 tick 会自动重试。
-
-## 回滚
-
-```bash
-# 镜像：把 compose 里的 readiness-20260924 改回 readiness-20260917，然后逐服务重建
-docker compose up -d --force-recreate --no-deps app
-docker compose up -d --force-recreate --no-deps scheduler
-
-# 或直接把回滚标签重新打回
-docker tag loom-rollback:app-20260924 loom-app:readiness-20260917
-```
-
-compose 备份：`F:/loom-backups/docker-compose.yml.pre-rebuild-<时间戳>`
-
----
-
-# 安全加固（2026-09-21 已执行完成）
-
-**状态：已完成并验证。** 本节原为「未处理的安全加固项（用户决定暂缓）」；
-用户于 2026-09-21 决定现在执行，两项（端口回环 + 强口令）**同批完成**，另接入生产模型。
-
-> 保留下面的历史记录，是为了记住"当时为什么没做"以及实测暴露面的全貌；
-> **执行结果见本节末尾的「执行记录」**，加固步骤已按实际执行更新。
-
-## 历史现状（2026-09-17，加固前）
-
-> **2026-09-19 复核更正**：下面「暴露面评估」原写"MinIO 仅本机可达、未暴露"，**实测不成立**，已按实测改写。
-> 同时新增「端口暴露」一项——它是本批发布留下的真实缺口，不在原表中。
-
-| 服务 | 变量 | 加固前的值 | 风险 |
+| 服务 | 变量 | 当前值 | 风险 |
 |---|---|---|---|
 | **postgres** | `POSTGRES_PASSWORD` | `loom` | **公开的默认值**（compose 文件里就有） |
 | **minio** | `MINIO_ROOT_PASSWORD` | `loom-secret-change-me` | 同上 |
 | app / telethon | `MINIO_SECRET_KEY` | 同上 | 同上 |
 | scheduler / wechat-gateway | — | ✓ 未发现弱默认值 | — |
 | agent | `AGENT_SERVICE_TOKEN` | 空 | 已通过 profile 停用，不再重启 |
-| **app / minio** | 端口绑定 | **`0.0.0.0` 全网卡** | **任何同网段设备可直接访问；应用无登录** |
-
-## 端口暴露（2026-09-19 实测发现，此前被误记为"已修"）
-
-**事实**（全部实测，非推测）：
-
-| 检查项 | 实测结果 |
-|---|---|
-| 生产实际使用的 compose | **根目录 `R/docker-compose.yml`**（`docker inspect` 读到的 `com.docker.compose.project.config_files`） |
-| 当时的端口行 | `"8080:8080"`、`"9000:9000"`、`"9001:9001"` —— **无 `127.0.0.1` 前缀** |
-| 回环绑定在哪 | 只在**工作树 B** 的 compose 里；**从未生效于生产** |
-| 端口演进 | 基线 `25d60e6` 至今的 4 次提交，R 的端口行**始终是全网卡**（21 处 `:?`/回环改动都在 B） |
-| 当时的监听 | `0.0.0.0:8080`、`0.0.0.0:9000`、`0.0.0.0:9001` |
-| 局域网可达 | ✅ 实测 `192.168.100.6:8080` → **200**（无登录页）、`:9001` → **200**、`:9000` → 403 |
-| 防火墙 | 以太网 = **Private** 类别，而 Private 配置文件 **Enabled=False** |
-| 媒体桶匿名读 | ✅ 实测匿名 `GET /loom/<object_key>` → **200**，对象可直接下载 |
-
-**因果**：T04 的回环修复写在工作树 B，T24 从 B 构建**镜像**但使用的是 **R 的 compose 文件**——
-镜像层修复生效，compose 层的端口修复没有跟着上线。
-
----
-
-# ✅ 执行记录（2026-09-21）
-
-## 做了什么
-
-| 项 | 变更 | 验证 |
-|---|---|---|
-| **端口收窄** | `8080`/`9000`/`9001` 全部改为 `127.0.0.1:` 前缀 | 局域网三端口**全部连接失败**；本机 `127.0.0.1:8080` → 200、`:9001` → 200、`:9000` → 403 |
-| **PG 强口令** | `ALTER USER loom WITH PASSWORD '<48 位十六进制>'`（**只改角色，不动数据**） | `psql` 新口令可连；app 健康 |
-| **MinIO 强口令** | 环境变量轮换 + `minio-init` 同步重建 | 新口令能列出 **381 个对象**；旧口令**已失效** |
-| **凭据外部化** | 新建 `F:/loom-backups/loom-prod.env`（600）+ `env/<service>.env` 七个按服务最小化文件 | `compose config` 通过；minio 只拿到自己的口令，不再持有 PG 口令/CRON_SECRET |
-| **生产模型接入** | 挂载 `F:/loom-backups/model.local.json`（含 Key）+ `extra_hosts: localhost:host-gateway` | 容器内真实生成 **HTTP 200**；端到端分析成功落库 |
-
-## 为什么用 env_file 而不是继续用 `${VAR:?}` 插值
-
-compose 的**插值不读 `env_file`**（实测：变量缺失时 `${VAR:?}` 直接让 `compose config` 失败）。
-更关键的是——用命令行传变量正是 T24 事故的复现路径（`compose up` 会把命令行变量注入全栈）。
-改用 `env_file` 后，**`restart.bat` 无需修改**，且整栈凭据不再经过命令行。
-
-## 按服务最小化，避免权限扩散
-
-最初直接给每个服务挂同一个 `loom-prod.env`，实测发现 **minio 容器也会拿到 PostgreSQL 口令和
-CRON_SECRET**（`env_file` 注入文件里全部变量）。已改为 `scripts/write-service-envs.mjs` 生成的
-七个文件：minio 只拿自己的根凭据，scheduler 只拿 `CRON_SECRET`（它只调 HTTP 端点，不连库）。
-
-## 加固后的端口/凭据状态
-
-| 服务 | 端口绑定 | 凭据来源 |
-|---|---|---|
-| app | `127.0.0.1:8080` | `env/app.env` |
-| minio | `127.0.0.1:9000`、`127.0.0.1:9001` | `env/minio.env` |
-| postgres | 不发布宿主端口 | `env/postgres.env` |
-| scheduler / telethon / wechat-gateway | 不发布宿主端口 | 各自 `env/*.env` |
-
-**媒体桶**：`MINIO_BUCKET_ACCESS=public` 保留（浏览器在宿主上，仍能显示媒体）。
-这是**有依据的取舍**，不是遗漏——端口已收窄到回环，局域网无法到达。
-若日后要远程访问，必须先改 `private` 或改用签名 URL。
-
-## 兼容性验证（最重要的一条）
-
-加固改了 compose 的必需变量与端口，而 **`restart.bat` 不能改**（重启契约）。已实测完整流程：
-
-```
-docker compose down          # 模拟 restart.bat [2/5]
-docker compose up -d         # 模拟 restart.bat [3/5]，未传任何变量
-```
-
-结果：6 个服务全部健康，**数据零丢失**（items=2838、sources=26、数据卷 381 对象），
-端口收窄与模型调用**在重启后仍然生效**。
-
-## 回滚
-
-- compose：`F:/loom-backups/docker-compose.yml.pre-hardening-20260921-092236`
-- 凭据文件：`F:/loom-backups/.env.t24.bak-20260921-093133`
-- 数据：迁移前/后 dump + 异地副本 `G:\QBXT_0917\loom-backup-20260917\`
-- **PG 口令改错**时：用 `ALTER USER` 改回即可（数据不受影响），再重建 app/scheduler
-- **MinIO 口令改错**时：改回环境变量并重建 minio + minio-init（两处必须一致，否则媒体操作失败）
-
-## 仍然存在的风险（加固后未消除的）
-
-- **应用无登录**：端口虽已收窄到回环，但同宿主的任何进程仍可访问。多人/远程使用需先做身份层。
-- **凭据文件在工作树外**：`F:/loom-backups/` 未加密、未入备份体系；若该目录丢失，需按上文重建凭据。
-- **备份仍是明文、手工**，且"异地"在同一台机器上（F: 与 G:）。
-- **「模型设置」页在生产只读**：这是设计要求（`with-app-env.mjs` 只在显式绑回环时才签发本机证明），
-  不是故障。改模型请编辑 `F:/loom-backups/model.local.json` 后重建 app。
 
 ## 暴露面评估（如实，不夸大也不掩饰）
 
 **当前缓解因素**：
 - PostgreSQL **未发布宿主端口**（只在 compose 内网 `postgres:5432`），外部无法直连
-- 部署方式为单机 Docker，**未映射公网**（无端口转发/UPnP 证据）
+- MinIO 端口（9000/9001）映射到宿主，但**仅本机可达**（无公网映射）
+- 部署方式是单机 Docker，未暴露到互联网
 
-**仍然存在的风险**（实测）：
-- **同一局域网内任何设备**都能打开应用（无登录）与 MinIO 控制台，并**匿名下载**媒体对象
-- 同一宿主上的**任何进程/容器**都能用公开凭据读写数据库与对象存储
+**仍然存在的风险**：
+- 同一宿主上的**任何进程/容器**都能用这套公开凭据读写数据库与对象存储
 - 任何拿到 `docker-compose.yml` 的人（它已在 git 里）都知道密码
 - 若将来把服务暴露到内网/公网，风险会立刻放大
 - **本批事故已证明**：弱默认值 + 无凭据副本 = 最难恢复的组合
 
-## 再次轮换凭据的标准流程（加固后）
+## 加固步骤（执行时照此操作）
 
-加固已完成，凭据现在集中在 `F:/loom-backups/loom-prod.env`。日后轮换照下面走：
+**前置**：先做一次备份（`F:\loom-backups`），并确认 `minio` 数据卷完好。
+
+### 1. 生成强随机密码（写入工作树外的凭据文件）
 
 ```bash
-# 1. 改单一凭据源
-#    编辑 F:/loom-backups/loom-prod.env（改 POSTGRES_PASSWORD 或 MINIO_ROOT_PASSWORD）
+NEW_PG_PW=$(openssl rand -hex 24)
+NEW_MINIO_PW=$(openssl rand -hex 24)
+# 追加到 F:\loom-backups\.env.t24（600 权限、工作树外、绝不入 git）
+```
 
-# 2. 重新生成按服务最小化的 env 文件（600 权限，工作树外）
-node scripts/write-service-envs.mjs
+### 2. PostgreSQL（**不改数据，只改角色密码**）
 
-# 3. 若是 PostgreSQL：先改角色口令（不动数据），再重建 app/scheduler
-docker exec gig5cyrba5yn3tsi-grok-workspace-postgres-1 \
-  sh -c 'PGPASSWORD=$POSTGRES_PASSWORD psql -U $POSTGRES_USER -d $POSTGRES_DB \
-         -c "ALTER USER loom WITH PASSWORD '\''<新密码>'\'';"'
+```bash
+# 2a. 改密码（幂等，可重复执行）
+docker exec gig5cyrba5yn3tsi-grok-workspace-postgres-1   psql -U loom -d loom -c "ALTER USER loom WITH PASSWORD '<新密码>';"
+
+# 2b. 更新连接方（app / scheduler）——每个服务单独重建，不牵动依赖
+#     必须用 --no-deps，且只指定一个服务（见本文件 T24 事故教训）
 docker compose up -d --force-recreate --no-deps app
 docker compose up -d --force-recreate --no-deps scheduler
+```
 
-# 4. 若是 MinIO：minio 与 minio-init 必须同批重建（否则桶策略失配，媒体落盘会失败）
+**注意**：`docker-compose.yml` 里 app/scheduler 的 `DATABASE_URL` 当前是硬编码
+`postgres://loom:loom@postgres:5432/loom`，需改为从环境变量取值。
+
+### 3. MinIO（改凭据后必须同步 minio-init，否则桶策略失配）
+
+```bash
 docker compose up -d --force-recreate --no-deps minio
 docker compose up -d --force-recreate --no-deps minio-init
-docker compose up -d --force-recreate --no-deps app
+docker compose up -d --force-recreate --no-deps app       # 它用 MINIO_* 凭据
 docker compose up -d --force-recreate --no-deps telethon
 ```
 
-**铁律（T24 事故教训）**：每条命令**只指定一个服务** + `--no-deps` + **不传任何变量到命令行**。
-`compose up` 会重新解析全文件并把命令行变量注入所有相关服务，曾导致 MinIO 密码被占位值覆盖、整栈重启循环。
+**关键**：MinIO 密码**不能只改环境变量**——`minio-init` 会用同一凭据设置桶策略，
+若两处不一致，媒体落盘会失败（本次事故已演示过这个失败模式）。
 
-## 验证清单（每次轮换后逐条核对）
+### 4. 验证清单
 
-- [ ] `docker compose config` 通过（无插值警告）
-- [ ] 6 个服务全部 `Up`（app / minio / postgres 应 `(healthy)`）
-- [ ] app 健康：`curl 127.0.0.1:8080/` → 200
-- [ ] 局域网不可达：`curl 192.168.100.6:8080/` → 连接失败（端口收窄未被回退）
-- [ ] MinIO 新口令能列对象（当前 381 个）、**旧口令失败**
-- [ ] scheduler 日志持续 `status:200`（`reconciliation_deferred` 属设计行为，见下）
-- [ ] 手动触发一次分析：`ai_runs` 新增 `succeeded` 且 `input_tokens` 非 null
-- [ ] **完整 down + up 演练**（模拟 `restart.bat`）：数据计数不变、端口仍收窄
+- [ ] `docker exec <pg> psql -U loom -d loom -c "select 1"` 用新密码可连
+- [ ] app 健康（`/` 返回 200）、scheduler 日志显示 tick 成功
+- [ ] MinIO `mc du` 可列出 340 对象
+- [ ] 手动触发 tick：`items_new > 0` 且 `collection_errors: 0`
+- [ ] 媒体落盘：新条目的 `media_objects.status='stored'` 能增加
+- [ ] 旧密码**不再可用**（用旧密码连接应失败）
 
-> `reconciliation_deferred` 不是故障：对账窗口只在每天 23:30 后开启（上海时区）。
+### 5. 回滚
 
-## 回滚
-
-- compose：`F:/loom-backups/docker-compose.yml.pre-hardening-20260921-092236`（加固前）、
-  `docker-compose.yml.pre-t24-backup`（T24 前）
-- 凭据文件：`F:/loom-backups/.env.t24.bak-20260921-093133`
+- 镜像/配置：`F:\loom-backups\docker-compose.yml.pre-t24-backup`
 - 数据：迁移前/后 dump + 异地副本 `G:\QBXT_0917\loom-backup-20260917\`
-- **PG 口令改错**：用 `ALTER USER` 改回（数据不受影响），再重建 app/scheduler
-- **MinIO 口令改错**：改回并同批重建 minio + minio-init
+- **注意**：PG 密码改错会导致 app 连不上；此时用 `ALTER USER` 改回即可（数据不受影响）
 
-## 桶策略回滚（若把 `MINIO_BUCKET_ACCESS` 改为 private）
-
-```bash
-# 恢复匿名读（仅当确认素材就是公开材料时才做）
-docker exec gig5cyrba5yn3tsi-grok-workspace-minio-1 mc anonymous set download local/loom
-```
-
-改回 `public` 后已有的公开 URL 会重新可用；期间产生的失效链接不是数据丢失。
-
-## 为什么当时（2026-09-17）没做
+## 为什么当时没做（用户原话）
 
 用户选择 **B：先不改，记录待办**。推测考虑：可能要先做手动测试，不想在此期间引入变动。
-**记录在案，不做评判。** 2026-09-21 用户决定执行，两项同批完成并验证。
+**记录在案，不做评判。**

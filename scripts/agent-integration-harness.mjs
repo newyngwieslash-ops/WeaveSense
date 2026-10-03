@@ -8,10 +8,12 @@ import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { chromium } from 'playwright';
 
-const mode=process.argv.includes('--dev')?'dev':'built';
-const root=process.cwd(),out=resolve('validation/agent/implementation-v3-2026-09-08'),assets=resolve('artifacts/agent-v3');
+const manual=process.argv.includes('--manual');
+const resume=manual&&process.argv.includes('--resume-sept13');
+const mode=process.argv.includes('--built')?'built':manual||process.argv.includes('--dev')?'dev':'built';
+const root=process.cwd(),out=resolve(manual?`artifacts/agent-manual/${randomUUID()}`:'validation/agent/implementation-v3-2026-09-08'),assets=resolve('artifacts/agent-v3');
 mkdirSync(out,{recursive:true});mkdirSync(assets,{recursive:true});mkdirSync(resolve('screenshots'),{recursive:true});
-const identity=`loom-agent-harness-${randomUUID().slice(0,8)}`,children=[],servers=[],evidence={identity,mode,pids:[],requests:[],checks:[],screenshots:[]};
+const identity=resume?'loom-agent-harness-b7e5daa3':`loom-agent-harness-${randomUUID().slice(0,8)}`,children=[],servers=[],evidence={identity,mode,pids:[],requests:[],checks:[],screenshots:[]};
 const fixtures=resolve(assets,identity);
 let db,browser,goProcess,activePage,containerCreated=false,killOnCheckpoint=false,dropComplete=false,checkpointKilled=false,holdClaims=false;
 const windows=process.platform==='win32';
@@ -27,16 +29,23 @@ async function jsonBody(req){let text='';for await(const chunk of req){text+=chu
 const json=(res,body,status=200)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));};
 const testToken=`offline-${randomUUID()}`;
 try {
- const pgPort=await port(),appPort=await port(),goPort=await port();
- command('docker',['run','--detach','--name',identity,'--label','loom.agent.validation=v3-harness','-e','POSTGRES_PASSWORD=review-only-local','-e','POSTGRES_DB=review','-p',`127.0.0.1:${pgPort}:5432`,'postgres:16-alpine']);containerCreated=true;
+ const pgPort=resume?55191:await port(),appPort=resume?55192:await port(),goPort=await port();
+ if(resume){
+  assert.equal(command('docker',['inspect','--format','{{index .Config.Labels "loom.agent.validation"}}',identity]),'v3-harness');
+  command('docker',['start',identity]);
+ }else{
+  command('docker',['run','--detach','--name',identity,'--label','loom.agent.validation=v3-harness','-e','POSTGRES_PASSWORD=review-only-local','-e','POSTGRES_DB=review','-p',`127.0.0.1:${pgPort}:5432`,'postgres:16-alpine']);containerCreated=true;
+ }
  evidence.container={name:identity,port:pgPort};
  await until(async()=>{try{const c=new pg.Client({host:'127.0.0.1',port:pgPort,user:'postgres',password:'review-only-local',database:'review'});await c.connect();db=c;return true;}catch{return false;}},'isolated PG');
+ if(!resume){
  await db.query('create table _migrations(name text primary key,applied_at timestamptz not null default now())');
  for(const name of readdirSync('migrations').filter(n=>/^\d+.*\.sql$/.test(n)).sort()){
   await db.query('begin');try{await db.query(readFileSync(resolve('migrations',name),'utf8'));await db.query('insert into _migrations(name) values($1)',[name]);await db.query('commit');}catch(e){await db.query('rollback');throw e;}
  }
  await db.query("insert into sources(id,platform,name) values('s','rss','离线测试材料')");
  await db.query("insert into items(id,source_id,platform,external_id,title,body,published_at) values('battery','s','rss','battery','Battery 研究','Battery 证据：量产良率为 97%。',clock_timestamp())");
+ }
  let modelCalls=0,mcpCalls=0;
  const model=await serve(async(req,res)=>{try{
   const body=await jsonBody(req);modelCalls++;const messages=body.messages??[];
@@ -54,12 +63,13 @@ try {
    const citations=[];
    const seed=/evidence_id=([^\s]+).*?\n[^\n]*\n([^\n]+)/s.exec(prompt);
    if(seed)citations.push({evidence_id:seed[1],quote:seed[2].slice(0,80)});
-   for(const m of toolMessages){try{const t=JSON.parse(m.content);if(t.evidence_id&&t.text)citations.push({evidence_id:t.evidence_id,quote:t.text.slice(0,200)});}catch{}}
+   for(const m of toolMessages){try{const t=JSON.parse(m.content);if(t.evidence_id&&t.text)citations.push({evidence_id:t.evidence_id,quote:t.text.slice(0,200)});}catch{/* a tool message that is not JSON contributes no citation */}}
    const content=prompt.includes('summary')&&prompt.includes('topics')
     ?{summary:'离线条目分析',topics:['Battery'],entities:[],insights:'良率证据',tags:[],citations,insufficient_evidence:false}
     :{title:'离线研究结果',content:'离线模型已根据材料完成回答。量产良率为 97%。',citations,insufficient_evidence:citations.length===0};
    message={role:'assistant',content:JSON.stringify(content)};
   }
+  if(manual&&!prompt.includes('工具技能')) await pause(25000);
   json(res,{id:`fake-${modelCalls}`,choices:[{index:0,finish_reason:message.tool_calls?'tool_calls':'stop',message}],usage:{prompt_tokens:100,completion_tokens:20,total_tokens:120}});
  }catch(e){json(res,{error:String(e)},500);}});
  const mcp=await serve(async(req,res)=>{try{
@@ -88,13 +98,21 @@ try {
   res.writeHead(remote.status,{'content-type':'application/json'});res.end(text);
  }catch(e){if(!res.destroyed)json(res,{error:String(e)},503);}});
  const env={DATABASE_URL:`postgresql://postgres:review-only-local@127.0.0.1:${pgPort}/review`,AI_ENGINE:'eino',AUTO_ANALYZE:'false',EXTRACT_AUTO:'false',AGENT_ASYNC_RESEARCH_ENABLED:'true',AGENT_WORKER_ENABLED:'true',
-  AGENT_SERVICE_URL:`http://127.0.0.1:${goPort}`,AGENT_SERVICE_TOKEN:testToken,AGENT_DATA_TOKEN:testToken,AGENT_MCP_ALLOWED_TOOLS:'mcp_lab_search',VITE_AUTH_ENABLED:'false'};
+  AGENT_SERVICE_URL:`http://127.0.0.1:${goPort}`,AGENT_SERVICE_TOKEN:testToken,AGENT_DATA_TOKEN:testToken,AGENT_MCP_ALLOWED_TOOLS:'mcp_lab_search',VITE_AUTH_ENABLED:'false',LOOM_MODEL_CONFIG:resolve(fixtures,'unused.local.json'),XAI_API_KEY:''};
  let appProcess=npm(mode==='dev'?'dev':'preview',appPort,env,'app');
  await until(async()=>{try{return (await fetch(`${appURL}/knowledge`)).ok;}catch{return false;}},'app render',90000);
  const goEnv={AGENT_LISTEN_ADDR:`127.0.0.1:${goPort}`,AGENT_SERVICE_TOKEN:testToken,AGENT_MODEL_BASE_URL:model+'/v1',AGENT_MODEL_NAME:'offline-model',AGENT_MODEL_API_KEY:testToken,
   AGENT_DATA_URL:gateway+'/agent-data',AGENT_DATA_TOKEN:testToken,AGENT_WORKER_ENABLED:'true',AGENT_MCP_CONFIG:resolve(fixtures,'mcp.json'),AGENT_V3_MCP_TOKEN:testToken,AGENT_SKILLS_DIR:resolve(fixtures,'skills')};
- const startGo=()=>launch(resolve(assets,windows?'agent.exe':'agent'),[],goEnv,`go-${evidence.pids.length}`);
+ const startGo=()=>launch(process.env.LOOM_AGENT_TEST_BINARY??resolve(assets,windows?'agent.exe':'agent'),[],goEnv,`go-${evidence.pids.length}`);
  goProcess=startGo();await until(async()=>{try{return (await fetch(`http://127.0.0.1:${goPort}/readyz`)).ok;}catch{return false;}},'Go readiness');
+ if(manual){
+  const ready={appURL,goURL:`http://127.0.0.1:${goPort}`,container:identity,pgPort,modelDelayMs:25000,model:'local fake only',out};
+  writeFileSync(resolve(out,'ready.json'),JSON.stringify(ready,null,2));
+  console.log(JSON.stringify(ready,null,2));
+  // Keep the isolated services alive for human QA; graceful stop retains its database.
+  await new Promise(done=>{process.once('SIGINT',done);process.once('SIGTERM',done);});
+  evidence.counts={modelCalls,mcpCalls};
+ } else {
  browser=await chromium.launch({headless:true});
  const context=await browser.newContext({viewport:{width:1280,height:900}});const page=await context.newPage(),errors=[];
  activePage=page;
@@ -133,6 +151,18 @@ try {
  const smokeArgs=['scripts/browser-smoke.mjs',`${appURL}/knowledge`,`screenshots/agent-v3-${mode}-smoke.png`,...(mode==='built'?['--baseline','screenshots/agent-v3-dev-smoke.json']:[])];
  writeFileSync(resolve(out,`${mode}-smoke-output.json`),command(process.execPath,smokeArgs,{VITE_AUTH_ENABLED:'false',AGENT_OFFLINE_SMOKE:'true'}));
  evidence.checks.push('browser-smoke desktop/mobile content, console and dev/built baseline');
+ // C02: keep Eino selected while the dedicated worker is down, then restore it.
+ stop(goProcess);await page.goto(`${appURL}/knowledge`);await page.getByRole('heading',{name:'Battery 工具技能测试',exact:true}).waitFor();
+ const runsBeforeDown=Number((await db.query('select count(*) from ai_runs')).rows[0].count);
+ await submit('Battery 停机测试');
+ await until(async()=>Number((await db.query('select count(*) from ai_runs')).rows[0].count)>runsBeforeDown,'unavailable operation recorded');
+ await until(async()=>!(await db.query("select 1 from ai_runs where status='running'")).rows.length,'unavailable operation terminated');
+ assert.equal(modelCalls,beforeHealth,'unavailable Eino must not fall back to another model');
+ assert.equal(Number((await db.query('select count(*) from knowledge_notes')).rows[0].count),6);
+ goProcess=startGo();await until(async()=>{try{return (await fetch(`http://127.0.0.1:${goPort}/readyz`)).ok;}catch{return false;}},'restored worker ready');
+ await submit('Battery 停机后恢复');await notes(7);assert.equal(modelCalls,beforeHealth+1);
+ evidence.checks.push('C02 Eino unavailable: history readable, failed request no model/fallback/note; new request succeeds after worker restart');
+ const beforeRollback=modelCalls;
  holdClaims=true;await page.setViewportSize({width:1280,height:900});await page.goto(`${appURL}/knowledge`);await page.getByLabel('向矩阵提问',{exact:true}).waitFor();await submit('Battery 回滚排队测试',true);await page.waitForURL(/job=/);const rollbackURL=page.url();stop(goProcess);
  await page.goto('about:blank');stop(appProcess);appProcess=npm(mode==='dev'?'dev':'preview',appPort,{...env,AI_ENGINE:'legacy',AGENT_ASYNC_RESEARCH_ENABLED:'false',XAI_API_KEY:''},'rollback-app');
  await until(async()=>{try{return (await fetch(`${appURL}/knowledge`)).ok;}catch{return false;}},'rollback app');
@@ -140,11 +170,12 @@ try {
  await page.getByRole('heading',{name:'Battery 工具技能测试',exact:true}).waitFor();
  assert.equal(await page.getByRole('checkbox').count(),0);
  const deniedClaim=await fetch(`${appURL}/api/internal/agent-jobs`,{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${testToken}`},body:JSON.stringify({action:'claim'})});
- assert.equal(deniedClaim.status,503);assert.equal(modelCalls,beforeHealth);
+ assert.equal(deniedClaim.status,503);assert.equal(modelCalls,beforeRollback);
  assert.equal(Number((await db.query("select count(*) from ai_jobs where status='failed' and error_code='capability_disabled'")).rows[0].count),1);
  evidence.checks.push('owned app rollback to legacy cancels unstarted job; claim gate closed; Agent down leaves browsing/history available; no new model request');
  evidence.counts={modelCalls,mcpCalls,notes:Number((await db.query('select count(*) from knowledge_notes')).rows[0].count),checkpoints:Number((await db.query('select count(*) from agent_checkpoints')).rows[0].count)};
  evidence.ok=true;console.log(JSON.stringify(evidence,null,2));
+ }
 }catch(error){evidence.ok=false;evidence.error=String(error?.stack??error);console.error(evidence.error);process.exitCode=1;
  if(activePage){await activePage.screenshot({path:resolve(`screenshots/agent-v3-${mode}-failure.png`),fullPage:true}).catch(()=>{});evidence.failureText=(await activePage.locator('body').innerText()).slice(0,3000);}
 }finally{
@@ -152,5 +183,5 @@ try {
  writeFileSync(resolve(out,`harness-${mode}.json`),JSON.stringify(evidence,null,2));
  if(browser)await browser.close();for(const p of children.reverse())stop(p);
  for(const s of servers){s.closeAllConnections();await new Promise(r=>s.close(r));}
- if(db)await db.end();if(containerCreated)command('docker',['rm','--force',identity]);
+ if(db)await db.end();if(containerCreated&&!manual)command('docker',['rm','--force',identity]);
 }

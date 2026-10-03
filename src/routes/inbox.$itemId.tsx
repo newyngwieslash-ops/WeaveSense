@@ -17,6 +17,7 @@ export const Route = createFileRoute("/inbox/$itemId")({ component: ItemPage });
 
 function ItemPage() {
   const { itemId } = Route.useParams();
+  const search = Route.useSearch();
   const qc = useQueryClient();
   const detail = useQuery({
     queryKey: ["item", itemId],
@@ -78,7 +79,7 @@ function ItemPage() {
         </div>
       }
     >
-      <Link to="/inbox" className="mb-5 inline-flex items-center gap-1.5 text-sm text-muted hover:text-fg">
+      <Link to="/inbox" search={search} className="mb-5 inline-flex items-center gap-1.5 text-sm text-muted hover:text-fg">
         <ArrowLeft className="size-4" />
         返回内容
       </Link>
@@ -88,8 +89,8 @@ function ItemPage() {
       ) : !item ? (
         <p className="text-sm text-muted">找不到这条内容。</p>
       ) : (
-        <div className="grid gap-6 lg:grid-cols-5">
-          <article className="rounded-lg bg-surface p-5 shadow-[var(--shadow-border)] lg:col-span-3">
+        <div className="grid min-w-0 grid-cols-1 gap-6 [overflow-wrap:anywhere] lg:grid-cols-5">
+          <article className="min-w-0 rounded-lg bg-surface p-5 shadow-[var(--shadow-border)] lg:col-span-3">
             <div className="flex flex-wrap gap-2">
               <PlatformChip platform={isPlatform(item.platform) ? item.platform : "rss"} />
               <Badge>{MEDIA_TYPE_LABEL[item.media_type as MediaType]}</Badge>
@@ -128,7 +129,7 @@ function ItemPage() {
               </a>
             ) : null}
           </article>
-          <aside className="space-y-4 lg:col-span-2">
+          <aside className="min-w-0 space-y-4 lg:col-span-2">
             <div className="rounded-lg bg-surface p-5 shadow-[var(--shadow-border)]">
               <h3 className="font-display text-lg">知识层</h3>
               {analysis ? (
@@ -213,9 +214,9 @@ function ItemPage() {
 
 function Row({ k, v }: { k: string; v: string }) {
   return (
-    <div className="flex justify-between gap-3">
+    <div className="grid min-w-0 grid-cols-1 gap-1 sm:grid-cols-2 sm:gap-3">
       <dt className="text-faint">{k}</dt>
-      <dd className="truncate text-fg">{v}</dd>
+      <dd className="min-w-0 [overflow-wrap:anywhere] text-fg sm:text-right">{v}</dd>
     </div>
   );
 }

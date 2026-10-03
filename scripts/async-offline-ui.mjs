@@ -1,0 +1,51 @@
+import assert from 'node:assert/strict';
+import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { chromium } from 'playwright';
+import pg from 'pg';
+
+// Only accept the manifest produced by the isolated, fake-model manual harness.
+const manifest=resolve(process.argv[2] ?? '');
+assert.ok(manifest.startsWith(resolve('artifacts/agent-manual')+'/') || manifest.startsWith(resolve('artifacts/agent-manual')+'\\'));
+const ready=JSON.parse(readFileSync(manifest,'utf8'));
+assert.equal(ready.model,'local fake only');
+const origin=new URL(ready.appURL);
+assert.equal(origin.hostname,'127.0.0.1');
+assert.notEqual(origin.port,'8182');
+const db=new pg.Client({host:'127.0.0.1',port:ready.pgPort,user:'postgres',password:'review-only-local',database:'review'});
+await db.connect();
+const browser=await chromium.launch();
+const context=await browser.newContext();
+const page=await context.newPage();
+const errors=[];page.on('pageerror',e=>errors.push(e.message));
+const question=`Battery A15 offline regression ${Date.now()}`;
+const folder=resolve(ready.out,'offline-check');mkdirSync(folder,{recursive:true});
+try {
+  await page.goto(origin+'/knowledge');
+  await page.getByRole('checkbox').check();
+  await page.getByLabel('向矩阵提问',{exact:true}).fill(question);
+  await page.getByRole('button',{name:'提问',exact:true}).click();
+  await page.waitForURL(/job=/);
+  const jobId=new URL(page.url()).searchParams.get('job');
+  await context.setOffline(true);
+  const retry=page.getByRole('button',{name:'重试查看',exact:true});
+  await retry.waitFor({timeout:15000});
+  assert.equal(new URL(page.url()).searchParams.get('job'),jobId);
+  await page.screenshot({path:resolve(folder,'offline.png'),fullPage:true});
+  await retry.click();
+  assert.equal(new URL(page.url()).searchParams.get('job'),jobId);
+  await context.setOffline(false);
+  await page.getByRole('heading',{name:question,exact:true}).waitFor({timeout:60000});
+  await page.waitForURL(url=>!url.searchParams.has('job'));
+  assert.equal(await page.getByRole('heading',{name:question,exact:true}).count(),1);
+  const jobs=(await db.query('select status,attempts,run_id from ai_jobs where id=$1',[jobId])).rows;
+  assert.equal(jobs.length,1);assert.equal(jobs[0].status,'succeeded');assert.equal(jobs[0].attempts,1);
+  const run=(await db.query('select status,model_calls from ai_runs where id=$1',[jobs[0].run_id])).rows[0];
+  assert.equal(run.status,'succeeded');assert.equal(run.model_calls,1);
+  const count=Number((await db.query('select count(*) from knowledge_notes where run_id=$1',[jobs[0].run_id])).rows[0].count);
+  assert.equal(count,1);assert.deepEqual(errors,[]);
+  await page.screenshot({path:resolve(folder,'recovered.png'),fullPage:true});
+  const result={ok:true,jobId,question,run,notes:count,errors};
+  writeFileSync(resolve(folder,'result.json'),JSON.stringify(result,null,2));
+  console.log(JSON.stringify(result,null,2));
+} finally {await context.setOffline(false);await browser.close();await db.end();}

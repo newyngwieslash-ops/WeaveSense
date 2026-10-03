@@ -1,10 +1,10 @@
 {
   "method": "production retrieveAgentItems SQL -> rankRetrievedItems -> selectResearchSeeds",
-  "corpus_size": 98,
-  "corpus_hash": "d9425f9d9dd7a123fbc4890473756b04f46e7569f9f746492204881b06d27e9f",
-  "code_hash": "01d73b2e6712c5ab6245489377406bcab212930d2c10208019b4def6b297a7e1",
+  "corpus_size": 102,
+  "corpus_hash": "b266b019251131f5068ccfcb04983c479bb388598337b3bd79dc0a716d3b64f2",
+  "code_hash": "eb43ca2022d8986cc61d012f5ec7f12d2c05554306c64ee9f352cfab904219f3",
   "commit": "76b6da1ac8a8d6d6c6a4b30e7f0309c9e18fd8b9",
-  "workspace_hash": "60e7f8d7a7b1bac2d8594ece290081e6fb42da96814ec7b028c1646a9bff25b4",
+  "workspace_hash": "6ce23a0c09e036acb1e7523f9b3eb51f154a8e267b44a319c4c11e629951d8e6",
   "thresholds": {
     "scope_violations": 0,
     "none_false_positive": 0,
@@ -25,7 +25,7 @@
       "baseline_chars": 202,
       "returned_bytes": 2138,
       "partial_ratio": 0,
-      "elapsed_ms": 8.488700000000051,
+      "elapsed_ms": 7.8226999999999975,
       "candidates": [
         "batt-1",
         "wx-1",
@@ -57,7 +57,7 @@
       "baseline_chars": 188,
       "returned_bytes": 1858,
       "partial_ratio": 0,
-      "elapsed_ms": 4.685800000000029,
+      "elapsed_ms": 4.949200000000019,
       "candidates": [
         "syn-1",
         "batt-1",
@@ -83,18 +83,22 @@
       "quote_covered": null,
       "baseline_quote_covered": null,
       "scope_violations": 0,
-      "selected_chars": 151,
-      "baseline_chars": 151,
-      "returned_bytes": 1254,
+      "selected_chars": 173,
+      "baseline_chars": 173,
+      "returned_bytes": 1810,
       "partial_ratio": 0,
-      "elapsed_ms": 3.559400000000039,
+      "elapsed_ms": 3.972699999999975,
       "candidates": [
+        "scope-wx",
+        "scope-rss",
         "batt-1",
         "batt-2",
         "wx-1",
         "rss-1"
       ],
       "selected": [
+        "scope-wx",
+        "scope-rss",
         "batt-2",
         "batt-1",
         "wx-1",
@@ -113,7 +117,7 @@
       "baseline_chars": 14,
       "returned_bytes": 288,
       "partial_ratio": 0,
-      "elapsed_ms": 5.8326999999999884,
+      "elapsed_ms": 5.217300000000023,
       "candidates": [
         "ev-1"
       ],
@@ -133,7 +137,7 @@
       "baseline_chars": 108,
       "returned_bytes": 627,
       "partial_ratio": 0,
-      "elapsed_ms": 4.186500000000024,
+      "elapsed_ms": 3.9593000000000416,
       "candidates": [
         "chip-1",
         "chip-2"
@@ -155,7 +159,7 @@
       "baseline_chars": 17,
       "returned_bytes": 272,
       "partial_ratio": 0,
-      "elapsed_ms": 3.0229999999999677,
+      "elapsed_ms": 2.169399999999996,
       "candidates": [
         "chip-1"
       ],
@@ -175,7 +179,7 @@
       "baseline_chars": 12,
       "returned_bytes": 273,
       "partial_ratio": 0,
-      "elapsed_ms": 4.686399999999992,
+      "elapsed_ms": 3.7789000000000215,
       "candidates": [
         "ai-1"
       ],
@@ -195,7 +199,7 @@
       "baseline_chars": 7,
       "returned_bytes": 254,
       "partial_ratio": 0,
-      "elapsed_ms": 4.4027999999999565,
+      "elapsed_ms": 2.906400000000019,
       "candidates": [
         "none-1"
       ],
@@ -215,7 +219,7 @@
       "baseline_chars": 202,
       "returned_bytes": 2138,
       "partial_ratio": 0,
-      "elapsed_ms": 5.924199999999985,
+      "elapsed_ms": 4.68629999999996,
       "candidates": [
         "wx-1",
         "batt-1",
@@ -247,7 +251,7 @@
       "baseline_chars": 34,
       "returned_bytes": 579,
       "partial_ratio": 0,
-      "elapsed_ms": 2.620800000000031,
+      "elapsed_ms": 2.393799999999999,
       "candidates": [
         "phrase-2",
         "phrase-1"
@@ -259,22 +263,24 @@
     },
     {
       "id": "c11",
-      "candidate_recall": 0.5,
-      "final_recall": 0.5,
+      "candidate_recall": 1,
+      "final_recall": 1,
       "none_false_positive": 0,
       "quote_covered": null,
       "baseline_quote_covered": null,
       "scope_violations": 0,
-      "selected_chars": 19,
-      "baseline_chars": 19,
-      "returned_bytes": 302,
+      "selected_chars": 34,
+      "baseline_chars": 34,
+      "returned_bytes": 579,
       "partial_ratio": 0,
-      "elapsed_ms": 4.187900000000013,
+      "elapsed_ms": 4.685999999999979,
       "candidates": [
-        "phrase-2"
+        "phrase-2",
+        "phrase-1"
       ],
       "selected": [
-        "phrase-2"
+        "phrase-2",
+        "phrase-1"
       ]
     },
     {
@@ -289,7 +295,7 @@
       "baseline_chars": 105,
       "returned_bytes": 390,
       "partial_ratio": 0,
-      "elapsed_ms": 4.606400000000008,
+      "elapsed_ms": 3.422399999999982,
       "candidates": [
         "long-1"
       ],
@@ -305,14 +311,16 @@
       "quote_covered": null,
       "baseline_quote_covered": null,
       "scope_violations": 0,
-      "selected_chars": 166,
-      "baseline_chars": 166,
-      "returned_bytes": 1540,
+      "selected_chars": 188,
+      "baseline_chars": 188,
+      "returned_bytes": 2096,
       "partial_ratio": 0,
-      "elapsed_ms": 6.381799999999998,
+      "elapsed_ms": 5.453700000000026,
       "candidates": [
         "rss-1",
         "wx-1",
+        "scope-wx",
+        "scope-rss",
         "syn-1",
         "batt-2",
         "batt-1"
@@ -320,6 +328,8 @@
       "selected": [
         "rss-1",
         "wx-1",
+        "scope-wx",
+        "scope-rss",
         "batt-2",
         "syn-1",
         "batt-1"
@@ -337,7 +347,7 @@
       "baseline_chars": 202,
       "returned_bytes": 2138,
       "partial_ratio": 0,
-      "elapsed_ms": 3.3915999999999826,
+      "elapsed_ms": 3.001199999999983,
       "candidates": [
         "wx-1",
         "batt-1",
@@ -369,7 +379,7 @@
       "baseline_chars": 0,
       "returned_bytes": 2,
       "partial_ratio": 0,
-      "elapsed_ms": 8.669900000000041,
+      "elapsed_ms": 7.1720000000000255,
       "candidates": [],
       "selected": []
     },
@@ -385,7 +395,7 @@
       "baseline_chars": 8,
       "returned_bytes": 259,
       "partial_ratio": 0,
-      "elapsed_ms": 3.13130000000001,
+      "elapsed_ms": 3.024400000000014,
       "candidates": [
         "noise-2"
       ],
@@ -401,12 +411,14 @@
       "quote_covered": null,
       "baseline_quote_covered": null,
       "scope_violations": 0,
-      "selected_chars": 166,
-      "baseline_chars": 166,
-      "returned_bytes": 1540,
+      "selected_chars": 188,
+      "baseline_chars": 188,
+      "returned_bytes": 2096,
       "partial_ratio": 0,
-      "elapsed_ms": 4.165400000000034,
+      "elapsed_ms": 3.6961000000000013,
       "candidates": [
+        "scope-wx",
+        "scope-rss",
         "batt-1",
         "batt-2",
         "wx-1",
@@ -415,6 +427,8 @@
       ],
       "selected": [
         "batt-2",
+        "scope-wx",
+        "scope-rss",
         "batt-1",
         "wx-1",
         "syn-1",
@@ -433,7 +447,7 @@
       "baseline_chars": 108,
       "returned_bytes": 627,
       "partial_ratio": 0,
-      "elapsed_ms": 4.1299000000000206,
+      "elapsed_ms": 3.838300000000004,
       "candidates": [
         "chip-1",
         "chip-2"
@@ -455,7 +469,7 @@
       "baseline_chars": 188,
       "returned_bytes": 1858,
       "partial_ratio": 0,
-      "elapsed_ms": 7.11869999999999,
+      "elapsed_ms": 5.250400000000013,
       "candidates": [
         "cross-2",
         "cross-1",
@@ -485,7 +499,7 @@
       "baseline_chars": 15,
       "returned_bytes": 278,
       "partial_ratio": 0,
-      "elapsed_ms": 3.7898999999999887,
+      "elapsed_ms": 3.5778999999999996,
       "candidates": [
         "phrase-1"
       ],
@@ -505,7 +519,7 @@
       "baseline_chars": 19,
       "returned_bytes": 302,
       "partial_ratio": 0,
-      "elapsed_ms": 3.52819999999997,
+      "elapsed_ms": 3.104600000000005,
       "candidates": [
         "phrase-2"
       ],
@@ -525,12 +539,64 @@
       "baseline_chars": 7,
       "returned_bytes": 254,
       "partial_ratio": 0,
-      "elapsed_ms": 3.5394000000000005,
+      "elapsed_ms": 2.966199999999958,
       "candidates": [
         "none-1"
       ],
       "selected": [
         "none-1"
+      ]
+    },
+    {
+      "id": "c23",
+      "candidate_recall": 1,
+      "final_recall": 1,
+      "none_false_positive": 0,
+      "quote_covered": null,
+      "baseline_quote_covered": null,
+      "scope_violations": 0,
+      "selected_chars": 32,
+      "baseline_chars": 32,
+      "returned_bytes": 553,
+      "partial_ratio": 0,
+      "elapsed_ms": 1.7136999999999603,
+      "candidates": [
+        "conf-b",
+        "conf-a"
+      ],
+      "selected": [
+        "conf-b",
+        "conf-a"
+      ]
+    },
+    {
+      "id": "c24",
+      "candidate_recall": 1,
+      "final_recall": 1,
+      "none_false_positive": 0,
+      "quote_covered": null,
+      "baseline_quote_covered": null,
+      "scope_violations": 0,
+      "selected_chars": 173,
+      "baseline_chars": 173,
+      "returned_bytes": 1810,
+      "partial_ratio": 0,
+      "elapsed_ms": 3.9044000000000096,
+      "candidates": [
+        "scope-wx",
+        "scope-rss",
+        "batt-2",
+        "batt-1",
+        "wx-1",
+        "rss-1"
+      ],
+      "selected": [
+        "scope-wx",
+        "scope-rss",
+        "batt-2",
+        "batt-1",
+        "wx-1",
+        "rss-1"
       ]
     },
     {
@@ -545,7 +611,7 @@
       "baseline_chars": 3154,
       "returned_bytes": 11185,
       "partial_ratio": 0.125,
-      "elapsed_ms": 9.63900000000001,
+      "elapsed_ms": 8.325400000000002,
       "candidates": [
         "tail-proof",
         "stress-noise-9",
@@ -611,7 +677,7 @@
       "baseline_chars": 0,
       "returned_bytes": 2,
       "partial_ratio": 0,
-      "elapsed_ms": 4.402899999999988,
+      "elapsed_ms": 4.594200000000001,
       "candidates": [
         "stress-noise-9",
         "stress-noise-8",

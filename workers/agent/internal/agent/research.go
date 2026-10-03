@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/cloudwego/eino/adk"
@@ -56,6 +57,12 @@ func runResearch(ctx context.Context, cfg Config, req ExecuteRequest, coverage C
 		return fail(req.RunID, "agent_unconfigured", false, false), nil
 	}
 	claim, durable := ctx.Value(workerContextKey{}).(jobClaim)
+	maxIterations := 6
+	if durable {
+		// Eino v0.9.19 counts both generation and replay after StatefulInterrupt.
+		// Keep six logical rounds; runBudget still bounds actual model/tool calls.
+		maxIterations *= 2
+	}
 	cm := &budgetModel{inner: inner, budget: budget, events: &events, name: cfg.ModelName, checkpoint: durable}
 	handlers := []adk.ChatModelAgentMiddleware{}
 	if skillHandler != nil {
@@ -66,7 +73,7 @@ func runResearch(ctx context.Context, cfg Config, req ExecuteRequest, coverage C
 		Description:      "corpus research",
 		Instruction:      researchPrompt(coverage),
 		Model:            cm,
-		MaxIterations:    6,
+		MaxIterations:    maxIterations,
 		ToolsConfig:      adk.ToolsConfig{ToolsNodeConfig: compose.ToolsNodeConfig{Tools: tools}},
 		Handlers:         handlers,
 		ModelRetryConfig: nil,
@@ -108,7 +115,7 @@ func runResearch(ctx context.Context, cfg Config, req ExecuteRequest, coverage C
 			interrupted = true
 		}
 		if event.Err != nil {
-			if strings.Contains(event.Err.Error(), "budget") {
+			if errors.Is(event.Err, adk.ErrExceedMaxIterations) || strings.Contains(event.Err.Error(), "budget") {
 				return fail(req.RunID, "budget_exceeded", false, false), nil
 			}
 			code, retryable, unknown := classifyModelError(event.Err)

@@ -145,14 +145,21 @@ function GuidePage() {
             <li>
               <strong className="font-medium text-fg">B 站 / YouTube</strong>
               ：分别填 UP mid、Channel ID。接口被风控时记到任务错误，适配器仍保留。
+              B 站的视频媒体只有封面图（不是音轨）；YouTube 走的是频道 RSS，不是全站搜索。
             </li>
             <li>
               <strong className="font-medium text-fg">抖音 / 小红书 / 西瓜</strong>
-              ：有 RSSHub 或自建 collector 时，把 URL 填进 RSS 栏即走同一条管道。
+              ：没有内置全站检索。有 RSSHub 或自建 collector 时，把 URL 填进 RSS 栏即走同一条管道；
+              否则这些平台在关键词检索里不会被查询。
             </li>
           </ul>
           <p className="mt-3">
             间隔建议：快讯 5 分钟，专栏 30 或 60 分钟，深度长文每天一次。停用信源不会删除已入库内容。
+            B 站接口有风控：被限流时任务会标记为限流原因（不是普通失败），建议间隔不低于 6 小时。
+          </p>
+          <p className="mt-3">
+            Telegram 接入后点该行「扫描」，到任务页看徽章：绿色 Telethon 且新增大于 0 是账号通道；Telethon
+            且 0/0、状态 ok 是已经追上；黄色 t.me/s 且约 20/0 是网页预览。没有公开用户名的群、官方登录通知不要加。
           </p>
           <p className="mt-3">
             Telegram 接入后点该行「扫描」，到任务页看徽章：绿色 Telethon 且新增大于 0 是账号通道；Telethon
@@ -165,9 +172,9 @@ function GuidePage() {
           <pre className="mt-3 overflow-x-auto bg-raised p-4 font-mono text-[12px] leading-6 text-fg">
             {`设定词 + 间隔 + 平台
         ↓
-新闻 RSS / HN / B站搜索 / YouTube
+新闻 RSS（Google News 中英文）/ HN / B站搜索 / YouTube 新闻索引
         +
-已接入信源正文匹配
+已接入信源正文匹配（标「信源」的范围只做这一步，不联网）
         ↓
 URL / external_id 去重
         ↓

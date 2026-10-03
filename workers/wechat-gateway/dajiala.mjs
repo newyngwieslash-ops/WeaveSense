@@ -7,17 +7,38 @@ const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d
 const WECHAT_HOSTS = new Set(["mp.weixin.qq.com"]);
 const COVER_HOSTS = new Set(["mmbiz.qpic.cn", "mmbiz.qlogo.cn"]);
 
+/**
+ * T13: the safe sub-codes a failed paid call may carry.
+ *
+ * `technical_error` on its own cannot tell an operator whether to retry, raise a
+ * price bound, or treat a charge as possible. These codes are stable and contain
+ * nothing sensitive: no URL, no query string, no provider body, no key.
+ */
+const TECH_CODES = new Set(["timeout", "network", "rate_limited", "provider_5xx", "invalid_response"]);
+
+/** A usable cost bound, or null. Zero, negatives and non-numbers are refused. */
+function positiveOrNull(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
 class DajialaError extends Error {
-  constructor(kind, operation, httpStatus = null) {
-    super(`Dajiala ${operation} failed: ${kind}`);
+  constructor(kind, operation, httpStatus = null, code = null) {
+    const subCode = kind === "technical_error"
+      ? (TECH_CODES.has(code) ? code : "network")
+      : null;
+    super(`Dajiala ${operation} failed: ${kind}${subCode ? `:${subCode}` : ""}`);
     this.name = "DajialaError";
     this.kind = kind;
+    // Stable machine-readable reason; never derived from provider text.
+    this.code = subCode ?? (kind === "mapping_error" ? "invalid_response" : "network");
     this.retryable = kind === "technical_error";
     this.attempt = {
       provider: PROVIDER,
       operation,
       status: "error",
       error_type: kind,
+      error_code: this.code,
       http_status: httpStatus,
     };
   }
@@ -121,7 +142,7 @@ async function readLimited(response, operation) {
 
   let reader;
   try { reader = response.body.getReader(); } catch {
-    throw new DajialaError("technical_error", operation, response.status);
+    throw new DajialaError("technical_error", operation, response.status, "invalid_response");
   }
   const chunks = [];
   let size = 0;
@@ -131,7 +152,7 @@ async function readLimited(response, operation) {
       part = await reader.read();
     } catch {
       try { await reader.cancel(); } catch { /* cancellation is best effort */ }
-      throw new DajialaError("technical_error", operation, response.status);
+      throw new DajialaError("technical_error", operation, response.status, "network");
     }
     if (part.done) break;
     size += part.value.byteLength;
@@ -144,7 +165,8 @@ async function readLimited(response, operation) {
   return Buffer.concat(chunks, size).toString("utf8");
 }
 
-export function createDajialaClient({ key, verifycode = "", baseUrl, fetchImpl = fetch }) {
+export function createDajialaClient({ key, verifycode = "", baseUrl, fetchImpl = fetch,
+  estimatedListCost = null, estimatedDetailCost = null }) {
   if (!key || !String(key).trim()) throw new Error("Dajiala key is required");
   const endpoint = normalizedBaseUrl(baseUrl);
   const apiKey = String(key).trim();
@@ -160,14 +182,18 @@ export function createDajialaClient({ key, verifycode = "", baseUrl, fetchImpl =
         signal: AbortSignal.timeout(TIMEOUT_MS),
         redirect: "error",
       });
-    } catch {
-      throw new DajialaError("technical_error", operation);
+    } catch (error) {
+      // Distinguish a timeout from a connection-level failure: both are unknown
+      // outcomes, but they call for different operator responses.
+      const timeout = error?.name === "TimeoutError" || error?.name === "AbortError";
+      throw new DajialaError("technical_error", operation, null, timeout ? "timeout" : "network");
     }
 
     if (!response.ok) {
       await cancel(response.body);
-      const technical = response.status === 429 || response.status >= 500;
-      throw new DajialaError(technical ? "technical_error" : "mapping_error", operation, response.status);
+      if (response.status === 429) throw new DajialaError("technical_error", operation, response.status, "rate_limited");
+      if (response.status >= 500) throw new DajialaError("technical_error", operation, response.status, "provider_5xx");
+      throw new DajialaError("mapping_error", operation, response.status);
     }
 
     const text = await readLimited(response, operation);
@@ -184,8 +210,13 @@ export function createDajialaClient({ key, verifycode = "", baseUrl, fetchImpl =
   }
 
   return {
-    estimatedListCost: 0.08,
-    estimatedDetailCost: 0.045,
+    // T13: the estimate is a RESERVATION, not a cap and not a price claim. It is
+    // operator-supplied and must be a verified upper bound for this account's
+    // real per-call cost; the adapter no longer asserts a hardcoded 0.08, which
+    // the incident history shows was below the real charge (0.14). Withholding it
+    // is safe: the gateway then refuses paid admission instead of guessing.
+    estimatedListCost: positiveOrNull(estimatedListCost),
+    estimatedDetailCost: positiveOrNull(estimatedDetailCost),
 
     async listToday(source) {
       const operation = "list_today";

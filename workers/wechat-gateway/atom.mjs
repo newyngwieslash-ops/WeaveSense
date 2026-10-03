@@ -1,3 +1,7 @@
+// Stripping XML-1.0-illegal control characters is the point of this line, so the
+// control-character rule is disabled for it specifically (with the reason stated
+// rather than blanket-silencing the rule for the file).
+// eslint-disable-next-line no-control-regex -- intentional: these characters are invalid in XML 1.0
 const xmlText = (value) => String(value ?? "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
 const escapeText = (value) => xmlText(value)
   .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");

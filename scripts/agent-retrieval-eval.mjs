@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import pg from 'pg';
@@ -40,7 +40,7 @@ try {
    candidates:found.candidates.map(r=>r.id),selected:found.items.map(r=>r.id)});
  }
  const codeFiles=['src/lib/server/agent-retrieval.ts','src/lib/server/agent-context.ts'];
- const commit=execFileSync('git',['--git-dir=.repo','--work-tree=.','rev-parse','HEAD'],{encoding:'utf8'}).trim();
+ const commit=execFileSync('git',[...(existsSync('.git')?[]:['--git-dir=.repo','--work-tree=.']),'rev-parse','HEAD'],{encoding:'utf8'}).trim();
  const workspaceFiles=['src','workers/agent','scripts','migrations'].flatMap(dir=>readdirSync(dir,{recursive:true}).map(name=>`${dir}/${String(name).replaceAll('\\','/')}`)).filter(f=>/\.(?:ts|tsx|mjs|go|mod|sum|sql)$/.test(f)).sort();
  const workspaceHash=hash(workspaceFiles.map(f=>[f,hash(readFileSync(f))]));
  const out={method:'production retrieveAgentItems SQL -> rankRetrievedItems -> selectResearchSeeds',corpus_size:corpus.length,corpus_hash:hash(corpus),code_hash:hash(codeFiles.map(f=>[f,hash(readFileSync(f,'utf8'))])),

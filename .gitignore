@@ -24,6 +24,7 @@
 *.pyc
 
 # Local secrets
+*.local.json*
 .env
 .env.*
 !.env.example

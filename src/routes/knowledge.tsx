@@ -143,7 +143,7 @@ function KnowledgePage() {
 
       {jobId ? (
         <p className="mt-3 text-sm text-muted">
-          {job.error ? <>暂时无法读取进度，任务地址已保留。<Button variant="outline" size="sm" onClick={() => void job.refetch()}>重试查看</Button></> : jobStatus === "failed" || jobStatus === "outcome_unknown"
+          {job.error || job.isPaused ? <>暂时无法读取进度，任务地址已保留。<Button variant="outline" size="sm" onClick={() => void job.refetch()}>重试查看</Button></> : jobStatus === "failed" || jobStatus === "outcome_unknown"
             ? errorCopy(jobStatus === "outcome_unknown" ? "run_in_progress" : undefined) + "：长任务未完成。"
             : "任务仍在执行，页面每两秒查看一次，刷新后也会继续。"}
         </p>

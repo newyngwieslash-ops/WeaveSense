@@ -1,22 +1,26 @@
 {
-  "identity": "loom-agent-harness-28dcc76e",
+  "identity": "loom-agent-harness-c73a06fb",
   "mode": "dev",
   "pids": [
     {
       "label": "app",
-      "pid": 13724
+      "pid": 50500
     },
     {
       "label": "go-1",
-      "pid": 50360
+      "pid": 57220
     },
     {
       "label": "go-2",
-      "pid": 44740
+      "pid": 21032
+    },
+    {
+      "label": "go-3",
+      "pid": 49440
     },
     {
       "label": "rollback-app",
-      "pid": 17936
+      "pid": 57036
     }
   ],
   "requests": [
@@ -543,8 +547,44 @@
     },
     {
       "kind": "app",
+      "action": "model_call",
+      "status": 200
+    },
+    {
+      "kind": "model",
+      "number": 17,
+      "max_tokens": 1200,
+      "roles": [
+        "system",
+        "user"
+      ]
+    },
+    {
+      "kind": "app",
+      "action": "model_call",
+      "status": 200
+    },
+    {
+      "kind": "app",
       "action": "claim",
       "status": 404
+    },
+    {
+      "kind": "app",
+      "action": "claim",
+      "status": 404
+    },
+    {
+      "kind": "mcp",
+      "method": "initialize"
+    },
+    {
+      "kind": "mcp",
+      "method": "notifications/initialized"
+    },
+    {
+      "kind": "mcp",
+      "method": "tools/list"
     },
     {
       "kind": "app",
@@ -553,8 +593,8 @@
     },
     {
       "kind": "model",
-      "number": 17,
-      "max_tokens": 1200,
+      "number": 18,
+      "max_tokens": 1800,
       "roles": [
         "system",
         "user"
@@ -574,26 +614,27 @@
     "invalid output failure and new question",
     "positive budget refusal; briefing and item analysis through browser",
     "browser-smoke desktop/mobile content, console and dev/built baseline",
+    "C02 Eino unavailable: history readable, failed request no model/fallback/note; new request succeeds after worker restart",
     "owned app rollback to legacy cancels unstarted job; claim gate closed; Agent down leaves browsing/history available; no new model request"
   ],
   "screenshots": [
-    "F:\\AI-TG-PINGTAI-0826\\GIG5cYRBa5yN3Tsi-grok-workspace\\screenshots\\agent-v3-dev-desktop.png",
-    "F:\\AI-TG-PINGTAI-0826\\GIG5cYRBa5yN3Tsi-grok-workspace\\screenshots\\agent-v3-dev-mobile.png"
+    "F:\\AI-TG-PINGTAI-0826\\GIG5cYRBa5yN3Tsi-grok-workspace\\.worktrees\\local-model-settings\\screenshots\\agent-v3-dev-desktop.png",
+    "F:\\AI-TG-PINGTAI-0826\\GIG5cYRBa5yN3Tsi-grok-workspace\\.worktrees\\local-model-settings\\screenshots\\agent-v3-dev-mobile.png"
   ],
   "container": {
-    "name": "loom-agent-harness-28dcc76e",
-    "port": 65306
+    "name": "loom-agent-harness-c73a06fb",
+    "port": 61819
   },
   "counts": {
-    "modelCalls": 17,
+    "modelCalls": 18,
     "mcpCalls": 1,
-    "notes": 6,
+    "notes": 7,
     "checkpoints": 2
   },
   "ok": true,
   "runs": [
     {
-      "id": "fe961f80-dbd2-4551-9735-ab52c641aee6",
+      "id": "49957204-e927-4e3b-8653-2579505ae72d",
       "mode": "research",
       "provider": "eino",
       "status": "succeeded",
@@ -604,7 +645,7 @@
       "output_tokens": "20"
     },
     {
-      "id": "3d5d3bd7-1dde-435f-a530-abf14155cabd",
+      "id": "81508cda-c20a-406c-99d7-031c42165b8d",
       "mode": "research",
       "provider": "eino",
       "status": "succeeded",
@@ -615,7 +656,7 @@
       "output_tokens": "80"
     },
     {
-      "id": "acb13260-c11b-4022-bc7d-7d4f45600e01",
+      "id": "fd559f02-093c-4428-a807-bfc0b3034185",
       "mode": "research",
       "provider": "eino",
       "status": "succeeded",
@@ -626,7 +667,7 @@
       "output_tokens": "20"
     },
     {
-      "id": "d5d938f8-a4b4-4ee6-a7b4-0e3c08f1d028",
+      "id": "7e4fdd59-ce46-4d9d-886d-63f21e7ec1b2",
       "mode": "research",
       "provider": "eino",
       "status": "succeeded",
@@ -637,7 +678,7 @@
       "output_tokens": "20"
     },
     {
-      "id": "ec60f211-e978-4e5e-95a8-dc609255770b",
+      "id": "a9e478a5-d6c4-45f8-af9d-28cbeb12cbf6",
       "mode": "research",
       "provider": "eino",
       "status": "failed",
@@ -648,7 +689,7 @@
       "output_tokens": "40"
     },
     {
-      "id": "812030d8-0d7e-49d6-878e-d47cf7360177",
+      "id": "4de6539a-fcc5-49ef-b0ce-001ffcf16743",
       "mode": "research",
       "provider": "eino",
       "status": "succeeded",
@@ -659,7 +700,7 @@
       "output_tokens": "20"
     },
     {
-      "id": "ac9b0d29-b137-46fd-8fad-f777f5794e59",
+      "id": "ed982ad7-a185-47c6-8306-96c58c849c82",
       "mode": "research",
       "provider": "eino",
       "status": "failed",
@@ -670,7 +711,7 @@
       "output_tokens": "100"
     },
     {
-      "id": "8c1b60df-0f96-43d7-8962-bb58f2fc6e20",
+      "id": "5d426702-a5af-4884-9cd9-9aac964e1473",
       "mode": "briefing",
       "provider": "eino",
       "status": "succeeded",
@@ -681,13 +722,35 @@
       "output_tokens": "20"
     },
     {
-      "id": "a743b2a2-e5ba-4dab-8363-08d4d8cf6fdb",
+      "id": "698c1c99-6877-4566-8a86-9f33b2d30f06",
       "mode": "analyze_item",
       "provider": "eino",
       "status": "succeeded",
       "error_code": "",
       "model_calls": 1,
       "tool_calls": 1,
+      "input_tokens": "100",
+      "output_tokens": "20"
+    },
+    {
+      "id": "87cec5d1-b60a-4ff4-9a3e-8b9123ed9a99",
+      "mode": "research",
+      "provider": "eino",
+      "status": "failed",
+      "error_code": "agent_unavailable",
+      "model_calls": 0,
+      "tool_calls": 0,
+      "input_tokens": null,
+      "output_tokens": null
+    },
+    {
+      "id": "1f19fb84-0227-480e-b571-a68eb2f5ec3e",
+      "mode": "research",
+      "provider": "eino",
+      "status": "succeeded",
+      "error_code": "",
+      "model_calls": 1,
+      "tool_calls": 0,
       "input_tokens": "100",
       "output_tokens": "20"
     }

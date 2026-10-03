@@ -15,9 +15,13 @@ services:
   # 因为下面已改为必填从 env_file 取值）。
   # ---------------------------------------------------------------------------
   postgres:
-    image: postgres:16-alpine
+    # Pinned by digest (from the image actually in use, 2026-09-16) so a
+    # redeploy cannot silently change the database engine version.
+    image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
     # 凭据由 env_file 直供容器。注意不能用 ${VAR:?} 插值——compose 的插值不读
     # env_file，那样会因"变量缺失"直接拒绝启动（实测过）。
+    # 密码轮换需按 docs/operations/loom-backup-restore-runbook.md 的库内步骤改，
+    # 只改 env 不会更新 pgdata 里已存的口令。
     env_file:
       - F:/loom-backups/env/postgres.env
     volumes:
@@ -30,14 +34,16 @@ services:
     restart: unless-stopped
 
   minio:
-    image: minio/minio:latest
+    image: minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     command: server /data --console-address ":9001"
     env_file:
       - F:/loom-backups/env/minio.env
     volumes:
       - miniodata:/data
     ports:
-      # 仅回环：控制台与 API 是给宿主运维用的，不是给网络用的。
+      # 仅回环（loopback）：控制台与 API 是给宿主运维用的，不是给网络用的。
+      # 要远程读对象 URL 时须显式放宽并配 TLS；
+      # 见 docs/operations/loom-backup-restore-runbook.md。
       - "127.0.0.1:9000:9000"
       - "127.0.0.1:9001:9001"
     healthcheck:
@@ -49,14 +55,15 @@ services:
     restart: unless-stopped
 
   minio-init:
-    image: minio/mc:latest
+    image: minio/mc:latest@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
     depends_on:
       - minio
     env_file:
       - F:/loom-backups/env/minio-init.env
     environment:
-      # public = 匿名可下载。仅因端口已收窄到回环才可接受：浏览器在宿主上，
-      # 仍能显示媒体。若日后要远程访问，必须先改 private 或改用签名 URL。
+      # "public" = 匿名可下载。仅因端口已收窄到回环才可接受：浏览器在宿主上，
+      # 仍能显示媒体。存私有素材时必须改 private（已有公开 URL 会失效，预期内），
+      # 不要把关闭它说成无影响。若日后要远程访问，先改 private 或改用签名 URL。
       MINIO_BUCKET_ACCESS: public
     restart: on-failure
     entrypoint:
@@ -169,13 +176,18 @@ services:
     restart: unless-stopped
 
   app:
-    # T24: built from the worktree (the readiness fixes live there); the root tree
-    # still holds the pre-fix code, so `build: .` would deploy the old behaviour.
-    image: loom-app:readiness-20260930-modelui
+    # 2026-09-30 merge: comet/local-model-settings is merged into main, so the
+    # root tree now IS the production source. `build: .` is safe again (T24's
+    # "root tree holds pre-fix code" no longer applies). Image tag kept as the
+    # friendly local cache name; compose builds it when absent.
+    build: .
+    image: loom-app:readiness-20260930-merged
     # 凭据从工作树外的文件读入，不经命令行、不进仓库（见文件头注释）。
     env_file:
       - F:/loom-backups/env/app.env
     ports:
+      # 仅回环发布：本应用无登录，全网卡绑定会把所有写端口暴露到网络。
+      # 远程入口必须是显式部署决策（反代 + 鉴权），不是默认值。
       - "127.0.0.1:8080:8080"
     # 容器内 localhost 默认指向容器自己；模型网关只接受来自回环的请求（它的
     # DNS-rebinding 防护），所以把 localhost 额外指向宿主网关，让模型调用以
@@ -184,7 +196,8 @@ services:
     extra_hosts:
       - "localhost:host-gateway"
     environment:
-      # T02: a production runtime must refuse to start without a real database.
+      # T02: a production runtime must refuse to start without a real database,
+      # instead of silently serving from the in-memory PGLite fallback.
       LOOM_RUNTIME_MODE: production
       # T05: this host resolves public domains into the proxy's fake-IP range
       # (198.18.0.0/15); without this declaration the SSRF policy blocks ALL
@@ -245,8 +258,8 @@ services:
     restart: unless-stopped
 
   scheduler:
-    # T24: same image as app — it runs the readiness scheduler code.
-    image: loom-app:readiness-20260930-modelui
+    # Same image as app — it runs the readiness scheduler code.
+    image: loom-app:readiness-20260930-merged
     command: ["npm", "run", "cron:start"]
     deploy:
       replicas: 1
@@ -254,8 +267,8 @@ services:
       - F:/loom-backups/env/scheduler.env
     environment:
       CRON_ENDPOINT: http://app:8080/api/cron/tick
-      # T09: wake up every 60 s so due sources are noticed promptly; the heavy
-      # stages keep their own cadence via the persistent window table.
+      # T09: 唤醒间隔是调度频率而非采集频率：信源有各自的 interval_minutes，
+      # 重任务由持久窗口表节流（见 env.example）。60s 让到期信源被尽快注意到。
       CRON_INTERVAL_MS: ${CRON_INTERVAL_MS:-60000}
       # T05: same egress declaration as app — the scheduler makes the outbound
       # collection requests.

@@ -111,6 +111,14 @@ function main(argv) {
     process.exit(2);
   }
   const env = mergeAppEnv(readAppEnv(projectRoot()), process.env);
+  const localModel = join(projectRoot(), "config", "model.local.json");
+  if (!env.VERCEL && !env.LOOM_MODEL_CONFIG && existsSync(localModel)) env.LOOM_MODEL_CONFIG = localModel;
+  // Nitro's Vercel preview adapter drops clientAddress. Attest only an explicit
+  // loopback bind controlled here; never accept a request header as this proof.
+  delete env.LOOM_MODEL_LOOPBACK_ONLY;
+  const hostIndex = args.lastIndexOf("--host");
+  if (command === "vite" && ["dev", "preview"].includes(args[0]) && hostIndex >= 0 &&
+      ["127.0.0.1", "::1"].includes(args[hostIndex + 1]) && !args.some(a => a.startsWith("--host="))) env.LOOM_MODEL_LOOPBACK_ONLY = "true";
   // Invoke Vite's JavaScript entry directly on Windows: Node cannot spawn its
   // `.cmd` shim without a shell, and arguments must not be shell-concatenated.
   const viteEntry = join(projectRoot(), "node_modules", "vite", "bin", "vite.js");

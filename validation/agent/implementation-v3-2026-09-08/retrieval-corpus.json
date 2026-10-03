@@ -113,6 +113,34 @@
       "published_at": "2026-09-07T01:00:00Z"
     },
     {
+      "id": "conf-a",
+      "title": "产线良率快报",
+      "body": "A 线良率约 92%。",
+      "author": "产业组",
+      "published_at": "2026-09-07T01:00:00Z"
+    },
+    {
+      "id": "conf-b",
+      "title": "产线良率复核",
+      "body": "A 线良率复核为 88%，与快报口径不同。",
+      "author": "质控组",
+      "published_at": "2026-09-07T01:00:00Z"
+    },
+    {
+      "id": "scope-wx",
+      "title": "公众号：电解液涨价",
+      "body": "电解液价格上调 5%。",
+      "author": "微信",
+      "published_at": "2026-09-07T01:00:00Z"
+    },
+    {
+      "id": "scope-rss",
+      "title": "RSS：电解液涨价",
+      "body": "电解液价格上调 5%。",
+      "author": "RSS",
+      "published_at": "2026-09-07T01:00:00Z"
+    },
+    {
       "id": "stress-noise-0",
       "title": "无关近日报告",
       "body": "battery general market",
@@ -869,6 +897,26 @@
         "none-1"
       ],
       "none": false
+    },
+    {
+      "id": "c23",
+      "query": "A 线良率",
+      "expected_ids": [
+        "conf-a",
+        "conf-b"
+      ],
+      "none": false,
+      "note": "数字冲突：两份材料给出不同数值，应同时召回以便对账"
+    },
+    {
+      "id": "c24",
+      "query": "电解液涨价",
+      "expected_ids": [
+        "scope-wx",
+        "scope-rss"
+      ],
+      "none": false,
+      "note": "平台范围：同一短语在两个平台各一条，均应在无平台过滤时召回"
     },
     {
       "id": "tail-and-cap",

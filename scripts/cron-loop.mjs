@@ -13,6 +13,36 @@ function failedStage(value) {
   return value && typeof value === "object" && value.ok === false ? 1 : 0;
 }
 
+/**
+ * T16: per-stage outcome, so a failing tick can be located instead of just counted.
+ *
+ * The previous summary exposed only `status`, `item_count` and a single summed
+ * `error_count` — an operator could see "8 errors" but not whether they came from
+ * collection, media ingest, extraction, reconciliation or the wechat queue.
+ *
+ * Rules kept from the plan:
+ *   - existing fields (`timestamp`, `status`, `item_count`, `error_count`) stay,
+ *     so existing consumers keep working;
+ *   - `stages` is a small object of stable stage names → short status strings;
+ *   - `error_code` contains only stable codes. Never a URL, query string, token
+ *     or provider body: those can carry credentials or private queries.
+ */
+/** A failed stage's stable code, or "" when the stage reported success. */
+function stageStatus(value, okName = "ok") {
+  if (value === null || value === undefined) return "skipped";
+  if (typeof value !== "object") return "invalid";
+  if (value.ok === false) {
+    // `error` here is already a fixed code from the server (e.g. collection_failed).
+    const code = typeof value.error === "string" && /^[a-z0-9_]{1,40}$/.test(value.error)
+      ? value.error : "failed";
+    return code;
+  }
+  const errorCount = count(value.errors) + count(value.ingest_errors) + count(value.extract_errors)
+    + count(value.failed);
+  if (errorCount > 0) return "partial";
+  return okName;
+}
+
 function summarize(status, payload) {
   const collection = payload?.collection;
   const production = payload?.production;
@@ -21,21 +51,43 @@ function summarize(status, payload) {
   const scanErrors = Array.isArray(reconciliation?.source_results)
     ? reconciliation.source_results.filter((result) => result?.error).length
     : 0;
+
+  const stages = {
+    collection: stageStatus(collection, payload?.collection ? "ok" : "skipped"),
+    production: stageStatus(production, payload?.production ? "ok" : "skipped"),
+    reconciliation: stageStatus(reconciliation, payload?.reconciliation ? "ok" : "skipped"),
+    queue: stageStatus(reconciliationQueue, payload?.reconciliation_queue ? "ok" : "skipped"),
+    delivery_ack: stageStatus(reconciliation?.delivery_ack, payload?.reconciliation?.delivery_ack ? "ok" : "skipped"),
+  };
+
+  // Stable, non-sensitive reason codes for whichever stages did not come back ok.
+  const codes = Object.entries(stages)
+    .filter(([, value]) => !["ok", "skipped", "partial"].includes(value))
+    .map(([name, value]) => `${name}:${value}`);
+
+  const error_count = count(collection?.errors)
+    + count(production?.ingest_errors)
+    + count(production?.extract_errors)
+    + count(reconciliation?.failed)
+    + scanErrors
+    + failedStage(collection)
+    + failedStage(production)
+    + failedStage(reconciliation)
+    + failedStage(reconciliation?.delivery_ack)
+    + count(reconciliationQueue?.failed)
+    + (reconciliationQueue?.error ? 1 : 0);
+
   return {
     timestamp: new Date().toISOString(),
     status,
     item_count: count(collection?.items_new),
-    error_count: count(collection?.errors)
-      + count(production?.ingest_errors)
-      + count(production?.extract_errors)
-      + count(reconciliation?.failed)
-      + scanErrors
-      + failedStage(collection)
-      + failedStage(production)
-      + failedStage(reconciliation)
-      + failedStage(reconciliation?.delivery_ack)
-      + count(reconciliationQueue?.failed)
-      + (reconciliationQueue?.error ? 1 : 0),
+    error_count,
+    // T16 additions (existing fields above are unchanged):
+    stages,
+    duration_ms: count(payload?.duration_ms),
+    deferred: count(collection?.deferred) + count(production?.deferred)
+      + count(reconciliationQueue?.deferred),
+    error_code: codes.join(","),
   };
 }
 

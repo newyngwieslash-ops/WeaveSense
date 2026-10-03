@@ -1,18 +1,36 @@
 
 > preview
-> node scripts/with-app-env.mjs vite preview --host 127.0.0.1 --port 61095 --strictPort
+> node scripts/with-app-env.mjs vite preview --host 127.0.0.1 --port 52361 --strictPort
 
 
- ╭────────── [Build Info] ─────────────╮
- │                                     │
- │  - Build Directory: .vercel/output  │
- │  - Date: 2026/9/8 16:46:13          │
- │  - Nitro Version: 3.0.260610-beta   │
- │  - Nitro Preset: vercel             │
- │                                     │
- ╰─────────────────────────────────────╯
+ [37m╭[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m [Build Info] [39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m╮[39m
+ [37m│[39m                                     [37m│[39m
+ [37m│[39m  - Build Directory: [36m.vercel/output[39m  [37m│[39m
+ [37m│[39m  - Date: 2026/9/16 14:41:03         [37m│[39m
+ [37m│[39m  - Nitro Version: 3.0.260610-beta   [37m│[39m
+ [37m│[39m  - Nitro Preset: vercel             [37m│[39m
+ [37m│[39m                                     [37m│[39m
+ [37m╰[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m╯[39m
 
-  ➜  Local:   http://127.0.0.1:61095/
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://127.0.0.1:[1m52361[22m/[39m
+Error: aborted
+    at abortIncoming (node:_http_server:845:17)
+    ... 2 lines matching cause stack trace ...
+    at TCP.<anonymous> (node:net:346:12) {
+  cause: Error: aborted
+      at abortIncoming (node:_http_server:845:17)
+      at socketOnClose (node:_http_server:839:3)
+      at Socket.emit (node:events:520:35)
+      at TCP.<anonymous> (node:net:346:12) {
+    code: 'ECONNRESET'
+  },
+  status: 500,
+  statusText: undefined,
+  headers: undefined,
+  data: undefined,
+  body: undefined,
+  unhandled: true
+}
 Error: aborted
     at abortIncoming (node:_http_server:845:17)
     ... 2 lines matching cause stack trace ...

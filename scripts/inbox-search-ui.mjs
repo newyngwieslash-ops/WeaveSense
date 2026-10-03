@@ -1,0 +1,85 @@
+import assert from 'node:assert/strict';
+import { mkdirSync } from 'node:fs';
+import { chromium } from 'playwright';
+
+const origin = process.argv[2] || 'http://127.0.0.1:8182';
+const tag = process.argv[3] || 'dev';
+const browser = await chromium.launch({ headless: true });
+const errors = [];
+mkdirSync('screenshots', { recursive: true });
+try {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  page.on('pageerror', e => errors.push(e.message));
+  const input = page.getByPlaceholder('检索标题、正文、作者');
+  const link = page.locator('a[href*="/inbox/"]').first();
+  const back = page.getByRole('link', { name: '返回内容', exact: true });
+  const check = async (q) => {
+    await page.waitForFunction(q => new URL(location.href).searchParams.get('q') === (q || null), q);
+    assert.equal(await input.inputValue(), q);
+  };
+  for (const enter of [false, true]) {
+    await page.goto(origin + '/inbox');
+    await link.waitFor();
+    await input.pressSequentially('下一块电池');
+    if (enter) await input.press('Enter');
+    await check('下一块电池');
+    await link.click();
+    await back.click();
+    await check('下一块电池');
+  }
+  await input.fill('不存在的搜索样本XYZ');
+  await page.getByText('没有匹配的条目', { exact: true }).waitFor();
+  await input.fill('');
+  await check('');
+  await link.waitFor();
+  await input.dispatchEvent('compositionstart');
+  await input.fill('xia');
+  await input.dispatchEvent('keydown', { key: 'Enter', keyCode: 229, isComposing: true });
+  assert.equal(new URL(page.url()).searchParams.get('q'), null);
+  await input.fill('下一块电池');
+  await input.dispatchEvent('compositionend', { data: '下一块电池' });
+  await check('下一块电池');
+  await page.locator('select').nth(0).selectOption('wechat');
+  await page.locator('select').nth(1).selectOption('article');
+  await page.getByRole('button', { name: /^固态电池/ }).click();
+  await check('下一块电池');
+  const filtered = new URL(page.url()).search;
+  await link.click();
+  await back.waitFor();
+  const detail = page.url();
+  await page.reload();
+  await back.click();
+  assert.equal(new URL(page.url()).search, filtered);
+  await check('下一块电池');
+  await link.click();
+  await page.goBack();
+  await check('下一块电池');
+  await page.goForward();
+  await back.waitFor();
+  const other = await browser.newPage();
+  await other.goto(detail);
+  await other.getByRole('link', { name: '返回内容', exact: true }).click();
+  assert.equal(new URL(other.url()).search, filtered);
+  await other.close();
+  await page.goto(origin + '/inbox/itm_wc-late-001');
+  await back.click();
+  await check('');
+  assert.deepEqual(await page.locator('select').evaluateAll(nodes => nodes.map(n => n.value)), ['', '']);
+  // Keep the list mounted across history changes: defaultValue used to stay stale here.
+  await input.fill('下一块电池');
+  await check('下一块电池');
+  await page.locator('select').nth(0).selectOption('wechat');
+  await page.waitForURL(/platform=wechat/);
+  await input.fill('开源模型');
+  await check('开源模型');
+  await page.goBack();
+  await check('下一块电池');
+  await page.goForward();
+  await check('开源模型');
+  await page.screenshot({ path: `screenshots/inbox-search-${tag}-desktop.png` });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: `screenshots/inbox-search-${tag}-mobile.png` });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  assert.deepEqual(errors, []);
+  console.log('PASS: real typing with/without Enter, clear/empty, IME events, filters, detail refresh, back/forward, new tab, default return, desktop/mobile. No model actions.');
+} finally { await browser.close(); }

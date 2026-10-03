@@ -5,6 +5,7 @@ import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 import { beginRun } from "./agent-runs.ts";
 import { handleAgentData, hashRunToken } from "./agent-data.ts";
+import { materialFingerprint } from "./agent-context.ts";
 
 async function setup() {
   const pg = new PGlite();
@@ -32,6 +33,29 @@ async function setup() {
 }
 
 const token = "data-token";
+
+test('A12 get_analysis marks changed material stale and current fingerprint fresh', async () => {
+  const f = await setup();
+  try {
+    const fingerprint = async () => {
+      const [row] = await f.sql.query<any>('select i.*,s.name as source_name from items i join sources s on s.id=i.source_id where i.id=$1', ['item-1']);
+      return materialFingerprint(row);
+    };
+    await f.sql.query('update ai_runs set material_hash=$1 where id=$2', [await fingerprint(), f.runId]);
+    await f.sql.query("insert into analyses(id,item_id,summary,run_id) values('freshness','item-1','旧分析',$1)", [f.runId]);
+    const read = () => handleAgentData({ sql:f.sql, serviceToken:token, providedServiceToken:token, runToken:f.runToken, runId:f.runId, action:'get_analysis', params:{item_id:'item-1'} });
+    const first = await read();
+    assert.equal(first.status, 200); assert.equal(first.body.stale, false);
+    await f.sql.query("update items set body='材料已经变更为96%' where id='item-1'");
+    const changed = await read();
+    assert.equal(changed.status, 200); assert.equal(changed.body.stale, true);
+    assert.equal(changed.body.summary, '旧分析');
+    // Model generation is covered separately; here isolate the freshness contract.
+    await f.sql.query('update ai_runs set material_hash=$1 where id=$2', [await fingerprint(), f.runId]);
+    const current = await read();
+    assert.equal(current.status, 200); assert.equal(current.body.stale, false);
+  } finally { await f.pg.close(); }
+});
 
 test('V5 MCP receipts require authenticated started call, immutable contents and current run token',async()=>{
  const f=await setup();const before=process.env.AGENT_MCP_ALLOWED_TOOLS;process.env.AGENT_MCP_ALLOWED_TOOLS='mcp_lab_search';

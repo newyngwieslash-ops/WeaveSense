@@ -1,16 +1,6 @@
-import { parseViews, stripHtml } from "@/lib/format";
-import { fetchText } from "./http";
+import { parseViews, stripHtml } from "../format.ts";
+import { fetchText, type FetchIo } from "./http.ts";
 import type { NormalizedItem } from "./collectors/types";
-
-function decodeEntities(s: string): string {
-  return s
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&/gi, "&")
-    .replace(/</gi, "<")
-    .replace(/>/gi, ">")
-    .replace(/"/gi, '"')
-    .replace(/&#39;/g, "'");
-}
 
 export function parseTelegramHtml(html: string, username: string): NormalizedItem[] {
   const blocks = html.split('class="tgme_widget_message ');
@@ -21,13 +11,14 @@ export function parseTelegramHtml(html: string, username: string): NormalizedIte
     const textMatch = block.match(
       /class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/,
     );
-    const photo = block.match(/background-image:url\('([^']+)'\)/)?.[1] ?? "";
+    const photoTag = block.match(/<a\b[^>]*class="[^"]*\btgme_widget_message_photo_wrap\b[^"]*"[^>]*>/)?.[0] ?? "";
+    const photo = photoTag.match(/background-image:\s*url\(['"]?([^'")]+)['"]?\)/)?.[1] ?? "";
     const video = /tgme_widget_message_video/.test(block);
     const viewsRaw = block.match(/tgme_widget_message_views">([^<]+)/)?.[1] ?? "";
     const author =
       block.match(/tgme_widget_message_owner_name[^>]*>[\s\S]*?<span[^>]*>([^<]+)/)?.[1] ??
       username;
-    const body = stripHtml(decodeEntities(textMatch?.[1] ?? ""));
+    const body = stripHtml(textMatch?.[1] ?? "");
     const title = body.split("\n")[0]?.slice(0, 120) || (video ? "视频消息" : photo ? "图片消息" : "频道消息");
     const id = post || `${username}:${datetime ?? items.length}`;
     const url = post ? `https://t.me/${post}` : `https://t.me/s/${username}`;
@@ -49,10 +40,10 @@ export function parseTelegramHtml(html: string, username: string): NormalizedIte
   return items;
 }
 
-export async function fetchTelegramChannel(username: string): Promise<NormalizedItem[]> {
+export async function fetchTelegramChannel(username: string, io: FetchIo = {}): Promise<NormalizedItem[]> {
   const handle = username.replace(/^@/, "").trim();
   if (!handle) throw new Error("缺少频道用户名");
-  const html = await fetchText(`https://t.me/s/${encodeURIComponent(handle)}`, 12000);
+  const html = await fetchText(`https://t.me/s/${encodeURIComponent(handle)}`, 12000, undefined, {}, io);
   const items = parseTelegramHtml(html, handle);
   if (!items.length) throw new Error("未解析到公开消息（频道可能私密或无网页预览）");
   return items;

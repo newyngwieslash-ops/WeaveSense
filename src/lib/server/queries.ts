@@ -1,4 +1,5 @@
 import { getSql } from "../db.ts";
+import { decodeHtmlEntities } from "../format.ts";
 import { parsePlatformList } from "../keyword.ts";
 import type { PlatformId } from "../platforms.ts";
 import { isPlatform } from "../platforms.ts";
@@ -82,9 +83,9 @@ export function mapItem(row: Record<string, unknown>): ItemRow {
     source_id: String(row.source_id),
     platform: platformOf(row.platform),
     external_id: String(row.external_id),
-    title: String(row.title ?? ""),
-    body: String(row.body ?? ""),
-    author: String(row.author ?? ""),
+    title: decodeHtmlEntities(String(row.title ?? "")),
+    body: decodeHtmlEntities(String(row.body ?? "")),
+    author: decodeHtmlEntities(String(row.author ?? "")),
     url: String(row.url ?? ""),
     media_type: (row.media_type as ItemRow["media_type"]) ?? "article",
     media_urls: asJson<string[]>(row.media_urls, []),

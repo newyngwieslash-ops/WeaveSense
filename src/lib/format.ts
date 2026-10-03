@@ -51,21 +51,25 @@ export function parseViews(raw: string | number | null | undefined): number | nu
   return Math.round(n * mul);
 }
 
+export function decodeHtmlEntities(input: string): string {
+  const named: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+  return input.replace(/&(#x[\da-f]+|#\d+|amp|lt|gt|quot|apos|nbsp);/gi, (entity, key: string) => {
+    if (!key.startsWith("#")) return named[key.toLowerCase()] ?? entity;
+    const hex = key[1].toLowerCase() === "x";
+    const code = parseInt(key.slice(hex ? 2 : 1), hex ? 16 : 10);
+    return code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff) ? String.fromCodePoint(code) : "�";
+  });
+}
+
 export function stripHtml(input: string): string {
-  return input
+  return decodeHtmlEntities(input
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&/gi, "&")
-    .replace(/</gi, "<")
-    .replace(/>/gi, ">")
-    .replace(/"/gi, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/'/g, "'")
+    .replace(/<\/(?:p|div|section|li|h[1-6])>/gi, "\n")
+    .replace(/<[^>]+>/g, " "))
     .replace(/\s+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .replace(/[ \t]{2,}/g, " ")
     .trim();

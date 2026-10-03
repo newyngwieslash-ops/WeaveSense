@@ -77,16 +77,15 @@ if errorlevel 1 call :find_docker
 where docker >nul 2>&1
 if errorlevel 1 goto err_nodocker
 
-echo [1/5] Ensuring the Docker engine...
-call :log "step 1: ensure docker engine"
 call :ensure_docker
 if errorlevel 1 goto err_nodaemon
 
-echo [2/5] Checking who owns port %PORT% ...
-call :detect_port
-if "%APP_WAS_RUNNING%"=="1" goto port_ours
-if not defined PORT_OWNER_PID goto port_free
-goto err_portbusy
+call :configure_local_defaults
+
+set "COMPOSE_KIND=v2"
+docker compose version >nul 2>&1
+if errorlevel 1 goto try_legacy
+goto compose_ok
 
 :port_ours
 echo       Port %PORT% is this app. It will be killed and restarted.
@@ -101,22 +100,21 @@ echo       Port %PORT% is free.
 call :log "step 2: port %PORT% free - fresh start"
 goto port_checked
 
-:port_checked
+echo [2/5] Stop old stack, keep volumes...
+call :ensure_docker
+if errorlevel 1 goto err_nodaemon
+call :compose down
+if errorlevel 1 echo [WARN] compose down failed, continue anyway.
 
-echo [3/5] Starting the stack...
-call :log "step 3: compose up"
-if not "%APP_WAS_RUNNING%"=="1" goto stack_fresh
-rem Ours was up, so its dependencies are already up: recreate just the app to
-rem release and rebind the port. Never ${VAR:?}-style variables on this command
-rem line - `compose up` injects command-line variables into every related
-rem service, which is what caused the 2026-09-17 production incident.
-call :compose up -d --force-recreate --no-deps app
+echo [3/5] Build and start stack...
+call :ensure_docker
+if errorlevel 1 goto err_nodaemon
+call :compose up --build -d
+if not errorlevel 1 goto stack_started
+echo [WARN] Build failed. Retrying with existing local images...
+call :compose up --no-build -d
 if errorlevel 1 goto err_up
-goto stack_started
-
-:stack_fresh
-call :compose up -d
-if errorlevel 1 goto err_up
+:stack_started
 
 :stack_started
 
@@ -206,7 +204,6 @@ goto fail
 :err_nodaemon
 echo [ERROR] Docker engine did not become ready after automatic recovery.
 echo Open Docker Desktop once, then retry. Volumes were not removed.
-call :log "FATAL docker engine not ready"
 goto fail
 
 :err_portbusy
@@ -279,27 +276,14 @@ set /a DOCKER_WAITED=0
 docker info >nul 2>&1
 if not errorlevel 1 exit /b 0
 if %DOCKER_WAITED% GEQ %~1 exit /b 1
-call :sleep 3
+timeout /t 3 /nobreak >nul
 set /a DOCKER_WAITED+=3
 goto wait_docker_loop
-
-rem Delay helper. `timeout /t` is not usable here: it needs a console input
-rem handle, and when the script is launched without one it aborts with an
-rem "input redirection is not supported" error and returns immediately, turning
-rem every wait loop into a busy loop. `ping -n` has no such requirement; the
-rem extra hop it performs is discarded.
-:sleep
-ping -n %~1 127.0.0.1 >nul 2>&1
-exit /b 0
 
 :start_docker_desktop
 if exist "C:\Program Files\Docker\Docker\Docker Desktop.exe" start "" /b "C:\Program Files\Docker\Docker\Docker Desktop.exe"
 exit /b 0
 
-rem Legacy no-op with the current compose: credentials now come from the
-rem env_file entries (F:\loom-backups\env\*.env), so nothing here is read by
-rem compose any more. Kept so the script still works if the compose file is
-rem ever reverted to ${VAR:?} interpolation.
 :configure_local_defaults
 set "LOCAL_SECRET="
 for /f "usebackq delims=" %%I in (`powershell -NoProfile -Command "[guid]::NewGuid().ToString('N')"`) do set "LOCAL_SECRET=%%I"

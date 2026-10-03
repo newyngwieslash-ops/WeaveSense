@@ -14,6 +14,7 @@ import {
   runCronStages,
 } from "@/lib/server/cron";
 import { prod } from "@/lib/server/config";
+import { runStageOnce } from "@/lib/server/stage-windows.ts";
 import { getSql } from "@/lib/db";
 import { runProductionTick } from "@/lib/server/nodes";
 import { runSourceJob, tickDueSources } from "@/lib/server/scheduler";
@@ -58,6 +59,18 @@ export const Route = createFileRoute("/api/cron/tick")({
             return null;
           }
         };
+        // T09: the paid/reconciliation work rides its own persistent window too,
+        // so a 60-second tick cannot re-run it. The business window (23:30
+        // Shanghai) is checked FIRST and the claim is only taken inside it —
+        // claiming outside would consume the day's window and silently skip the
+        // real reconciliation later that day.
+        let reconciliationAllowed = false;
+        if (gatewayConfigured && reconciliationWindow) {
+          const stage = await runStageOnce(await getSql(), "reconcile",
+            async () => ({ ok: true, note: "admitted" }), startedAt);
+          reconciliationAllowed = stage.ran;
+        }
+
         const stages = await runCronStages({
           collection: async () => {
             await drainQueue(deadlineMs - gatewayReserve - CRON_INGEST_RESERVE_MS - extractReserve);
@@ -69,6 +82,9 @@ export const Route = createFileRoute("/api/cron/tick")({
           production: () => runProductionTick({ deadlineMs: deadlineMs - gatewayReserve, allowExtract }),
           reconciliation: async () => {
             if (!gatewayConfigured) return null;
+            if (!reconciliationAllowed) {
+              return { ok: false, error: "reconciliation_deferred" };
+            }
             if (!cronHasBudget(deadlineMs, CRON_GATEWAY_RESERVE_MS)) {
               return { ok: false, error: "reconciliation_deferred" };
             }
@@ -93,7 +109,11 @@ export const Route = createFileRoute("/api/cron/tick")({
             };
           },
         });
-        return Response.json({ ...stages, reconciliation_queue: {
+        return Response.json({ ...stages,
+          // T16: total tick duration, so the loop can report it and an operator can
+          // see how much of the server budget a tick consumed.
+          duration_ms: Date.now() - startedAt,
+          reconciliation_queue: {
           ...queue,
           ...(queueError ? { error: "queue_failed" } : {}),
         } });

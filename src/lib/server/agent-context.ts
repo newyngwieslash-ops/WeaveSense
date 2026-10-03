@@ -1,4 +1,5 @@
 import type { ItemRow } from "../types.ts";
+import { expandTerms } from "./term-glossary.ts";
 import { hashCanonical } from "./agent-runs.ts";
 
 export const ITEM_CODE_POINT_CAP = 12_000;
@@ -171,7 +172,7 @@ const STOPWORDS = new Set(["的", "了", "和", "与", "在", "是", "对", "及
 
 export function splitQueryTerms(query: string): string[] {
   const raw = query
-    .replace(/[，。！？、；：""''（）()\[\]{}]/g, " ")
+    .replace(/[，。！？、；：""''（）()[\]{}]/g, " ")
     .split(/[\s,./\\-]+/)
     .flatMap((part) => {
       if (/[\u4e00-\u9fff]/.test(part) && part.length >= 4) {
@@ -190,18 +191,26 @@ export function splitQueryTerms(query: string): string[] {
 export function scoreItemMatch(query: string, item: { title: string; body: string; author: string }): number {
   const terms = splitQueryTerms(query);
   if (terms.length === 0) return 0;
+  // T15: a term's equivalent forms (e.g. 电动垂直起降 -> eVTOL) match too. The
+  // relationship is declared as data in term-glossary.ts; matching stays lexical.
   const title = item.title.toLowerCase();
   const body = item.body.toLowerCase();
   const author = item.author.toLowerCase();
   let score = 0;
   for (const term of terms) {
-    const needle = term.toLowerCase();
-    const position = (text: string) => /^[a-z0-9]+$/.test(needle)
-      ? text.search(new RegExp(`(?<![a-z0-9])${needle}(?![a-z0-9])`)) : text.indexOf(needle);
-    if (position(title) >= 0) score += 4;
-    if (position(author) >= 0) score += 2;
-    const firstHit = position(body);
-    if (firstHit >= 0) score += firstHit > body.length * 0.55 ? 3 : 1;
+    // The original term scores normally; an equivalent form scores a little less,
+    // so a document that literally uses the question's wording still outranks one
+    // that only matches through the glossary.
+    const needles: [string, number][] = [[term.toLowerCase(), 1]];
+    for (const equivalent of expandTerms(term)) needles.push([equivalent.toLowerCase(), 0.75]);
+    for (const [needle, weight] of needles) {
+      const position = (text: string) => /^[a-z0-9]+$/.test(needle)
+        ? text.search(new RegExp(`(?<![a-z0-9])${needle}(?![a-z0-9])`)) : text.indexOf(needle);
+      if (position(title) >= 0) score += 4 * weight;
+      if (position(author) >= 0) score += 2 * weight;
+      const firstHit = position(body);
+      if (firstHit >= 0) score += (firstHit > body.length * 0.55 ? 3 : 1) * weight;
+    }
   }
   return score;
 }

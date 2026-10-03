@@ -1,22 +1,26 @@
 {
-  "identity": "loom-agent-harness-595879d3",
+  "identity": "loom-agent-harness-55166aaa",
   "mode": "built",
   "pids": [
     {
       "label": "app",
-      "pid": 34008
+      "pid": 29140
     },
     {
       "label": "go-1",
-      "pid": 49524
+      "pid": 44224
     },
     {
       "label": "go-2",
-      "pid": 42428
+      "pid": 58672
+    },
+    {
+      "label": "go-3",
+      "pid": 58824
     },
     {
       "label": "rollback-app",
-      "pid": 44724
+      "pid": 62416
     }
   ],
   "requests": [
@@ -543,6 +547,11 @@
     },
     {
       "kind": "app",
+      "action": "claim",
+      "status": 404
+    },
+    {
+      "kind": "app",
       "action": "model_call",
       "status": 200
     },
@@ -564,6 +573,37 @@
       "kind": "app",
       "action": "claim",
       "status": 404
+    },
+    {
+      "kind": "mcp",
+      "method": "initialize"
+    },
+    {
+      "kind": "mcp",
+      "method": "notifications/initialized"
+    },
+    {
+      "kind": "mcp",
+      "method": "tools/list"
+    },
+    {
+      "kind": "app",
+      "action": "model_call",
+      "status": 200
+    },
+    {
+      "kind": "model",
+      "number": 18,
+      "max_tokens": 1800,
+      "roles": [
+        "system",
+        "user"
+      ]
+    },
+    {
+      "kind": "app",
+      "action": "model_call",
+      "status": 200
     }
   ],
   "checks": [
@@ -574,26 +614,27 @@
     "invalid output failure and new question",
     "positive budget refusal; briefing and item analysis through browser",
     "browser-smoke desktop/mobile content, console and dev/built baseline",
+    "C02 Eino unavailable: history readable, failed request no model/fallback/note; new request succeeds after worker restart",
     "owned app rollback to legacy cancels unstarted job; claim gate closed; Agent down leaves browsing/history available; no new model request"
   ],
   "screenshots": [
-    "F:\\AI-TG-PINGTAI-0826\\GIG5cYRBa5yN3Tsi-grok-workspace\\screenshots\\agent-v3-built-desktop.png",
-    "F:\\AI-TG-PINGTAI-0826\\GIG5cYRBa5yN3Tsi-grok-workspace\\screenshots\\agent-v3-built-mobile.png"
+    "F:\\AI-TG-PINGTAI-0826\\GIG5cYRBa5yN3Tsi-grok-workspace\\.worktrees\\local-model-settings\\screenshots\\agent-v3-built-desktop.png",
+    "F:\\AI-TG-PINGTAI-0826\\GIG5cYRBa5yN3Tsi-grok-workspace\\.worktrees\\local-model-settings\\screenshots\\agent-v3-built-mobile.png"
   ],
   "container": {
-    "name": "loom-agent-harness-595879d3",
-    "port": 61094
+    "name": "loom-agent-harness-55166aaa",
+    "port": 52360
   },
   "counts": {
-    "modelCalls": 17,
+    "modelCalls": 18,
     "mcpCalls": 1,
-    "notes": 6,
+    "notes": 7,
     "checkpoints": 2
   },
   "ok": true,
   "runs": [
     {
-      "id": "03b0998c-8e26-4d53-a662-2429dc2161dd",
+      "id": "9089fb89-1f1e-45af-8cfb-1ffb83825da5",
       "mode": "research",
       "provider": "eino",
       "status": "succeeded",
@@ -604,7 +645,7 @@
       "output_tokens": "20"
     },
     {
-      "id": "ef308b12-0cc1-45d2-9b98-db1a4c259e8f",
+      "id": "31ea76b6-3249-4548-bbca-78b1130828e9",
       "mode": "research",
       "provider": "eino",
       "status": "succeeded",
@@ -615,7 +656,7 @@
       "output_tokens": "80"
     },
     {
-      "id": "31953087-b16d-4dfe-91d2-c0e590bffe05",
+      "id": "3af2d7ec-644e-481c-8094-d1808452a85a",
       "mode": "research",
       "provider": "eino",
       "status": "succeeded",
@@ -626,7 +667,7 @@
       "output_tokens": "20"
     },
     {
-      "id": "f4bd584e-7b9a-4d8f-8456-332c75ff1b1e",
+      "id": "23f8fc3b-9a89-4b11-8098-40ebb4224d59",
       "mode": "research",
       "provider": "eino",
       "status": "succeeded",
@@ -637,7 +678,7 @@
       "output_tokens": "20"
     },
     {
-      "id": "44d11297-3131-44d9-88ab-7cccc44f1ec2",
+      "id": "547599ca-c0cf-4d58-a3a9-3b287db193a6",
       "mode": "research",
       "provider": "eino",
       "status": "failed",
@@ -648,7 +689,7 @@
       "output_tokens": "40"
     },
     {
-      "id": "c282c531-8cc6-4945-a207-4f90a76ec3ff",
+      "id": "835f99da-ef9a-4834-a491-caee974eb38c",
       "mode": "research",
       "provider": "eino",
       "status": "succeeded",
@@ -659,7 +700,7 @@
       "output_tokens": "20"
     },
     {
-      "id": "26c497e1-b79b-46bb-97c4-1a930b04e7e8",
+      "id": "e85487fc-931a-4f9e-b45e-d53b1aec3dc1",
       "mode": "research",
       "provider": "eino",
       "status": "failed",
@@ -670,7 +711,7 @@
       "output_tokens": "100"
     },
     {
-      "id": "ad854b1d-b9b1-4e74-bded-7bb89b804b62",
+      "id": "e4a961fc-271d-47a9-9a2e-b4cb183bb318",
       "mode": "briefing",
       "provider": "eino",
       "status": "succeeded",
@@ -681,13 +722,35 @@
       "output_tokens": "20"
     },
     {
-      "id": "b8a138f2-51d4-41c8-aad0-99cfde122d2c",
+      "id": "f77ac37c-f15f-443d-aa48-70fb946bcbb2",
       "mode": "analyze_item",
       "provider": "eino",
       "status": "succeeded",
       "error_code": "",
       "model_calls": 1,
       "tool_calls": 1,
+      "input_tokens": "100",
+      "output_tokens": "20"
+    },
+    {
+      "id": "41aa7d06-ff5e-4d25-a7eb-1381f52ad16a",
+      "mode": "research",
+      "provider": "eino",
+      "status": "failed",
+      "error_code": "agent_unavailable",
+      "model_calls": 0,
+      "tool_calls": 0,
+      "input_tokens": null,
+      "output_tokens": null
+    },
+    {
+      "id": "9bbf4095-be1f-4468-9f7d-3fe38fd5d735",
+      "mode": "research",
+      "provider": "eino",
+      "status": "succeeded",
+      "error_code": "",
+      "model_calls": 1,
+      "tool_calls": 0,
       "input_tokens": "100",
       "output_tokens": "20"
     }

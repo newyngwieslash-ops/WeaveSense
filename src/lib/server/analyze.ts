@@ -1,3 +1,4 @@
+import { executeLegacyOutput, modelCallFailure, type ChatFailure } from "./legacy-output.ts";
 import { mapAgentItem as mapItem } from "./agent-retrieval.ts";
 import { retrieveAgentItems } from "./agent-retrieval.ts";
 import { randomBytes, randomUUID } from "node:crypto";
@@ -25,7 +26,7 @@ import { beginRun, failRun, finishAnalyzeAtomically, finishNoteAtomically, getRu
 import type { ItemRow } from "../types.ts";
 import { isPlatform } from "../platforms.ts";
 
-const MODEL = "grok-4.5";
+import { readModelConfig } from "./model-config.ts";
 const POLICY_VERSION = "loom-agent-v1";
 
 type Queryable = { query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<T[]> };
@@ -43,37 +44,78 @@ function engineFromEnv(): AgentProvider {
   throw new Error("agent_unconfigured");
 }
 
-async function chat(system: string, user: string, maxTokens: number): Promise<
-  { ok: true; text: string } | { ok: false; error: string }
+async function chat(system: string, user: string, maxTokens: number, config: ReturnType<typeof readModelConfig>, timeoutMs: number): Promise<
+  { ok: true; text: string; model: string; input_tokens: number | null; output_tokens: number | null } | ChatFailure
 > {
-  const apiKey = process.env.XAI_API_KEY;
+  const { apiKey, baseURL, model } = config;
   if (!apiKey) return { ok: false, error: "当前环境未启用 AI 分析" };
-  const res = await fetch("https://api.x.ai/v1/chat/completions", {
+  let res: Response;
+  try { res = await fetch(`${baseURL}/chat/completions`, {
     method: "POST",
+    redirect: "error",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({
-      model: MODEL, max_tokens: maxTokens, temperature: 0.3,
+      model, max_tokens: maxTokens, temperature: 0.3,
       messages: [{ role: "system", content: system }, { role: "user", content: user }],
     }),
-    signal: AbortSignal.timeout(45000),
-  });
-  if (!res.ok) return { ok: false, error: `xAI API ${res.status}` };
-  const body = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-  const text = body.choices?.[0]?.message?.content?.trim() ?? "";
-  if (!text) return { ok: false, error: "模型没有返回内容" };
-  return { ok: true, text };
+    signal: AbortSignal.timeout(timeoutMs),
+  }); } catch (error) { return { ...modelCallFailure(error, 'request'), model }; }
+  if (!res.ok) { await res.body?.cancel(); return { ok: false, model, stage: 'response', code: 'model_http_error', error: `模型网关返回 HTTP ${res.status}` }; }
+  let body: unknown;
+  try { body = await res.json(); } catch (error) { return { ...modelCallFailure(error, 'response'), model }; }
+  const typed = body as {
+    choices?: { message?: { content?: unknown } }[];
+    usage?: { prompt_tokens?: unknown; completion_tokens?: unknown };
+  } | null;
+  const content = typed?.choices?.[0]?.message?.content;
+  if (typeof content !== 'string' || !content.trim()) return { ...modelCallFailure(null, 'response'), model };
+  const text = content.trim();
+  // T21-b: the gateway reports usage on every completion; carry it up so the run
+  // ledger records real numbers (it was previously discarded here and the runtime
+  // hard-coded null, which made spend unreconcilable).
+  const promptTokens = typed?.usage?.prompt_tokens;
+  const completionTokens = typed?.usage?.completion_tokens;
+  return {
+    ok: true, text, model,
+    input_tokens: typeof promptTokens === 'number' ? promptTokens : null,
+    output_tokens: typeof completionTokens === 'number' ? completionTokens : null,
+  };
 }
 
-function parseJsonObject(text: string): Record<string, unknown> | null {
-  try { return JSON.parse(text) as Record<string, unknown>; } catch { return null; }
+/**
+ * How long a single synchronous model call may take.
+ *
+ * T21 measured the real gateway: successful analyses finished in 31–32 s and
+ * three of five attempts hit the old 40 s ceiling, so the limit sat exactly on
+ * top of the normal completion time — a coin flip on whether a run produced an
+ * answer or a `model_timeout`, with the request already paid for either way.
+ *
+ * 120 s gives ~4x headroom over the observed success time while still bounding a
+ * hung request. It is also the ceiling the agent path uses (`agent-client`), so
+ * both engines now agree on what "too slow" means.
+ */
+const MODEL_CALL_TIMEOUT_SECONDS = 120;
+const MODEL_CALL_TIMEOUT_MS = MODEL_CALL_TIMEOUT_SECONDS * 1_000;
+
+/**
+ * How long a run may stay open before `completeRun` refuses to write it.
+ *
+ * The lease exists to reap ABANDONED runs, so it must be strictly longer than the
+ * work a run is allowed to do — otherwise a slow-but-successful call is thrown
+ * away after the money is spent. T21 observed exactly that: two analyses took
+ * 58.5 s and 61.7 s against the previous flat 60 s lease and both failed to
+ * persist, while the 25 s one succeeded.
+ *
+ * Derived from the call budget rather than hard-coded, so raising the per-call
+ * timeout (or a mode's call count) cannot silently reintroduce the mismatch:
+ * `maxModelCalls * MODEL_CALL_TIMEOUT` plus a fixed margin for the write itself.
+ */
+function runLeaseIso(maxModelCalls: number): string {
+  const budget = Math.max(1, maxModelCalls) * MODEL_CALL_TIMEOUT_MS;
+  return new Date(Date.now() + budget + 60_000).toISOString();
 }
 
-function strArr(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.map((v) => String(v)).filter((v) => v.trim()).slice(0, 12);
-}
-
-function deadline(seconds = 40): string {
+function deadline(seconds = MODEL_CALL_TIMEOUT_SECONDS): string {
   return new Date(Date.now() + seconds * 1000).toISOString();
 }
 
@@ -100,60 +142,6 @@ function buildRequest(mode: ExecuteRequest["mode"], sources: EvidenceSource[], e
   };
 }
 
-async function executeLegacy(request: ExecuteRequest): Promise<ExecuteResponse> {
-  const digest = request.input.sources.map((s, i) =>
-    `#${i + 1} ${s.title} evidence_id=${s.evidence_id} coverage=${s.coverage}\n${s.text}`).join("\n\n");
-  const system = request.mode === "analyze_item"
-    ? "你是织识的行业媒体分析师。只根据给定素材回答。必须返回一个 JSON 对象，不要 markdown。"
-    : "你是织识的行业情报主编。只根据给定素材回答。必须返回一个 JSON 对象，不要 markdown。";
-  const schema = request.mode === "analyze_item"
-    ? `{"summary":"摘要","topics":["主题"],"entities":["实体"],"insights":"洞察","tags":["标签"],"citations":[{"evidence_id":"id","quote":"原文"}],"insufficient_evidence":false}`
-    : `{"title":"标题","content":"正文","citations":[{"evidence_id":"id","quote":"原文"}],"insufficient_evidence":false}`;
-  const result = await chat(system, `问题: ${request.input.question}\n返回 JSON：${schema}\n\n${digest}`, request.policy.max_output_tokens_per_call);
-  if (!result.ok) {
-    return { schema_version: 1, run_id: request.run_id, ok: false, error: { code: "agent_unavailable", message: result.error, retryable: false, outcome_unknown: false } };
-  }
-  const raw = parseJsonObject(result.text);
-  if (!raw) {
-    return { schema_version: 1, run_id: request.run_id, ok: false, error: { code: "invalid_output", message: "invalid_json", retryable: false, outcome_unknown: false } };
-  }
-  const citations = Array.isArray(raw.citations) ? raw.citations : [];
-  const insufficient = Boolean(raw.insufficient_evidence);
-  const coverage = request.input.sources.some((s) => s.coverage === "partial") ? "partial" : "full";
-  const resultBody = request.mode === "analyze_item"
-    ? {
-      analysis: {
-        summary: raw.summary,
-        topics: raw.topics,
-        entities: raw.entities,
-        insights: raw.insights,
-        tags: raw.tags,
-      },
-      citations,
-      insufficient_evidence: insufficient,
-      coverage,
-      warnings: [],
-    }
-    : {
-      title: raw.title,
-      content: raw.content,
-      citations,
-      insufficient_evidence: insufficient,
-      coverage,
-      warnings: [],
-    };
-  const parsed = parseExecuteResponse(JSON.stringify({
-    schema_version: 1, run_id: request.run_id, ok: true,
-    result: resultBody,
-    runtime: { model: MODEL, prompt_version: POLICY_VERSION, skill_versions: {}, input_tokens: null, output_tokens: null, model_calls: 1, tool_calls: 0, events: [] },
-    evidence: request.input.sources.map((s) => ({ evidence_id: s.evidence_id, item_id: s.item_id, title: s.title, url: s.url, text: s.text, origin: "internal" })),
-  }), request.mode);
-  if (!parsed.ok) {
-    return { schema_version: 1, run_id: request.run_id, ok: false, error: { code: "invalid_output", message: parsed.error, retryable: false, outcome_unknown: false } };
-  }
-  return parsed.value;
-}
-
 async function runEngine(request: ExecuteRequest, engine: AgentProvider, execute?: ExecuteFn): Promise<ExecuteResponse> {
   if (execute) {
     const response = await execute(request);
@@ -161,7 +149,14 @@ async function runEngine(request: ExecuteRequest, engine: AgentProvider, execute
     if (!parsed.ok || parsed.value.run_id !== request.run_id) return { schema_version:1,run_id:request.run_id,ok:false,error:{code:"invalid_output",message:"invalid_output",retryable:false,outcome_unknown:false} };
     return parsed.value;
   }
-  if (engine === "legacy") return executeLegacy(request);
+  if (engine === "legacy") {
+    let config: ReturnType<typeof readModelConfig>;
+    try { config = readModelConfig(); } catch {
+      return { schema_version: 1, run_id: request.run_id, ok: false, error: { code: "agent_unconfigured", message: "模型配置无效，请检查服务端配置文件", retryable: false, outcome_unknown: false } };
+    }
+    return executeLegacyOutput(request, (system, user, tokens) => chat(system, user, tokens, config,
+      Math.max(1, Math.min(MODEL_CALL_TIMEOUT_MS, Date.parse(request.policy.deadline_at) - Date.now()))));
+  }
   try {
     return await executeAgent(request, agentClientConfig());
   } catch (error) {
@@ -215,7 +210,10 @@ export async function analyzeItemWith(opts: {
     requestJson: { mode: "analyze_item", item_id: item.id, sources: selected.sources, warnings: selected.warnings, provider: engine, policy: request.policy, range: null },
     jobId: opts.job?.id,
     dataTokenHash: hashRunToken(request.data_access_token!),
-    claimToken: opts.job?.claim_token ?? randomUUID(), expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    claimToken: opts.job?.claim_token ?? randomUUID(),
+    // Lease follows the call budget: a 2-call analysis may legitimately take up to
+    // 2 x 120 s, and the row must survive long enough to be written.
+    expiresAt: runLeaseIso(request.policy.max_model_calls),
   });
   if (begun.kind === "replay") {
     const saved = begun.responseJson as { analysis_id?: string };
@@ -311,7 +309,7 @@ export async function generateBriefingWith(opts: {
     inputHash, materialHash: selected.materialHash, policyVersion: POLICY_VERSION,
     requestJson: { mode: "briefing", range, sources: selected.sources, provider: engine, policy: request.policy, intent: opts.from ? { from: opts.from, to: opts.to } : "today" },
     dataTokenHash: hashRunToken(request.data_access_token!),
-    claimToken: randomUUID(), expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    claimToken: randomUUID(), expiresAt: runLeaseIso(request.policy.max_model_calls),
   });
   if (begun.kind === "replay") {
     const saved = begun.responseJson as { note_id?: string; title?: string };
@@ -412,7 +410,7 @@ export async function askKnowledgeWith(opts: {
     id: request.run_id, requestId, mode: "research", provider: engine,
     inputHash, materialHash: selected.materialHash, policyVersion: POLICY_VERSION,
     requestJson: { mode: "research", question: q, sources: selected.sources, provider: engine, policy: request.policy, range: null, scope: "corpus" },
-    claimToken: randomUUID(), expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    claimToken: randomUUID(), expiresAt: runLeaseIso(request.policy.max_model_calls),
     dataTokenHash: hashRunToken(dataAccessToken),
   });
   if (begun.kind === "replay") {
