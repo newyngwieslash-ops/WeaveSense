@@ -22,7 +22,7 @@ function GuidePage() {
     >
       <article className="mx-auto max-w-3xl space-y-12 text-sm leading-relaxed text-muted">
         <header>
-          <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-faint">Handbook / v1.3 / 2026-08</p>
+          <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-faint">Handbook / v1.5 / 2026-09</p>
           <h2 className="mt-2 font-display text-4xl tracking-tight text-fg">从打开到带走完整项目</h2>
           <p className="mt-4">
             织识是行业媒体矩阵的控制平面：订阅信源、设定关键词、定时增量入库，再交给 LLM 做分析、简报和问答。本页就是最新完整版说明书。右上角「下载完整版」得到源码包；预览里也可以直接用。
@@ -37,7 +37,7 @@ function GuidePage() {
           <div>
             <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-faint">Latest package</p>
             <p className="mt-1 font-display text-2xl text-fg">zhishi-loom-source.zip</p>
-            <p className="mt-1 text-sm text-muted">v1.3 · 控制面、Telethon 节点、Docker Compose、迁移与本指南。不含 node_modules。</p>
+            <p className="mt-1 text-sm text-muted">v1.5 · 控制面、Telethon 节点、Docker Compose、迁移与本指南。不含 node_modules。</p>
           </div>
           <span className={cn(buttonVariants({ size: "sm" }), "shrink-0")}>
             <Download className="size-4" />
@@ -129,8 +129,14 @@ function GuidePage() {
             </li>
             <li>
               <strong className="font-medium text-fg">Telegram</strong>
-              ：填公开频道用户名，或在文本框里每行一个、一次最多 1000 个。Docker 里 Telethon
-              在线时走 GetHistory 增量；未连接则回退 t.me/s。
+              ：用资料页上的英文用户名，不要用聊天列表里的中文名。可填
+              <span className="font-mono text-xs text-fg"> chqq888888</span>、
+              <span className="font-mono text-xs text-fg">@chqq888888</span> 或
+              <span className="font-mono text-xs text-fg"> https://t.me/chqq888888</span>
+              。批量框每行一个、最多 1000 个。RSS 栏留空。Docker 里 Telethon 已登录时走 GetHistory
+              增量；未登录才回退 t.me/s。已登录后失败会记为错误，不再悄悄改走网页。不要只填
+              <span className="font-mono text-xs text-fg">t.me</span>
+              ，旧解析会把它吃成错误用户名 tme。
             </li>
             <li>
               <strong className="font-medium text-fg">微信公众号</strong>
@@ -150,6 +156,10 @@ function GuidePage() {
           <p className="mt-3">
             间隔建议：快讯 5 分钟，专栏 30 或 60 分钟，深度长文每天一次。停用信源不会删除已入库内容。
             B 站接口有风控：被限流时任务会标记为限流原因（不是普通失败），建议间隔不低于 6 小时。
+          </p>
+          <p className="mt-3">
+            Telegram 接入后点该行「扫描」，到任务页看徽章：绿色 Telethon 且新增大于 0 是账号通道；Telethon
+            且 0/0、状态 ok 是已经追上；黄色 t.me/s 且约 20/0 是网页预览。没有公开用户名的群、官方登录通知不要加。
           </p>
         </Section>
 
@@ -316,11 +326,23 @@ docker compose up --build`}
             </li>
             <li>
               <strong className="font-medium text-fg">Telegram 任务报未登录</strong>
-              ——再跑一次 login.py，确认会话写进 volume。
+              ——再跑一次 login.py，确认会话写进 volume。重建 Telethon 时要用带 TELEGRAM_API_ID / HASH 的项目根目录 .env，空值会冲掉凭据。
+            </li>
+            <li>
+              <strong className="font-medium text-fg">信源变成 tme，或报 JSON / 500</strong>
+              ——把 t.me/用户名 整段当成了域名。应填用户名本身或完整 https://t.me/用户名。停用错误行后重新接入。
+            </li>
+            <li>
+              <strong className="font-medium text-fg">任务 20/0 且徽章是 t.me/s</strong>
+              ——网页预览。先看节点页是否已登录。
+            </li>
+            <li>
+              <strong className="font-medium text-fg">任务 0/0、徽章 Telethon、状态 ok</strong>
+              ——正常，已经追上。
             </li>
             <li>
               <strong className="font-medium text-fg">FloodWait</strong>
-              ——节点会自动推迟。把间隔调到 10/30 分钟，或降低并发。
+              ——节点会自动推迟，任务记为 Telethon 错误，不会改走网页。把间隔调到 10/30 分钟，或降低并发。
             </li>
             <li>
               <strong className="font-medium text-fg">OCR / ASR 提示没有密钥</strong>

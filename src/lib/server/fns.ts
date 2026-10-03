@@ -168,9 +168,16 @@ export const addSourceFn = createServerFn({ method: "POST" })
     if (!isPlatform(data.platform)) throw new Error("未知平台");
     const name = data.name.trim().slice(0, 80);
     if (!name) throw new Error("请填写信源名称");
-    const handle = data.handle.trim().slice(0, 400);
     const feed = (data.feed_url ?? "").trim();
     const url = (data.url ?? "").trim();
+    let handle = data.handle.trim().slice(0, 400);
+    let storedUrl = url;
+    if (data.platform === "telegram") {
+      const parsed = parseTelegramHandles([handle, url, feed].filter(Boolean).join("\n"))[0] ?? "";
+      if (!parsed) throw new Error("请填写频道用户名，或 t.me/用户名 链接");
+      handle = parsed;
+      storedUrl = `https://t.me/s/${parsed}`;
+    }
     if (!handle && !feed && !url) throw new Error("请填写账号、链接或 RSS 地址");
     const sql = await getSql();
     const id = shortId();
@@ -183,7 +190,7 @@ export const addSourceFn = createServerFn({ method: "POST" })
         data.platform,
         name,
         handle,
-        url,
+        storedUrl,
         feed,
         data.interval_minutes || 30,
         defaultAdapter(data.platform as PlatformId),

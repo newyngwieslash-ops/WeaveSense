@@ -1,10 +1,10 @@
 # 织识 Loom
 
-> 当前支持范围、剩余验收与版本以[统一交付状态](docs/operations/loom-current-status.md)为准；Telegram 账号接入尚待本人登录。下载源码包不代表本次文档已重新打包。
+> 当前支持范围、剩余验收与版本以[统一交付状态](docs/operations/loom-current-status.md)为准。Telegram 公开频道走 Telethon 增量（未登录才回退网页预览）；怎么加频道见[使用指南 §3.1](docs/使用指南.md#31-telegram-公开频道怎么加)。下载源码包不代表本次文档已重新打包。
 
 行业媒体矩阵采集与知识引擎。订阅 Telegram / 微信公众号 / B 站 / 抖音 / 小红书 / YouTube / 西瓜 / RSS，按 5 / 10 / 30 分钟做**增量**扫描，只入库新消息；支持用户自设关键词雷达；文本、作者、时间、浏览量、媒体 URL 归一化进 PostgreSQL，再交给 LLM 做分析、简报和问答。
 
-**最新完整版说明书：** 应用内「指南」页，或 [`docs/使用指南.md`](docs/使用指南.md)（v1.3）。产品规格在「规格」页。
+**最新完整版说明书：** 应用内「指南」页，或 [`docs/使用指南.md`](docs/使用指南.md)（v1.5）。产品规格在「规格」页。
 
 ## 下载最新完整版
 
@@ -136,7 +136,7 @@ Compose 的 `scheduler` 会在浏览器关闭后继续按默认 30 分钟间隔�
 详见 [`docs/使用指南.md`](docs/使用指南.md)。摘要：
 
 - **总览**：扫描到期；页面可见时约每 2 分钟再 tick。
-- **信源**：RSS / Telegram（可批量 1000 频道）/ WeWe / B 站 / YouTube。
+- **信源**：RSS / Telegram（用户名或 `t.me/用户名`，可批量 1000）/ WeWe / B 站 / YouTube。Telegram 步骤见[使用指南 §3.1](docs/使用指南.md#31-telegram-公开频道怎么加)。
 - **关键词**：一个词一条监听器。立即收集 / 暂停 / 移除。
 - **内容**：过滤、OCR/ASR、LLM 分析。
 - **节点**：看 Telethon / MinIO / ASR 是否在线，批量落盘。

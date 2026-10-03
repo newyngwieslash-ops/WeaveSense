@@ -1,7 +1,7 @@
 import type { PlatformId } from "@/lib/platforms";
 import { fetchRss } from "../rss";
 import { fetchTelegramChannel } from "../telegram";
-import { fetchTelethonHistory, telethonHealth } from "../telethon";
+import { fetchTelethonHistory, parseTelegramHandle, telethonHealth } from "../telethon";
 import { prod, wechatGatewayConfigured } from "../config";
 import { fetchJson, type FetchIo } from "../http";
 import { parseFeedXml } from "../rss-parser";
@@ -112,7 +112,8 @@ const telegramAdapter: CollectorAdapter = {
     if (source.feed_url.startsWith("http")) {
       return batch(await fetchRss(source.feed_url, source.id, "telegram", io), "rss");
     }
-    const handle = source.handle.replace(/^@/, "") || source.url.replace(/https?:\/\/t\.me\/(s\/)?/, "");
+    const handle = parseTelegramHandle(source.handle) || parseTelegramHandle(source.url);
+    if (!handle) throw new Error("请填写频道用户名，或 t.me/用户名 链接");
     const minId = source.last_external_id ?? "";
     const health = await telethonHealth();
     if (health.authorized) {

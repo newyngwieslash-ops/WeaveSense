@@ -1,5 +1,8 @@
 import { prod, telethonConfigured } from "./config";
 import type { NormalizedItem } from "./collectors/types";
+import { parseTelegramHandle, parseTelegramHandles } from "../telegram-handle";
+
+export { parseTelegramHandle, parseTelegramHandles };
 
 export type TelethonHealth = {
   ok: boolean;
@@ -67,13 +70,19 @@ export async function fetchTelethonHistory(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      channel: channel.replace(/^@/, ""),
+      channel: parseTelegramHandle(channel) || channel.replace(/^@/, ""),
       min_id: (minId.match(/(\d+)$/)?.[1] ?? minId.replace(/\D/g, "")) || "0",
       limit,
     }),
     signal: AbortSignal.timeout(60000),
   });
-  const body = (await res.json()) as HistoryResponse;
+  const text = await res.text();
+  let body: HistoryResponse;
+  try {
+    body = JSON.parse(text) as HistoryResponse;
+  } catch {
+    throw new Error(text.trim().slice(0, 180) || `Telethon HTTP ${res.status}`);
+  }
   if (body.flood_wait) throw new Error(`Telethon FloodWait ${body.flood_wait}s`);
   if (!res.ok || body.error) throw new Error(body.error || `Telethon HTTP ${res.status}`);
   return (body.items ?? []).map((it) => ({
@@ -82,22 +91,3 @@ export async function fetchTelethonHistory(
   }));
 }
 
-export function parseTelegramHandles(raw: string): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const part of raw.split(/[\n,;]+/)) {
-    let handle = part.trim();
-    if (!handle) continue;
-    handle = handle.replace(/^@/, "");
-    handle = handle.replace(/^https?:\/\/(t\.me|telegram\.me)\/(s\/)?/i, "");
-    handle = handle.replace(/[/?#].*$/, "");
-    handle = handle.replace(/[^A-Za-z0-9_]/g, "");
-    if (handle.length < 3 || handle.length > 64) continue;
-    const key = handle.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(handle);
-    if (out.length >= 1000) break;
-  }
-  return out;
-}
