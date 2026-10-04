@@ -1,6 +1,7 @@
 import { telegramMessageId } from './cursor.ts';
 import { parseTelegramHandle } from '../telegram-handle.ts';
 import type { Sql } from '../db.ts';
+import { normalizeWechatUrl } from '../wechat-canonical.ts';
 
 type Row = Record<string, any>;
 type Change = { from: string; to: string; external_id: string; old_external_id: string };
@@ -9,6 +10,32 @@ export type IdentityRepairOptions = {
   workersStopped?: boolean;
   rewriteCheckpoint?: (payload: string, from: string, to: string) => Promise<string>;
 };
+
+/** One resumable page, dry-run by default. Keep URLs, UUIDs and cursors untouched. */
+export async function backfillWechatUrlKeys(sql: Pick<Sql,'transaction'>, sourceId: string,
+  apply = false, options: Pick<IdentityRepairOptions,'workersStopped'> = {}) {
+  if (apply && options.workersStopped !== true) throw new Error('workers_stopped_assertion_required');
+  return sql.transaction(async tx => {
+    const [source] = await tx.query<Row>('select * from sources where id=$1 for update',[sourceId]);
+    if (!source || source.platform !== 'wechat') throw new Error('wechat_source_required');
+    if (apply && (source.enabled || source.status === 'running')) throw new Error('pause_source_before_identity_merge');
+    // ponytail: 500 rows per explicit maintenance run; repeat until remaining=false.
+    const rows = await tx.query<{id:string;url:string}>(`select id,url from items
+      where source_id=$1 and platform='wechat' and normalized_wechat_url is null order by id limit 500`,[sourceId]);
+    const conflicts: {item_id:string;reason:string}[] = [];
+    for (const row of rows) {
+      let key = '';
+      try { key=normalizeWechatUrl(row.url); }
+      catch { conflicts.push({item_id:row.id,reason:'invalid_wechat_url'}); }
+      if (apply) await tx.query('update items set normalized_wechat_url=$2 where id=$1',[row.id,key]);
+    }
+    const remaining = (await tx.query(`select id from items where source_id=$1 and platform='wechat'
+      and normalized_wechat_url is null limit 1`,[sourceId])).length>0;
+    const report = {source_id:sourceId,processed:rows.length,applied:apply,remaining,conflicts};
+    await tx.query(`insert into collection_identity_conflicts(source_id,kind,evidence) values($1,'wechat_url_backfill',$2::jsonb)`,[sourceId,JSON.stringify(report)]);
+    return report;
+  });
+}
 
 /** Only schema-defined links change. Quotes, evidence tokens and hashes are history. */
 function rebindJson(input: any, shape: 'request' | 'events' | 'response', from: string, to: string) {
@@ -108,6 +135,7 @@ export async function reconcileTelegramIdentities(sql: Pick<Sql,'transaction'>, 
         snapshots.ai_runs = runs; snapshots.ai_jobs = jobs;
         snapshots.agent_checkpoints = checkpoints.map(cp=>({...cp,payload_base64:Buffer.from(cp.payload).toString('base64'),payload:undefined}));
         const targetCollisions = await tx.query(`select target_key from extract_jobs where item_id=any($1::text[]) group by target_key having count(*)>1`,[groupIds]);
+        const mediaCollisions = await tx.query(`select source_url from media_objects where item_id=any($1::text[]) group by source_url having count(*)>1`,[groupIds]);
         const jobCollisions = await tx.query(`select material_hash,policy_version from ai_jobs where item_id=any($1::text[]) group by material_hash,policy_version having count(*)>1`,[groupIds]);
         const activeJobs = await tx.query(`select id from ai_jobs where (item_id=any($1::text[]) or id=any($2::text[]))
           and status='running' and (lease_until is null or lease_until>clock_timestamp())`,[groupIds,jobs.map(job=>job.id)]);
@@ -115,7 +143,7 @@ export async function reconcileTelegramIdentities(sql: Pick<Sql,'transaction'>, 
         const activeRuns = await tx.query(`select id from ai_runs where id=any($1::text[]) and status='running'
           and not exists(select 1 from ai_jobs j where j.run_id=ai_runs.id and j.lease_until<=clock_timestamp())`,[runs.map(run=>run.id)]);
         const contentConflict = publicationConflict || ['title','body','author','media_type'].some(key=>row[key] && keeper[key] && String(row[key])!==String(keeper[key]));
-        let reason = contentConflict ? 'different_message_content' : targetCollisions.length ? 'extract_target_collision'
+        let reason = contentConflict ? 'different_message_content' : mediaCollisions.length ? 'media_source_collision' : targetCollisions.length ? 'extract_target_collision'
           : jobCollisions.length ? 'ai_job_collision' : activeJobs.length || activeExtracts.length || activeRuns.length ? 'active_writer' : '';
         if (!reason) {
           try {

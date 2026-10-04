@@ -7,6 +7,14 @@ type Queryable = {
 export const SCHEDULER_LEASE_MINUTES = 15;
 export const SCHEDULER_LEASE_LOST = "scheduler_lease_lost";
 
+export async function lockSourceClaim(sql: Queryable, sourceId: string, claimToken: string): Promise<void> {
+  const [source] = await sql.query<{claim_token: string; status: string}>(
+    'select claim_token,status from sources where id=$1 for update', [sourceId]);
+  if (!claimToken || source?.claim_token !== claimToken || source.status !== 'running') {
+    throw new Error(SCHEDULER_LEASE_LOST);
+  }
+}
+
 const available = `(next_attempt_at is null or next_attempt_at <= now()) and
   (status <> 'running' or claimed_at is null or claimed_at <= now() - (${SCHEDULER_LEASE_MINUTES} * interval '1 minute'))`;
 const due = `(status = 'running' or next_attempt_at is not null or last_scanned_at is null or

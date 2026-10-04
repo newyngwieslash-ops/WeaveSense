@@ -1,4 +1,4 @@
-import { getSql } from "@/lib/db";
+import { getSql, type Sql } from "@/lib/db";
 import { itemMatchesPhrase, RADAR_SOURCE_ID } from "@/lib/keyword";
 import { isPlatform, type PlatformId } from "@/lib/platforms";
 import { shortId } from "@/lib/utils";
@@ -9,7 +9,7 @@ import { parseTelegramHandle } from "../telegram-handle.ts";
 import { collectSource } from "./collectors";
 import type { FetchIo } from "./http.ts";
 import { collectKeyword } from "./collectors/keyword.ts";
-import { collectorMeta, type CollectorMeta, type NormalizedItem, type SourceRecord } from "./collectors/types";
+import { collectorMeta, type CollectorMeta, type CollectorBatch, type NormalizedItem, type SourceRecord } from "./collectors/types";
 import { fairCollectionQueue, CRON_SOURCE_CONCURRENCY, runCronBatch, type CronBatchOptions } from "./cron";
 import { enqueueItemMedia } from "./media";
 import { mapKeyword, mapSource } from "./queries";
@@ -17,6 +17,7 @@ import {
   tagCorpusWithPhrase as atomicTagCorpus,
   claimKeyword,
   claimSource,
+  lockSourceClaim,
   completeKeywordClaim,
   completeSourceClaim,
   failKeywordClaim,
@@ -60,13 +61,6 @@ function latestPublished(items: NormalizedItem[], externalId: string): string | 
 function errMessage(err: unknown): string {
   if (err instanceof Error) return err.message.slice(0, 400);
   return String(err).slice(0, 400);
-}
-
-async function enabledPhrases(): Promise<{ id: string; phrase: string }[]> {
-  const sql = await getSql();
-  return sql.query<{ id: string; phrase: string }>(
-    "select id, phrase from keywords where enabled = true",
-  );
 }
 
 function mergeKeywords(current: string[], extra: string[]): string[] {
@@ -186,6 +180,183 @@ export async function tagCorpusWithPhrase(
   return atomicTagCorpus(sql, phrase, { platforms: options.platforms ?? [] });
 }
 
+/** One pinned connection: fence before any writes, then commit content and progress together.
+ * Source claims use the job ID as their token, so completion needs no extra job context.
+ */
+export async function persistCollectedBatch(database: Sql, source: SourceRecord, claimToken: string,
+  collected: CollectorBatch): Promise<{items_new: number}> {
+  return database.transaction(async sql => {
+    await lockSourceClaim(sql, source.id, claimToken);
+    const fetched = collected.items;
+    const meta = collected.meta;
+    const externalIds = [...new Set(fetched.flatMap(item => [item.external_id.slice(0,320),
+      ...(typeof item.extra.rss_legacy_id === "string" ? [item.extra.rss_legacy_id] : [])]))];
+    const normalizedUrl = (url: string) => {
+      if (source.platform !== "wechat" || !url) return "";
+      try { return normalizeWechatUrl(url); } catch { return ""; }
+    };
+    const urls = [...new Set(fetched.map(item=>normalizedUrl(item.url)).filter(Boolean))];
+    if (source.platform === "wechat" && (await sql.query(
+      "select id from items where source_id=$1 and platform='wechat' and normalized_wechat_url is null limit 1", [source.id])).length) {
+      throw new Error("wechat_identity_backfill_required: run reconcile-collection-identities --wechat-url-keys with the source paused");
+    }
+    const telegram = source.platform === "telegram" && !source.feed_url;
+    const existing = await sql.query<{ id: string; external_id: string; url: string; extra: unknown; normalized_wechat_url: string | null }>(
+      `select id, external_id, url, extra, normalized_wechat_url from items where source_id = $1 and
+        (external_id=any($2::text[])${source.platform === "wechat" ? " or normalized_wechat_url=any($3::text[])" : telegram ? ` or
+        (case when external_id ~ '^[0-9]+$' then coalesce(nullif(ltrim(external_id,'0'),''),'0')
+          when external_id ~ '^[^/]+/[0-9]+$' then coalesce(nullif(ltrim(split_part(external_id,'/',2),'0'),''),'0') end)=any($3::text[])` : ""})`,
+      [source.id,externalIds,...(source.platform === "wechat" ? [urls] : telegram ? [externalIds] : [])],
+    );
+    const existingByExternalId = new Map(existing.map((row) => [row.external_id, row]));
+    if (source.platform === "telegram" && !source.feed_url) {
+      const handle = parseTelegramHandle(source.handle) || parseTelegramHandle(source.url);
+      // Numeric and exact channel/ID aliases refer to one message of this source.
+      // Check every group before changing any row, retaining internal IDs.
+      const aliases = new Map<string, (typeof existing)[number]>();
+      for (const row of existing) {
+        const canonical = telegramMessageId(row.external_id, handle);
+        if (!canonical) continue;
+        if (aliases.has(canonical)) {
+          throw Object.assign(new Error("identity_conflict:telegram_duplicate"), {identityConflict: {
+            kind: "telegram_duplicate", evidence: {item_ids: [aliases.get(canonical)!.id, row.id], external_id: canonical} }});
+        }
+        aliases.set(canonical, row);
+      }
+      for (const [canonical, row] of aliases) {
+        if (row.external_id !== canonical) {
+          await sql.query("update items set external_id=$2 where id=$1", [row.id, canonical]);
+          existingByExternalId.delete(row.external_id);
+          row.external_id = canonical;
+        }
+        existingByExternalId.set(canonical, row);
+      }
+    }
+    // Check the whole page before changing any item: legacy XML coercion can
+    // map distinct opaque GUIDs onto the same previously stored key.
+    for (const item of fetched) {
+      const alias = item.extra.rss_legacy_id;
+      const legacy = typeof alias === "string" ? existingByExternalId.get(alias) : undefined;
+      if (legacy && asJson<Record<string, unknown>>(legacy.extra, {}).rss_identity !== "raw-v1") {
+        throw Object.assign(new Error("identity_conflict:rss_legacy_alias"), {identityConflict: {
+          kind: "rss_legacy_alias", evidence: {item_id: legacy.id, legacy_external_id: alias, incoming_external_id: item.external_id} }});
+      }
+    }
+    const existingByUrl = new Map<string, (typeof existing)[number]>();
+    for (const row of existing) {
+      const url = row.normalized_wechat_url;
+      if (source.platform === 'wechat' && url) {
+        const previous = existingByUrl.get(url);
+        if (previous && previous.id !== row.id) throw Object.assign(new Error('identity_conflict:wechat_duplicate_url'), {
+          identityConflict: {kind:'wechat_duplicate_url',evidence:{item_ids:[previous.id,row.id]}} });
+        existingByUrl.set(url, row);
+      }
+    }
+    const phrases = await sql.query<{ id: string; phrase: string }>("select id, phrase from keywords where enabled = true");
+    let itemsNew = 0;
+
+    for (const it of fetched.filter((item) => item.external_id)) {
+      const published = it.published_at ? new Date(it.published_at) : null;
+      const publishedIso =
+        published && !Number.isNaN(published.getTime()) ? published.toISOString() : null;
+      const matched = phrases
+        .filter((p) => itemMatchesPhrase(it.title, it.body, it.author, p.phrase))
+        .map((p) => p.phrase);
+      const existingItem = existingByExternalId.get(it.external_id.slice(0,320))
+        ?? existingByUrl.get(normalizedUrl(it.url));
+      const existingExtra = asJson<Record<string, unknown>>(existingItem?.extra, {});
+      const providerHistory = mergeProvidersSeen(existingExtra, it.extra.providers_seen);
+      const itemExtra = source.platform === "wechat"
+        ? mergeProvidersSeen(existingItem
+          ? { ...providerHistory, ...it.extra, providers_seen: providerHistory.providers_seen }
+          : it.extra, it.extra.provider ?? meta.provider)
+        : it.extra;
+      if (existingItem) {
+        // An existing coerced identity is not proven raw merely by an exact-ID
+        // refresh; retain legacy provenance until an operator verifies it.
+        if (it.extra.rss_identity && existingExtra.rss_identity !== "raw-v1") delete itemExtra.rss_identity;
+        await mergeExistingItem(sql, existingItem.id,
+          { ...it, extra: itemExtra, published_at: publishedIso }, matched);
+        if (source.platform === 'wechat' && !existingItem.url) {
+          existingItem.normalized_wechat_url = normalizedUrl(it.url);
+          existingItem.url = it.url.slice(0,1000);
+          await sql.query('update items set normalized_wechat_url=$2 where id=$1', [existingItem.id,existingItem.normalized_wechat_url]);
+          if (existingItem.normalized_wechat_url) existingByUrl.set(existingItem.normalized_wechat_url,existingItem);
+        }
+        existingItem.extra = itemExtra;
+        await enqueueItemMedia(existingItem.id, it.media_urls, it.media_type, sql);
+        continue;
+      }
+      const id = shortId();
+      const inserted = await sql.query<{ id: unknown }>(
+        `insert into items (
+           id, source_id, platform, external_id, title, body, author, url,
+           media_type, media_urls, thumbnail_url, views, likes, published_at, extra, matched_keywords, normalized_wechat_url
+         ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17)
+           on conflict (source_id, external_id) do nothing
+           returning id`,
+        [
+          id,
+          source.id,
+          source.platform,
+          it.external_id.slice(0, 320),
+          it.title.slice(0, 500),
+          // T11: see the note on the keyword insert above — storage keeps the body.
+          it.body,
+          it.author.slice(0, 200),
+          it.url.slice(0, 1000),
+          it.media_type,
+          JSON.stringify(it.media_urls.slice(0, 8)),
+          it.thumbnail_url.slice(0, 1000),
+          it.views,
+          it.likes,
+          publishedIso,
+          JSON.stringify(itemExtra ?? {}),
+          JSON.stringify(matched),
+          normalizedUrl(it.url),
+        ],
+      );
+      if (await finishItemInsert(inserted, it.media_urls, it.media_type, (id,urls,type)=>enqueueItemMedia(id,urls,type,sql))) {
+        itemsNew += 1;
+        const saved = { id, external_id: it.external_id.slice(0, 320),
+          url: it.url.slice(0, 1000), extra: itemExtra, normalized_wechat_url: normalizedUrl(it.url) };
+        existingByExternalId.set(saved.external_id, saved);
+        const savedUrl = saved.normalized_wechat_url;
+        if (savedUrl) existingByUrl.set(savedUrl, saved);
+      }
+    }
+
+    // T10: the cursor may only advance to a boundary the fetch actually proved
+    // it reached. A batch that stopped at its page cap (or is inherently a
+    // limited window) reports `complete: false`; advancing then would skip
+    // everything between the old cursor and this page, permanently and silently.
+    const coverage = collected.coverage;
+    const cursorSafe = coverage === undefined ? true : coverage.complete;
+    const previousCursor = source.last_external_id ?? "";
+    let nextCursor = previousCursor;
+    if (cursorSafe) {
+      const latest = pickCursor(fetched);
+      if (latest && canAdvanceCursor(previousCursor, latest.external_id)) {
+        nextCursor = latest.external_id;
+      }
+    }
+    if (collected.next_cursor) nextCursor = collected.next_cursor;
+    const cursorItem = fetched.find((it) => it.external_id === nextCursor);
+    const completed = await completeSourceClaim(
+      sql,
+      source.id,
+      claimToken,
+      nextCursor,
+      cursorItem?.published_at ?? (nextCursor === previousCursor ? null : latestPublished(fetched, nextCursor)),
+      { scan_state: collected.next_scan_state ?? source.scan_state, has_more: collected.has_more,
+        coverage: collected.coverage, rejected_entries: collected.rejected_entries },
+    );
+    if (!completed) throw new Error(SCHEDULER_LEASE_LOST);
+    await finishSourceJob(sql, claimToken, "ok", "", fetched.length, itemsNew, meta);
+    return { items_new: itemsNew };
+  });
+}
+
 export async function runSourceJob(
   sourceId: string,
   kind: "incremental" | "manual" | "reconcile" = "incremental",
@@ -224,164 +395,26 @@ export async function runSourceJob(
       scan_state: asJson<SourceRecord["scan_state"]>(raw.scan_state, { bootstrap: "latest" }),
     };
     const collected = await collectSource(record, io);
-    const fetched = collected.items;
     meta = collected.meta;
-    const existing = await sql.query<{ id: string; external_id: string; url: string; extra: unknown }>(
-      "select id, external_id, url, extra from items where source_id = $1",
-      [source.id],
-    );
-    const existingByExternalId = new Map(existing.map((row) => [row.external_id, row]));
-    if (source.platform === "telegram" && !source.feed_url) {
-      const handle = parseTelegramHandle(source.handle) || parseTelegramHandle(source.url);
-      // Numeric and exact channel/ID aliases refer to one message of this source.
-      // Check every group before changing any row, retaining internal IDs.
-      const aliases = new Map<string, (typeof existing)[number]>();
-      for (const row of existing) {
-        const canonical = telegramMessageId(row.external_id, handle);
-        if (!canonical) continue;
-        if (aliases.has(canonical)) {
-          await sql.query(`insert into collection_identity_conflicts(source_id,kind,evidence)
-            values($1,'telegram_duplicate',$2::jsonb)`, [source.id,
-            JSON.stringify({ item_ids: [aliases.get(canonical)!.id, row.id], external_id: canonical })]);
-          throw new Error("identity_conflict:telegram_duplicate");
-        }
-        aliases.set(canonical, row);
-      }
-      for (const [canonical, row] of aliases) {
-        if (row.external_id !== canonical) {
-          await sql.query("update items set external_id=$2 where id=$1", [row.id, canonical]);
-          existingByExternalId.delete(row.external_id);
-          row.external_id = canonical;
-        }
-        existingByExternalId.set(canonical, row);
-      }
-    }
-    // Check the whole page before changing any item: legacy XML coercion can
-    // map distinct opaque GUIDs onto the same previously stored key.
-    for (const item of fetched) {
-      const alias = item.extra.rss_legacy_id;
-      const legacy = typeof alias === "string" ? existingByExternalId.get(alias) : undefined;
-      if (legacy && asJson<Record<string, unknown>>(legacy.extra, {}).rss_identity !== "raw-v1") {
-        await sql.query(`insert into collection_identity_conflicts(source_id,kind,evidence)
-          values($1,'rss_legacy_alias',$2::jsonb)`, [source.id,
-          JSON.stringify({ item_id: legacy.id, legacy_external_id: alias, incoming_external_id: item.external_id })]);
-        throw new Error("identity_conflict:rss_legacy_alias");
-      }
-    }
-    const normalizedUrl = (url: string) => {
-      if (source.platform !== "wechat" || !url) return "";
-      try { return normalizeWechatUrl(url); } catch { return ""; }
-    };
-    const existingByUrl = new Map<string, (typeof existing)[number]>();
-    for (const row of existing) {
-      const url = normalizedUrl(row.url);
-      if (url) existingByUrl.set(url, row);
-    }
-    const phrases = await enabledPhrases();
-    let itemsNew = 0;
-
-    for (const it of fetched.filter((item) => item.external_id)) {
-      const published = it.published_at ? new Date(it.published_at) : null;
-      const publishedIso =
-        published && !Number.isNaN(published.getTime()) ? published.toISOString() : null;
-      const matched = phrases
-        .filter((p) => itemMatchesPhrase(it.title, it.body, it.author, p.phrase))
-        .map((p) => p.phrase);
-      const existingItem = existingByExternalId.get(it.external_id)
-        ?? existingByUrl.get(normalizedUrl(it.url));
-      const existingExtra = asJson<Record<string, unknown>>(existingItem?.extra, {});
-      const providerHistory = mergeProvidersSeen(existingExtra, it.extra.providers_seen);
-      const itemExtra = source.platform === "wechat"
-        ? mergeProvidersSeen(existingItem
-          ? { ...providerHistory, ...it.extra, providers_seen: providerHistory.providers_seen }
-          : it.extra, it.extra.provider ?? meta.provider)
-        : it.extra;
-      if (existingItem) {
-        // An existing coerced identity is not proven raw merely by an exact-ID
-        // refresh; retain legacy provenance until an operator verifies it.
-        if (it.extra.rss_identity && existingExtra.rss_identity !== "raw-v1") delete itemExtra.rss_identity;
-        await mergeExistingItem(sql, existingItem.id,
-          { ...it, extra: itemExtra, published_at: publishedIso }, matched);
-        continue;
-      }
-      const id = shortId();
-      const inserted = await sql.query<{ id: unknown }>(
-        `insert into items (
-           id, source_id, platform, external_id, title, body, author, url,
-           media_type, media_urls, thumbnail_url, views, likes, published_at, extra, matched_keywords
-         ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12,$13,$14,$15::jsonb,$16::jsonb)
-           on conflict (source_id, external_id) do nothing
-           returning id`,
-        [
-          id,
-          source.id,
-          source.platform,
-          it.external_id.slice(0, 320),
-          it.title.slice(0, 500),
-          // T11: see the note on the keyword insert above — storage keeps the body.
-          it.body,
-          it.author.slice(0, 200),
-          it.url.slice(0, 1000),
-          it.media_type,
-          JSON.stringify(it.media_urls.slice(0, 8)),
-          it.thumbnail_url.slice(0, 1000),
-          it.views,
-          it.likes,
-          publishedIso,
-          JSON.stringify(itemExtra ?? {}),
-          JSON.stringify(matched),
-        ],
-      );
-      if (await finishItemInsert(inserted, it.media_urls, it.media_type, enqueueItemMedia)) {
-        itemsNew += 1;
-        const saved = { id, external_id: it.external_id.slice(0, 320),
-          url: it.url.slice(0, 1000), extra: itemExtra };
-        existingByExternalId.set(saved.external_id, saved);
-        const savedUrl = normalizedUrl(saved.url);
-        if (savedUrl) existingByUrl.set(savedUrl, saved);
-      }
-    }
-
-    // T10: the cursor may only advance to a boundary the fetch actually proved
-    // it reached. A batch that stopped at its page cap (or is inherently a
-    // limited window) reports `complete: false`; advancing then would skip
-    // everything between the old cursor and this page, permanently and silently.
-    const coverage = collected.coverage;
-    const cursorSafe = coverage === undefined ? true : coverage.complete;
-    const previousCursor = source.last_external_id ?? "";
-    let nextCursor = previousCursor;
-    if (cursorSafe) {
-      const latest = pickCursor(fetched);
-      if (latest && canAdvanceCursor(previousCursor, latest.external_id)) {
-        nextCursor = latest.external_id;
-      }
-    }
-    if (collected.next_cursor) nextCursor = collected.next_cursor;
-    const cursorItem = fetched.find((it) => it.external_id === nextCursor);
-    const completed = await completeSourceClaim(
-      sql,
-      source.id,
-      jobId,
-      nextCursor,
-      cursorItem?.published_at ?? (nextCursor === previousCursor ? null : latestPublished(fetched, nextCursor)),
-      { scan_state: collected.next_scan_state ?? record.scan_state, has_more: collected.has_more,
-        coverage: collected.coverage, rejected_entries: collected.rejected_entries },
-    );
-    if (!completed) {
-      await finishSourceJob(sql, jobId, "error", SCHEDULER_LEASE_LOST, 0, 0, meta);
-      return { items_found: 0, items_new: 0, error: SCHEDULER_LEASE_LOST };
-    }
-    await finishSourceJob(sql, jobId, "ok", "", fetched.length, itemsNew, meta);
-    return { items_found: fetched.length, items_new: itemsNew, error: "" };
+    const {items_new} = await persistCollectedBatch(sql, record, jobId, collected);
+    return {items_found: collected.items.length, items_new, error: ""};
   } catch (err) {
     const failedMeta = collectorMeta(err);
     if (failedMeta.attempts.length) meta = failedMeta;
     const message = errMessage(err);
-    const released = await failSourceClaim(sql, source.id, jobId, err);
-    const jobError = released ? message : SCHEDULER_LEASE_LOST;
-    if (jobCreated) {
-      await finishSourceJob(sql, jobId, "error", jobError, 0, 0, meta);
-    }
+    const jobError = await sql.transaction(async tx => {
+      try { await lockSourceClaim(tx, source.id, jobId); }
+      catch (failure) {
+        if (failure instanceof Error && failure.message === SCHEDULER_LEASE_LOST) return SCHEDULER_LEASE_LOST;
+        throw failure;
+      }
+      const conflict = (err as {identityConflict?: {kind:string;evidence:unknown}})?.identityConflict;
+      if (conflict) await tx.query(`insert into collection_identity_conflicts(source_id,kind,evidence)
+        values($1,$2,$3::jsonb)`,[source.id,conflict.kind,JSON.stringify(conflict.evidence)]);
+      await failSourceClaim(tx, source.id, jobId, err);
+      if (jobCreated) await finishSourceJob(tx, jobId, "error", message, 0, 0, meta);
+      return message;
+    });
     return { items_found: 0, items_new: 0, error: jobError };
   }
 }

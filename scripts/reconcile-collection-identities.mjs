@@ -3,7 +3,7 @@
 import { spawnSync } from 'node:child_process';
 import { isAbsolute } from 'node:path';
 import pg from 'pg';
-import { reconcileTelegramIdentities } from '../src/lib/server/collection-identity.ts';
+import { reconcileTelegramIdentities, backfillWechatUrlKeys } from '../src/lib/server/collection-identity.ts';
 import { isMainModule } from './with-app-env.mjs';
 import { offlineEnv } from './readiness-offline.mjs';
 
@@ -39,7 +39,8 @@ async function main() {
   const rewriteCheckpoint=codecIndex<0 ? undefined : checkpointRebinder(args[codecIndex+1]??'');
   const pool=new pg.Pool({connectionString:process.env.DATABASE_URL});
   try {
-    const result=await reconcileTelegramIdentities({transaction:async fn=>{
+    const reconcile=args.includes('--wechat-url-keys') ? backfillWechatUrlKeys : reconcileTelegramIdentities;
+    const result=await reconcile({transaction:async fn=>{
       const client=await pool.connect();
       try {
         await client.query('begin');

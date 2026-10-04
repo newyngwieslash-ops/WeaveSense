@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { guessKind } from "./media-kind.ts";
-import { getSql } from "@/lib/db";
+import { getSql, type Queryable } from "@/lib/db";
 import { shortId } from "@/lib/utils";
 import { asJson } from "./serialize";
 import { minioConfigured } from "./config";
@@ -16,22 +16,18 @@ import { putObject } from "./storage";
  * as a video and later send it to a speech model.
  */
 
-export async function enqueueItemMedia(itemId: string, urls: string[], mediaType: string): Promise<number> {
-  const sql = await getSql();
+export async function enqueueItemMedia(itemId: string, urls: string[], mediaType: string, sql?: Queryable): Promise<number> {
+  sql ??= await getSql();
   let n = 0;
   for (const url of urls.slice(0, 8)) {
     if (!url) continue;
-    const [exists] = await sql.query<{ id: string }>(
-      "select id from media_objects where item_id = $1 and source_url = $2 limit 1",
-      [itemId, url.slice(0, 1500)],
-    );
-    if (exists) continue;
-    await sql.query(
+    const inserted = await sql.query(
       `insert into media_objects (id, item_id, source_url, kind, status, public_url)
-       values ($1,$2,$3,$4,'remote',$3)`,
+       values ($1,$2,$3,$4,'remote',$3)
+       on conflict (item_id,source_url) do nothing returning id`,
       [shortId(), itemId, url.slice(0, 1500), guessKind(url, mediaType)],
     );
-    n += 1;
+    n += inserted.length;
   }
   return n;
 }

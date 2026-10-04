@@ -1,5 +1,45 @@
 # Collection progress and Telegram identity repair
 
+## Media identity migration and WeChat URL keys (0024)
+
+Back up the database and stop collection, media, extraction and Agent workers before
+applying 0024 in a maintenance window. It creates `media_item_source_url_idx` only
+after removing proven empty, unreferenced duplicate queue rows. A single stored
+survivor retains its original ID, storage object and every reference. Multiple
+stored rows, referenced losers, nonempty metadata, incompatible kinds or opaque
+Agent checkpoints refuse the entire migration with `media_identity_conflict` and
+a media ID. No object or reference is deleted or rewritten. Inspect that group and
+its references; resolve only from verified evidence, then retry. Never bypass the
+check or delete referenced/successful objects to force the unique index through.
+
+0024 adds `items_source_wechat_url_idx`, `items_wechat_url_pending_idx` and
+`items_source_telegram_alias_idx`. Existing WeChat URL keys require explicit
+maintenance using the same URL normalizer as collection. An unprepared source
+refuses collection with `wechat_identity_backfill_required` (including manual and
+reconciliation runs), preserving item IDs, URLs and progress.
+
+With the source disabled and workers stopped, supply DATABASE_URL explicitly and
+run the dry-run report, then apply one page:
+
+```text
+node --experimental-strip-types scripts/reconcile-collection-identities.mjs --source SOURCE_ID --wechat-url-keys
+node --experimental-strip-types scripts/reconcile-collection-identities.mjs --source SOURCE_ID --wechat-url-keys --apply --workers-stopped
+```
+
+Each apply handles at most 500 pending rows. Repeat until `remaining=false`; no
+cursor argument or full-history load is needed, including for larger histories.
+NULL means pending; an empty key means processed but invalid/absent URL. Such rows
+are explicitly reported and retained without guessing an identity. Review reported
+invalid rows before enabling the source. Dry-run reports are append-only evidence;
+dry-run changes no item. The script never runs migrations or discovers credentials.
+Collection cooling may need to expire after preparation; do not reset collection
+cursors. Duplicate normalized URL matches refuse the batch for operator review.
+
+Collection batches now commit item changes, media enqueue, progress and successful
+job completion together. Lost claims write none of those fields; a stale attempt's
+earlier running job record is retained, not falsely marked successful. This does
+not retry failed/unknown automatic analysis or change production-stage admission.
+
 New Telegram sources default to the latest 80 messages. The creation APIs accept
 `scan_state: { bootstrap: "backfill", boundary: "100" }` to start strictly after
 message ID 100; use `"0"` for the beginning. IDs are decimal strings. Historical
