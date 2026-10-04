@@ -186,3 +186,32 @@ test("adapters using an explicit RSS URL do not replay its failed request", asyn
     }
   } finally { await vite.close(); }
 });
+
+test("gateway HTTP failures do not wait for stalled cancellation cleanup", async () => {
+  process.env.WECHAT_GATEWAY_URL = "https://gateway.example";
+  process.env.WECHAT_GATEWAY_TOKEN = "test-token";
+  const originalFetch = globalThis.fetch;
+  let cancelled = false;
+  globalThis.fetch = async () => new Response(new ReadableStream({
+    cancel() { cancelled = true; return new Promise(() => {}); },
+  }), { status: 503, headers: { "X-Loom-Provider": "primary", "X-Loom-Attempts": "primary", "X-Loom-Paid-Call": "false" } });
+  const vite = await createServer({ configFile: false, logLevel: "silent",
+    resolve: { alias: { "@": path.resolve("src") } }, server: { middlewareMode: true } });
+  try {
+    const { collectSource } = await vite.ssrLoadModule("/src/lib/server/collectors/index.ts");
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20);
+    const outcome = await Promise.race([collectSource({ id: "source", platform: "wechat", name: "source", handle: "", url: "",
+      feed_url: "", adapter: "wechat_gateway" }, { signal: controller.signal }).then(() => "unexpected_success", (/** @type {{code:string}} */ error) => error.code),
+    new Promise((resolve) => setTimeout(() => resolve("still_waiting"), 150))]);
+    clearTimeout(timer);
+    assert.notEqual(outcome, "still_waiting");
+    assert.ok(["http_error", "aborted"].includes(String(outcome)));
+    assert.equal(cancelled, true);
+  } finally {
+    await vite.close();
+    globalThis.fetch = originalFetch;
+    delete process.env.WECHAT_GATEWAY_URL;
+    delete process.env.WECHAT_GATEWAY_TOKEN;
+  }
+});

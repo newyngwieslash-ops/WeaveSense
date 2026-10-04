@@ -202,3 +202,64 @@ test("Telethon health rejects truthy authorization and oversized JSON", async ()
   globalThis.fetch = originalFetch;
   delete process.env.TELEGRAM_WORKER_URL;
 });
+
+test("worker audio history is normalized to file without losing its attachment", async () => {
+  process.env.TELEGRAM_WORKER_URL = "http://telethon:8787";
+  const originalFetch = globalThis.fetch;
+  const audio = { external_id: "7", title: "voice", body: "caption", author: "channel", url: "https://t.me/channel/7",
+    media_type: "audio", media_urls: ["https://media.example/voice.ogg"], thumbnail_url: "", views: null,
+    likes: null, published_at: null, extra: { telegram_id: 7, mime_type: "audio/ogg" } };
+  globalThis.fetch = async () => json({ items: [audio, { ...audio, external_id: "8", media_type: "text" }] });
+  const { vite } = await loadCollector();
+  try {
+    const { fetchTelethonHistory } = await vite.ssrLoadModule("/src/lib/server/telethon.ts");
+    const items = await fetchTelethonHistory("channel", "0");
+    assert.equal(items.length, 2);
+    assert.equal(items[0].media_type, "file");
+    assert.deepEqual(items[0].media_urls, audio.media_urls);
+    assert.equal(items[0].extra.mime_type, "audio/ogg");
+    assert.equal(items[0].extra.telegram_id, 7);
+    assert.equal(items[0].extra.telethon_media_type, "audio");
+    assert.equal(items[1].media_type, "text");
+  } finally {
+    await vite.close();
+    globalThis.fetch = originalFetch;
+    delete process.env.TELEGRAM_WORKER_URL;
+  }
+});
+
+test("Telethon health and history never wait for stalled cancellation cleanup", async () => {
+  process.env.TELEGRAM_WORKER_URL = "http://telethon:8787";
+  const originalFetch = globalThis.fetch;
+  let cancelled = 0;
+  globalThis.fetch = async () => new Response(new ReadableStream({ cancel() { cancelled++; return new Promise(() => {}); } }), { status: 503 });
+  const { vite } = await loadCollector();
+  try {
+    const { telethonHealth, fetchTelethonHistory } = await vite.ssrLoadModule("/src/lib/server/telethon.ts");
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20);
+    const result = await Promise.race([telethonHealth(controller.signal).then((/** @type {import("../telethon.ts").TelethonHealth} */ health) => health.error, (/** @type {{code:string}} */ error) => error.code),
+      new Promise((resolve) => setTimeout(() => resolve("still_waiting"), 150))]);
+    clearTimeout(timer);
+    assert.notEqual(result, "still_waiting");
+    assert.ok(["worker HTTP 503", "aborted"].includes(String(result)));
+    assert.equal(cancelled, 1);
+    for (const oversized of [true, false]) {
+      globalThis.fetch = async () => new Response(new ReadableStream({
+        start(stream) { if (oversized) stream.enqueue(new Uint8Array(4 * 1024 * 1024 + 1)); },
+        cancel() { cancelled++; return new Promise(() => {}); },
+      }));
+      const abort = new AbortController();
+      const timeout = setTimeout(() => abort.abort(), 20);
+      const errorCode = await Promise.race([fetchTelethonHistory("channel", "0", 80, abort.signal).then(() => "unexpected_success", (/** @type {{code:string}} */ error) => error.code),
+        new Promise((resolve) => setTimeout(() => resolve("still_waiting"), 150))]);
+      clearTimeout(timeout);
+      assert.equal(errorCode, oversized ? "response_too_large" : "aborted");
+    }
+    assert.equal(cancelled, 3);
+  } finally {
+    await vite.close();
+    globalThis.fetch = originalFetch;
+    delete process.env.TELEGRAM_WORKER_URL;
+  }
+});

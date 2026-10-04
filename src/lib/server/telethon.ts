@@ -22,7 +22,7 @@ const healthSchema = z.object({
 const historySchema = z.object({
   items: z.array(z.object({
     external_id: z.string().min(1), title: z.string(), body: z.string(), author: z.string(), url: z.string(),
-    media_type: z.enum(["article", "text", "image", "video", "file", "link"]), media_urls: z.array(z.string()),
+    media_type: z.enum(["article", "text", "image", "video", "audio", "file", "link"]), media_urls: z.array(z.string()),
     thumbnail_url: z.string(), views: z.number().finite().nullable(), likes: z.number().finite().nullable(),
     published_at: z.string().nullable(), extra: z.record(z.string(), z.unknown()),
   })),
@@ -40,7 +40,7 @@ export async function telethonHealth(signal?: AbortSignal): Promise<TelethonHeal
   try {
     const res = await abortable(fetch(`${prod.telegramWorkerUrl}/health`, { signal: combined, redirect: "error" }), combined);
     if (!res.ok) {
-      await res.body?.cancel();
+      void res.body?.cancel().catch(() => {});
       const value = { ok: false, authorized: false, error: `worker HTTP ${res.status}` };
       healthCache = { at: Date.now(), value };
       return value;
@@ -117,7 +117,8 @@ export async function fetchTelethonHistory(
     if (!parsed.success) throw new CollectionHttpError("invalid_response");
     return parsed.data.items.map((it) => ({
       ...it,
-      extra: { ...(it.extra ?? {}), collector: "telethon" },
+      media_type: it.media_type === "audio" ? "file" : it.media_type,
+      extra: { ...(it.extra ?? {}), ...(it.media_type === "audio" ? { telethon_media_type: "audio" } : {}), collector: "telethon" },
     }));
   } catch (error) {
     throw collectionHttpError(error, combined);

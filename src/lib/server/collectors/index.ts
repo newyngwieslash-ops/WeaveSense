@@ -93,7 +93,7 @@ const wechatGatewayAdapter: CollectorAdapter = {
     try { meta = gatewayMeta(response.headers); }
     catch (error) { void response.body?.cancel().catch(() => {}); throw error; }
     if (!response.ok) {
-      try { await response.body?.cancel(); } catch { /* fixed error below */ }
+      void response.body?.cancel().catch(() => {});
       throw new CollectorBatchError(`wechat_gateway_http_${response.status}`, meta,
         new CollectionHttpError(response.status === 429 ? "rate_limited" : "http_error", `HTTP ${response.status}`,
           { status: response.status, retryAt: parseRetryAfter(response.headers.get("retry-after"), Date.now()) ?? undefined }));
