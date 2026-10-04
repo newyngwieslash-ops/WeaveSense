@@ -224,6 +224,23 @@ function initialize(db) {
     if (!itemColumns.some(({ name }) => name === "body_complete")) {
       db.exec("alter table gateway_items add column body_complete integer not null default 0");
     }
+    const evidenceColumns = db.prepare("pragma table_info(primary_content_evidence)").all();
+    if (!evidenceColumns.some(({ name }) => name === "body_known")) {
+      db.exec("alter table primary_content_evidence add column body_known integer not null default 1 check (body_known in (0, 1))");
+    }
+    // Preserve retained identities before global pruning or a paid merge can erase their evidence.
+    const seedEvidence = db.prepare(`insert into primary_content_evidence
+      (source_id, canonical_id, body_present, body_complete, body_known) values (?, ?, ?, ?, ?)`);
+    for (const row of db.prepare(`select i.* from gateway_items i left join primary_content_evidence e
+      on e.source_id = i.source_id and e.canonical_id = i.canonical_id where e.canonical_id is null`).all()) {
+      const seen = JSON.parse(providersSeen(row, ""));
+      if (!seen.includes("primary")) continue;
+      // Mixed history proves identity only; its merged body may have come from paid completion.
+      const known = Number(seen.length === 1);
+      const present = Number(Boolean(known && row.body_text.trim()));
+      seedEvidence.run(row.source_id, row.canonical_id, present,
+        Number(Boolean(present && row.body_complete)), known);
+    }
     migrateReservations(db);
     db.exec("commit");
   } catch (error) {
@@ -298,10 +315,10 @@ function createStore(db) {
   // ponytail: one compact row per primary canonical ID, unbounded history; archive per source only if exact dedupe is preserved.
   const getEvidence = db.prepare("select * from primary_content_evidence where source_id = ? and canonical_id = ?");
   const putEvidence = db.prepare(`insert into primary_content_evidence
-    (source_id, canonical_id, body_present, body_complete) values (?, ?, ?, ?)
+    (source_id, canonical_id, body_present, body_complete, body_known) values (?, ?, ?, ?, 1)
     on conflict(source_id, canonical_id) do update set
       body_present = max(body_present, excluded.body_present),
-      body_complete = max(body_complete, excluded.body_complete)`);
+      body_complete = max(body_complete, excluded.body_complete), body_known = 1`);
   const contentTime = db.prepare(`update gateway_sources set last_primary_content_at = ?, updated_at = ?
     where source_id = ? and (last_primary_content_at is null or julianday(last_primary_content_at) < julianday(?))`);
   const publicationTime = db.prepare(`update gateway_sources set latest_published_at = ?
@@ -375,18 +392,16 @@ function createStore(db) {
       : { calls: 0, amount: 0 };
   }
 
-  function recordContentEvidence(sourceId, item, existing, now) {
+  function recordContentEvidence(sourceId, item, now) {
     // Publication is observed across both providers, independent of primary progress.
     publicationTime.run(item.published_at, sourceId, item.published_at);
     if (item.provider !== "primary") return;
-    // Retained historical primary rows prove identity/body, never their last content-change time.
-    const previous = getEvidence.get(sourceId, item.canonical_id)
-      ?? (existing && JSON.parse(providersSeen(existing, "")).includes("primary")
-        ? { body_present: Number(Boolean(existing.body_text.trim())), body_complete: existing.body_complete }
-        : null);
+    const previous = getEvidence.get(sourceId, item.canonical_id);
     const present = Number(Boolean(item.body_text.trim()));
     const complete = Number(Boolean(present && item.body_complete));
-    if (!previous || (!previous.body_present && present) || (!previous.body_complete && complete)) {
+    // Unknown legacy mixed-body summaries establish a baseline, not a historical change time.
+    if (!previous || (previous.body_known && !previous.body_present && present)
+      || (!previous.body_complete && complete)) {
       contentTime.run(now, now, sourceId, now);
     }
     putEvidence.run(sourceId, item.canonical_id,
@@ -624,7 +639,7 @@ function createStore(db) {
         for (const item of validItems) {
           const existing = getItem.get(sourceId, item.canonical_id);
           const body = mergedBody(existing, item);
-          recordContentEvidence(sourceId, item, existing, now);
+          recordContentEvidence(sourceId, item, now);
           upsertItem.run(sourceId, item.canonical_id, item.account_id, item.account_name, item.title,
             item.published_at, item.original_url, body.text, body.complete,
             preferNonEmpty(item.cover_url, existing?.cover_url), item.provider,
@@ -683,7 +698,7 @@ function createStore(db) {
         }
         const existing = getItem.get(sourceId, canonicalId);
         const body = mergedBody(existing, valid);
-        recordContentEvidence(sourceId, valid, existing, now);
+        recordContentEvidence(sourceId, valid, now);
         upsertItem.run(sourceId, canonicalId, valid.account_id, valid.account_name, valid.title,
           valid.published_at, valid.original_url, body.text, body.complete,
           preferNonEmpty(valid.cover_url, existing?.cover_url), valid.provider,

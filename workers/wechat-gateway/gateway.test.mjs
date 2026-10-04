@@ -812,6 +812,78 @@ test("period configuration is validated, persisted and can be explicitly unset o
   assert.equal(health.recent_error_type, "");
 });
 
+test("upgrade preserves legacy primary IDs before another source or empty feed prunes them and survives restart", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "wechat-legacy-prune-"));
+  const path = join(directory, "gateway.sqlite");
+  let store = openStore(path);
+  t.after(async () => { store.close(); await rm(directory, { recursive: true, force: true }); });
+  store.upsertSource(integrationSource, "2026-09-01T00:00:00Z");
+  const old = { ...primaryItem, published_at: "2026-09-01T00:00:00Z", body_complete: false };
+  store.upsertGatewayItems(integrationSource.id, [old], "2026-09-01T10:00:00Z");
+  store.close();
+  // Recreate the retained article + missing evidence/source freshness of a pre-T11 database.
+  const legacy = new DatabaseSync(path);
+  legacy.exec("drop table primary_content_evidence; alter table gateway_sources drop column last_primary_content_at");
+  legacy.close();
+  store = openStore(path);
+  assert.equal(store.getSource(integrationSource.id).last_primary_content_at, null);
+  const other = { ...integrationSource, id: "wx-other-prune", account_id: "gh_other" };
+  store.upsertSource(other, "2026-10-02T00:00:00Z");
+  let replay = false;
+  const makeGateway = () => createGateway({ store, token: "gateway-test", now: () => new Date("2026-10-02T00:00:00Z"),
+    primary: async (source) => replay && source.source_id === integrationSource.id ? [old] : [] });
+  let gateway = makeGateway();
+  const call = (sourceId) => gateway(new Request(`http://gateway.local/v1/feeds/${sourceId}.atom`,
+    { headers: { authorization: "Bearer gateway-test" } }));
+  assert.equal((await call(other.id)).status, 200);
+  assert.equal(store.getGatewayItem(integrationSource.id, old.canonical_id), undefined);
+  assert.equal((await call(integrationSource.id)).status, 200);
+  store.close();
+  store = openStore(path);
+  gateway = makeGateway();
+  replay = true;
+  assert.equal((await call(integrationSource.id)).status, 200);
+  assert.equal(store.getSource(integrationSource.id).last_primary_content_at, null);
+});
+
+test("legacy mixed-provider body and paid-before-first-revisit do not seed primary completeness", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "wechat-legacy-body-"));
+  const path = join(directory, "gateway.sqlite");
+  let store = openStore(path);
+  t.after(async () => { store.close(); await rm(directory, { recursive: true, force: true }); });
+  const before = { ...integrationSource, id: "wx-paid-before-upgrade" };
+  const after = { ...integrationSource, id: "wx-paid-after-upgrade" };
+  const immediate = { ...integrationSource, id: "wx-first-primary-full" };
+  const summary = { ...primaryItem, body_text: "primary summary", body_complete: false };
+  for (const source of [before, after, immediate]) {
+    store.upsertSource(source, "2026-08-28T00:00:00Z");
+    store.upsertGatewayItems(source.id, [summary], "2026-08-28T10:00:00Z");
+  }
+  store.completeDetail(before.id, summary.canonical_id, { ...primaryItem, provider: "dajiala" }, "2026-08-28T11:00:00Z");
+  store.completeDetail(immediate.id, summary.canonical_id, { ...primaryItem, provider: "dajiala" }, "2026-08-28T11:00:00Z");
+  store.close();
+  const legacy = new DatabaseSync(path);
+  legacy.exec("drop table primary_content_evidence; alter table gateway_sources drop column last_primary_content_at");
+  legacy.close();
+  store = openStore(path);
+  // Paid completion between upgrade and first primary revisit is also unproven primary body.
+  store.completeDetail(after.id, summary.canonical_id, { ...primaryItem, provider: "dajiala" }, "2026-08-28T12:00:00Z");
+  for (const source of [before, after]) {
+    assert.equal(store.getSource(source.id).last_primary_content_at, null);
+    store.upsertGatewayItems(source.id, [summary], "2026-08-28T13:00:00Z");
+    assert.equal(store.getSource(source.id).last_primary_content_at, null);
+  }
+  store.close();
+  store = openStore(path);
+  assert.equal(store.getSource(immediate.id).last_primary_content_at, null);
+  for (const source of [before, after, immediate]) {
+    store.upsertGatewayItems(source.id, [primaryItem], "2026-08-28T14:00:00Z");
+    assert.equal(store.getSource(source.id).last_primary_content_at, "2026-08-28T14:00:00Z");
+    store.upsertGatewayItems(source.id, [primaryItem], "2026-08-28T15:00:00Z");
+    assert.equal(store.getSource(source.id).last_primary_content_at, "2026-08-28T14:00:00Z");
+  }
+});
+
 test("only an explicit upstream risk_control code marks the primary restricted", async (t) => {
   const store = openStore(":memory:");
   t.after(() => store.close());
