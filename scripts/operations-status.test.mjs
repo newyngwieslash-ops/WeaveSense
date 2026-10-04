@@ -7,12 +7,14 @@
  * different condition from "backup too old" (the plan asks for exactly that split).
  */
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, utimesSync } from "node:fs";
+import { mkdtempSync, writeFileSync, utimesSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { evaluateAlerts, STAGE_MAX_AGE_MINUTES, BACKUP_MAX_AGE_HOURS } from "./operations-status.mjs";
+import { offlineEnv } from "./readiness-offline.mjs";
+import * as operations from "./operations-status.mjs";
 
 const healthy = {
   now: Date.now(),
@@ -85,7 +87,7 @@ test("the script exits non-zero only when an alert (not a warning) is present", 
   const dir = mkdtempSync(join(tmpdir(), "t16-"));
   const run = (extra = []) => spawnSync(process.execPath,
     ["scripts/operations-status.mjs", "--pglite", ...extra],
-    { encoding: "utf8", windowsHide: true, timeout: 120_000 });
+    { env: offlineEnv(process.env), encoding: "utf8", windowsHide: true, timeout: 120_000 });
 
   // With no data: a fresh isolated database has no stage rows, so nothing is
   // stale... except the backup, which is genuinely absent and must alert.
@@ -113,10 +115,38 @@ test("an alert run writes only structured data to the chosen local sink", () => 
   const dir = mkdtempSync(join(tmpdir(), "t16-sink-"));
   const result = spawnSync(process.execPath,
     ["scripts/operations-status.mjs", "--pglite", "--alerts", dir],
-    { encoding: "utf8", windowsHide: true, timeout: 120_000 });
+    { env: offlineEnv(process.env), encoding: "utf8", windowsHide: true, timeout: 120_000 });
   assert.equal(result.status, 1);
   const report = JSON.parse(result.stdout);
   assert.ok(report.alerts_file && report.alerts_file.startsWith(dir));
   // No external channel is contacted: the plan requires the user to name one first.
   assert.ok(!JSON.stringify(report).match(/https?:\/\//), "no URL may appear in the report");
+});
+
+test("actual local event runs deduplicate stale content and cooling, then resolve once without secrets", () => {
+  const dir = mkdtempSync(join(tmpdir(), "t16-transitions-"));
+  const now = Date.now();
+  const facts = { ...healthy, now, sources: [
+    { id: 's1', adapter: 'rss', interval_minutes: 30, last_success_at: new Date(now).toISOString(),
+      last_content_at: new Date(now - 25 * 3600000).toISOString(), last_error_code: '',
+      handle: 'https://user:secret@example/?token=secret', last_error: 'Bearer secret' },
+    { id: 's2', adapter: 'telegram_web', interval_minutes: 30, last_error_code: 'rate_limited',
+      next_attempt_at: new Date(now + 3600000).toISOString(), last_error: 'Bearer secret' },
+  ] };
+  operations.writeAlertEvents(dir, operations.evaluateAlerts(facts), now);
+  operations.writeAlertEvents(dir, operations.evaluateAlerts({ ...facts, now: now + 60000 }), now + 60000);
+  let events = readFileSync(join(dir, 'events.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+  assert.equal(events.filter(e => e.code === 'content_stale:s1').length, 1);
+  assert.equal(events.filter(e => e.code === 'rate_limited:s2').length, 1);
+  operations.writeAlertEvents(dir, [], now + 90000, false);
+  assert.equal(readFileSync(join(dir, 'events.jsonl'), 'utf8').trim().split('\n').length,2,'unavailable diagnostics do not prove recovery');
+  const recovered = {...facts,sources:[{...facts.sources[0],last_content_at:new Date(now).toISOString()},
+    {...facts.sources[1],last_error_code:''}]};
+  operations.writeAlertEvents(dir, operations.evaluateAlerts(recovered), now + 120000);
+  operations.writeAlertEvents(dir, operations.evaluateAlerts(recovered), now + 180000);
+  events = readFileSync(join(dir, 'events.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+  assert.equal(events.filter(e => e.status === 'resolved').length, 2);
+  assert.equal(JSON.stringify(events).includes('Bearer '), false);
+  assert.equal(JSON.stringify(events).includes('https://'), false);
+  assert.equal(JSON.stringify(events).includes('secret'), false);
 });

@@ -10,6 +10,8 @@ import { autoAnalyzeConfigFromEnv, claimAiJob, enqueueReadyAnalyses, finishAiJob
 import { analyzeItemWith } from "./analyze";
 import { confirmJobNotSent } from "./agent-budget";
 import { runStageOnce } from "./stage-windows.ts";
+import { getCollectionHealth, mapMediaObject } from "./queries";
+import type { MediaObjectRow } from "../types";
 
 export type NodeCard = {
   id: string;
@@ -25,9 +27,14 @@ export async function getNodesStatus(): Promise<{
   extracts: { total: number; ok: number; pending: number; error: number };
   tick_limit: number;
   extract_auto: boolean;
+  collection: Awaited<ReturnType<typeof getCollectionHealth>>;
+  media_failures: (MediaObjectRow & {item_title:string})[];
 }> {
   const [tg, minio] = await Promise.all([telethonHealth(), minioHealth()]);
   const sql = await getSql();
+  const collection = await getCollectionHealth();
+  const mediaFailures = await sql.query<Record<string,unknown>>(`select m.*,i.title as item_title from media_objects m
+    join items i on i.id=m.item_id where m.status in ('error','dead') order by m.created_at,m.id limit 20`);
   let media = { total: 0, remote: 0, stored: 0, error: 0 };
   let extracts = { total: 0, ok: 0, pending: 0, error: 0 };
   try {
@@ -82,8 +89,8 @@ export async function getNodesStatus(): Promise<{
       id: "extract",
       title: "ASR / OCR",
       role: "Grok STT + 视觉识别",
-      status: xaiReady() ? "live" : "off",
-      detail: xaiReady() ? "按键提取，不预热调用" : "需要 XAI_API_KEY",
+      status: xaiReady() ? "wait" : "off",
+      detail: xaiReady() ? "配置已就绪，未验证连通；仅按键时调用" : "需要 XAI_API_KEY",
     },
     {
       id: "postgres",
@@ -100,6 +107,8 @@ export async function getNodesStatus(): Promise<{
     extracts,
     tick_limit: prod.tickLimit,
     extract_auto: prod.extractAuto,
+    collection,
+    media_failures: mediaFailures.map(row=>({...mapMediaObject(row),item_title:String(row.item_title ?? '')})),
   };
 }
 

@@ -76,12 +76,14 @@ export async function completeSourceClaim(
   lastExternalId: string,
   lastPublishedAt: string | null,
   progress?: { scan_state?: unknown; has_more?: boolean; coverage?: unknown; rejected_entries?: number;
+    content_progress?: boolean;
     feed_validators?: { etag: string; last_modified: string }; feed_validator_identity?: string },
 ): Promise<boolean> {
   const rows = await sql.query<{ id: unknown }>(
     `update sources set
        status = 'ok', next_attempt_at = null, consecutive_failures = 0, last_success_at = now(), last_error_code = '',
        last_scanned_at = now(),
+       last_content_at = case when ${progress?.content_progress === true ? 'true' : 'false'} then now() else last_content_at end,
        last_error = '',
        last_external_id = coalesce(nullif($2, ''), last_external_id),
        last_published_at = coalesce($3::timestamptz, last_published_at),
@@ -166,14 +168,21 @@ export async function finishSourceJob(
   jobId: string,
   status: "ok" | "error",
   error: string,
-  itemsFound: number,
+  itemsFound: number | null,
   itemsNew: number,
   meta: { provider: "" | "primary" | "dajiala" | "mixed"; attempts: string[]; paid_call: boolean },
+  metrics?: { items_updated?: number; items_invalid?: number; bytes?: number | null; coverage?: unknown },
 ): Promise<void> {
-  await sql.query(`update jobs set status = $2, finished_at = now(), error = $3,
-      items_found = $4, items_new = $5, provider = $6, attempts = $7::jsonb, paid_call = $8
+  await sql.query(`update jobs set status = $2, finished_at = clock_timestamp(), error = $3,
+      items_found = $4, items_new = $5, provider = $6, attempts = $7::jsonb, paid_call = $8,
+      duration_ms = greatest(0, floor(extract(epoch from (clock_timestamp()-started_at))*1000))::bigint,
+      items_updated = $9, items_invalid = $10, bytes = $11, coverage = $12::jsonb,
+      error_code = case when $2='ok' then '' else (select last_error_code from sources where id=jobs.source_id) end,
+      retry_at = case when $2='error' then (select next_attempt_at from sources where id=jobs.source_id) else null end
     where id = $1`, [jobId, status, error, itemsFound, itemsNew, meta.provider,
-    JSON.stringify(meta.attempts), meta.paid_call]);
+    JSON.stringify(meta.attempts), meta.paid_call,
+    metrics?.items_updated ?? null, metrics?.items_invalid ?? null, metrics?.bytes ?? null,
+    JSON.stringify(metrics?.coverage ?? null)]);
 }
 
 export async function mergeExistingItem(sql: Queryable, itemId: string, item: {
@@ -188,9 +197,11 @@ export async function mergeExistingItem(sql: Queryable, itemId: string, item: {
   likes: number | null;
   published_at: string | null;
   extra: Record<string, unknown>;
-}, matchedKeywords: string[]): Promise<void> {
+}, matchedKeywords: string[]): Promise<boolean> {
   const incomingComplete = item.extra.body_complete === true;
-  await sql.query(`update items set
+  const rows = await sql.query<{content_progress: boolean}>(`with previous as (
+    select body,extra from items where id=$1
+  ), changed as (update items set
       title=coalesce(nullif(title,''),nullif($2,''),title),
       body=case when $14::boolean and coalesce(extra->>'body_complete','false') <> 'true'
           and nullif($3,'') is not null then $3 || case
@@ -214,9 +225,13 @@ export async function mergeExistingItem(sql: Queryable, itemId: string, item: {
       matched_keywords=(select coalesce(jsonb_agg(keyword order by keyword),'[]'::jsonb)
         from (select distinct value as keyword
           from jsonb_array_elements_text(items.matched_keywords || $13::jsonb)) merged)
-    where id=$1`, [itemId, item.title, item.body, item.author, item.url, item.media_type,
+    where id=$1 returning body,extra)
+    select (changed.body <> previous.body or
+      (coalesce(previous.extra->>'body_complete','false') <> 'true' and changed.extra->>'body_complete'='true'))
+      and nullif($3,'') is not null as content_progress from changed, previous`, [itemId, item.title, item.body, item.author, item.url, item.media_type,
     JSON.stringify(item.media_urls), item.thumbnail_url, item.views, item.likes, item.published_at,
     JSON.stringify(item.extra), JSON.stringify(matchedKeywords), incomingComplete]);
+  return rows[0]?.content_progress === true;
 }
 
 /**

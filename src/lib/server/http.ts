@@ -13,6 +13,7 @@ export type FetchIo = {
   transport?: OutboundTransport;
   maxBytes?: number;
   signal?: AbortSignal;
+  metrics?: { bytes: number | null };
 };
 
 /**
@@ -31,6 +32,7 @@ export async function fetchText(
   io: FetchIo = {},
 ): Promise<string> {
   const result = await publicFetch(url, {
+    metrics: io.metrics,
     timeoutMs,
     resolver: io.resolver,
     transport: io.transport,
@@ -52,6 +54,7 @@ export async function fetchJson<T>(
   io: FetchIo = {},
 ): Promise<T> {
   const result = await publicFetch(url, {
+    metrics: io.metrics,
     timeoutMs,
     resolver: io.resolver,
     transport: io.transport,

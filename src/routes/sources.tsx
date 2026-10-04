@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input, NativeSelect, Textarea } from "@/components/ui/input";
 import {
   addSourceFn,
+  collectionHealthFn,
   addTelegramChannelsFn,
   importWechatSourcesFn,
   listSourcesFn,
@@ -31,6 +32,7 @@ function SourcesPage() {
   const [open, setOpen] = useState(false);
   const opener = useRef<HTMLButtonElement | null>(null);
   const sources = useQuery({ queryKey: ["sources"], queryFn: () => listSourcesFn() });
+  const collection = useQuery({queryKey:['collection-health'],queryFn:()=>collectionHealthFn(),refetchInterval:60000});
   const hasWechatSources = Boolean(sources.data?.some((source) =>
     source.platform === "wechat" && source.id !== RADAR_SOURCE_ID));
   const wechatHealth = useQuery({ queryKey: ["wechat-health"], queryFn: () => listWechatHealthFn(),
@@ -69,6 +71,11 @@ function SourcesPage() {
       <p className="max-w-2xl text-sm leading-relaxed text-muted">
         每个频道一条信源。能力说明是静态支持范围，接入后仍需实际扫描验证。Telegram 默认从最近 80 条开始；历史回填需已授权节点。暂停后启用会继续保存的进度。
       </p>
+      <div className="mt-4 space-y-1 text-sm text-muted">
+        <p>启用信源当前故障 / 总数（独立于任务时间窗）：</p>
+        {collection.data?.failed_sources.map(row=><p key={String(row.adapter)}>{String(row.adapter)} · {Number(row.failed)} / {Number(row.total)}</p>)}
+        {collection.error ? <p role="alert">指标读取失败：{collection.error.message}</p> : null}
+      </div>
       {sources.isPending ? <p className="mt-4 text-sm text-muted">正在读取信源…</p> : null}
       {sources.error ? <p role="alert" className="mt-4 text-sm text-danger">信源读取失败：{sources.error.message}</p> : null}
       <div className="mt-6 space-y-8">
@@ -117,6 +124,10 @@ function SourcesPage() {
                         {formatRelative(s.last_scanned_at)}
                       </p>
                       <p className="mt-1 text-xs text-muted">最近成功验证：{s.last_success_at ? formatRelative(s.last_success_at) : "未验证"} · 最近扫描：{formatRelative(s.last_scanned_at)}</p>
+                      <p className="mt-1 text-xs text-muted">最近内容进展 / 正文补全：{s.last_content_at ? formatRelative(s.last_content_at) : '未知'} · 请求成功不代表有新内容</p>
+                      {s.last_content_at && Date.now()-Date.parse(s.last_content_at)>Math.max(1440,s.interval_minutes*3)*60000 ? <p className="mt-1 text-xs text-warn">内容疑似停滞：检查原 Feed 更新时间与正文完整性；窗口或低频发布需人工确认。</p> : null}
+                      {s.last_error_code ? <p className="mt-1 break-words text-xs text-muted">诊断 {s.last_error_code} · {s.last_error_code==='rate_limited' ? '等待上游冷却，避免连续扫描' : s.last_error_code==='config_error' ? '检查地址、账号授权和服务配置' : '检查出口连接、节点健康及上游响应'}</p> : null}
+                      {s.next_attempt_at ? <p className="mt-1 break-words text-xs text-muted">最早重试：{new Date(s.next_attempt_at).toLocaleString()} · 修复配置不会提前上游冷却</p> : null}
                       {!s.collection_coverage ? <p className="mt-1 text-xs text-muted">覆盖范围未知，等待首次验证</p> : null}
                       {s.collection_coverage?.window_only ? <p className="mt-1 text-xs text-muted">仅覆盖当前窗口，不包含完整历史</p> : null}
                       {s.has_more ? <p className="mt-1 text-xs text-muted">还有内容待采集，将从已保存进度继续</p> : null}

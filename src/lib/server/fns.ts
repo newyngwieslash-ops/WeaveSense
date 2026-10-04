@@ -13,7 +13,7 @@ import { getAiJob, cancelQueuedResearchJobs } from "./agent-queue";
 import { extractItem, extractPending } from "./extract";
 import { ingestPending, replayMedia } from "./media";
 import { getNodesStatus, runProductionTick } from "./nodes";
-import { getOverview, listKeywords, listSources, mapAnalysis, mapExtractJob, mapItem, mapJob, mapMediaObject, mapNote } from "./queries";
+import { getCollectionHealth, getOverview, listKeywords, listSources, mapAnalysis, mapExtractJob, mapItem, mapJob, mapMediaObject, mapNote } from "./queries";
 import { ensureSeeded } from "./seed";
 import { runKeywordJob, runSourceJob, tickDueSources } from "./scheduler";
 import { isPlatform } from "@/lib/platforms";
@@ -413,6 +413,8 @@ export const listJobsFn = createServerFn({ method: "GET" }).handler(async () => 
   );
   return rows.map(mapJob);
 });
+
+export const collectionHealthFn = createServerFn({ method: "GET" }).handler(async () => getCollectionHealth());
 
 export const analyzeItemFn = createServerFn({ method: "POST" })
   .validator((input: unknown) => analyzeInput.parse(input ?? {}))

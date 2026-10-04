@@ -5,6 +5,88 @@ import { createServer } from 'vite';
 import { readFileSync, readdirSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 
+test('actual attempts persist actionable metrics and keep request success separate from content progress', async () => {
+  const vite = await createServer({configFile:false,logLevel:'silent',resolve:{alias:{'@':path.resolve('src')}},server:{middlewareMode:true,watch:null}});
+  try {
+    const {getSql} = await vite.ssrLoadModule('/src/lib/db.ts');
+    const sql = await getSql();
+    const {runSourceJob,persistCollectedBatch} = await vite.ssrLoadModule('/src/lib/server/scheduler.ts');
+    const {mapJob,mapSource,getCollectionHealth} = await vite.ssrLoadModule('/src/lib/server/queries.ts');
+    await sql.query(`insert into sources(id,platform,name,handle,adapter) values('metrics','rss','metrics','https://metrics.example/feed','rss')`);
+    const xml = `<rss><channel><item><guid>first</guid><title>First</title><description>Body</description><pubDate>2026-01-01T00:00:00Z</pubDate></item><item><title>Invalid</title><pubDate>invalid</pubDate></item></channel></rss>`;
+    const io = {resolver:{async lookup(){return [{address:'93.184.216.34',family:4}];}},transport:async()=>({status:200,headers:{etag:'"first"'},body:new Response(xml).body})};
+    assert.equal((await runSourceJob('metrics','manual',io)).items_new,1);
+    let [raw] = await sql.query(`select * from jobs where source_id='metrics' order by started_at desc limit 1`);
+    let job = mapJob(raw);
+    assert.equal(job.adapter,'rss'); assert.equal(job.bytes,Buffer.byteLength(xml));
+    assert.equal(job.items_found,2); assert.equal(job.items_invalid,1); assert.equal(job.items_new,1); assert.equal(job.items_updated,0);
+    assert.ok(job.duration_ms >= 0); assert.equal(job.coverage.window_only,true); assert.equal(job.error_code,'');
+    await sql.query(`update sources set last_content_at=now()-interval '2 days' where id='metrics'`);
+    const [before] = await sql.query(`select * from sources where id='metrics'`);
+    assert.equal((await runSourceJob('metrics','manual',io)).items_new,0);
+    const [after] = await sql.query(`select * from sources where id='metrics'`);
+    assert.equal(mapSource(before).last_content_at,mapSource(after).last_content_at);
+    assert.ok(new Date(after.last_success_at)>=new Date(before.last_success_at));
+    // Actual merge fills a missing body once; repeated likes/extra or old paid fallback does not refresh content.
+    await sql.query(`update sources set status='running',claim_token='metric-merge' where id='metrics'`);
+    await sql.query(`insert into jobs(id,source_id,platform,adapter) values('metric-merge','metrics','rss','rss')`);
+    await sql.query(`update items set body='',extra='{}' where source_id='metrics'`);
+    const [claimed] = await sql.query(`select * from sources where id='metrics'`);
+    const item = {external_id:'first',title:'First',body:'Complete',author:'',url:'',media_type:'article',media_urls:[],thumbnail_url:'',views:null,likes:12,published_at:null,extra:{body_complete:true}};
+    await persistCollectedBatch(sql,claimed,'metric-merge',{items:[item],meta:{provider:'',attempts:['rss'],paid_call:false}});
+    [raw] = await sql.query(`select * from jobs where id='metric-merge'`);
+    assert.equal(mapJob(raw).items_updated,1);
+    const [progress] = await sql.query(`select last_content_at from sources where id='metrics'`);
+    assert.ok(new Date(progress.last_content_at)>new Date(before.last_content_at));
+    const retryAt = Date.now()+3600000;
+    await runSourceJob('metrics','manual',{...io,transport:async()=>({status:429,headers:{'retry-after':new Date(retryAt).toUTCString()},body:new Response('').body})});
+    [raw] = await sql.query(`select * from jobs where source_id='metrics' order by started_at desc limit 1`);
+    job = mapJob(raw);
+    assert.equal(job.error_code,'rate_limited'); assert.equal(job.items_found,null); assert.equal(job.bytes,null);
+    assert.ok(Date.parse(job.retry_at)>=retryAt-1000);
+    // A success from the same adapter is in the denominator; running work is excluded.
+    const health = await getCollectionHealth();
+    assert.equal(health.failed_sources.find((r:any)=>r.adapter==='rss').failed,1);
+    const rate = health.adapter_jobs.find((r:any)=>r.adapter==='rss');
+    assert.equal(rate.failed,1); assert.equal(rate.total,4);
+    assert.equal(health.discovery.observed,1); assert.equal(health.discovery.unknown,0);
+    assert.ok(health.discovery.p50_seconds>0); assert.equal(health.body.known,1); assert.equal(health.body.complete,1);
+    assert.equal(health.oldest_due_age_minutes,null,'future Retry-After is not overdue');
+    await sql.query(`insert into items(id,source_id,platform,external_id,published_at,extra) values
+      ('unknown-time','metrics','rss','unknown',null,'{}'),
+      ('future-time','metrics','rss','future',now()+interval '1 day','{}')`);
+    await sql.query(`insert into sources(id,platform,name,adapter,status,claim_token,enabled)
+      values('paid-old','wechat','paid-old','wechat_gateway','running','paid-old-job',false)`);
+    await sql.query(`insert into jobs(id,source_id,platform,adapter) values('paid-old-job','paid-old','wechat','wechat_gateway')`);
+    const [paidSource] = await sql.query(`select * from sources where id='paid-old'`);
+    await persistCollectedBatch(sql,paidSource,'paid-old-job',{items:[{...item,extra:{provider:'dajiala',body_complete:true}}],
+      meta:{provider:'dajiala',attempts:['primary','dajiala'],paid_call:true}});
+    assert.equal((await sql.query(`select last_content_at from sources where id='paid-old'`))[0].last_content_at,null);
+    const paid = mapJob((await sql.query(`select * from jobs where id='paid-old-job'`))[0]);
+    assert.equal(paid.provider,'dajiala');assert.equal(paid.paid_call,true);
+    await sql.query(`insert into sources(id,platform,name,handle,adapter,enabled) values('atom-updated','rss','edit-only','https://edit.example/','rss',true)`);
+    await runSourceJob('atom-updated','manual',{...io,transport:async()=>({status:200,headers:{},body:new Response(
+      `<feed><entry><id>edit-only</id><title>Edited</title><updated>2026-01-01T00:00:00Z</updated></entry></feed>`).body})});
+    const observed = await getCollectionHealth();
+    assert.equal(observed.discovery.unknown,3);assert.equal(observed.discovery.invalid_future,1);
+    assert.equal(observed.discovery.observed,1);assert.equal(observed.body.known,2);assert.equal(observed.body.total,5);
+    const [{id:mediaItem}] = await sql.query(`select id from items where source_id='metrics' and external_id='first'`);
+    await sql.query(`insert into media_objects(id,item_id,source_url,status,attempts,created_at,next_attempt_at,claimed_at) values
+      ('age-due',$1,'https://media.example/due','remote',1,now()-interval '90 minutes',null,null),
+      ('age-cooling',$1,'https://media.example/cooling','error',1,now()-interval '200 minutes',now()+interval '1 hour',null),
+      ('age-leased',$1,'https://media.example/leased','running',1,now()-interval '100 minutes',null,now()),
+      ('age-manual',$1,'https://media.example/manual','dead',4,now()-interval '180 minutes',null,null)`,[mediaItem]);
+    const ages = await getCollectionHealth();
+    assert.ok(ages.pending_media_age_minutes>=200 && ages.pending_media_age_minutes<201);
+    assert.ok(ages.oldest_due_media_age_minutes>=90 && ages.oldest_due_media_age_minutes<91);
+    assert.equal(ages.media_cooling,1);assert.equal(ages.media_leased,1);assert.equal(ages.media_manual,1);
+    await sql.query(`delete from media_objects where id like 'age-%'`);
+    await sql.query(`delete from items where source_id in ('metrics','paid-old','atom-updated')`);
+    await sql.query(`delete from jobs where source_id in ('metrics','paid-old','atom-updated')`);
+    await sql.query(`delete from sources where id in ('metrics','paid-old','atom-updated')`);
+  } finally {await vite.close();}
+});
+
 test('actual source job rolls back media failure, fences stale batches, and repairs replay', async () => {
   const vite = await createServer({configFile:false,logLevel:'silent',resolve:{alias:{'@':path.resolve('src')}},server:{middlewareMode:true,watch:null}});
   try {

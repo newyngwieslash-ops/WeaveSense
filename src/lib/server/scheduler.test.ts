@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
+import { readFileSync } from "node:fs";
 import { claimSource, completeSourceClaim, finishItemInsert, finishSourceJob,
   mergeExistingItem } from "./scheduler-atomic.ts";
 
@@ -17,7 +18,7 @@ async function sourceDb() {
     last_scanned_at timestamptz,
     claim_token text not null default '',
     interval_minutes int default 30, has_more boolean default false,
-    next_attempt_at timestamptz, consecutive_failures int default 0, last_success_at timestamptz, last_error_code text default '',
+    next_attempt_at timestamptz, consecutive_failures int default 0, last_success_at timestamptz, last_content_at timestamptz, last_error_code text default '',
     claimed_at timestamptz
   )`);
   const sql = {
@@ -92,11 +93,14 @@ test("source job completion persists successful and failed provider attempts", a
   const pg = new PGlite();
   await pg.waitReady;
   await pg.exec(`create table jobs (
+    source_id text default 'source', started_at timestamptz default now(),
     id text primary key, status text not null, finished_at timestamptz,
     items_found integer not null default 0, items_new integer not null default 0,
     error text not null default '', provider text not null default '',
     attempts jsonb not null default '[]'::jsonb, paid_call boolean not null default false
   )`);
+  await pg.exec(`create table sources(id text primary key,last_error_code text,next_attempt_at timestamptz)`);
+  await pg.exec(readFileSync(new URL('../../../migrations/0027_collection_observability.sql',import.meta.url),'utf8'));
   const sql = { async query<T = Record<string, unknown>>(text: string, params: unknown[] = []) {
     return (await pg.query<T>(text, params)).rows;
   } };

@@ -17,6 +17,11 @@ import type {
   SourceRow,
 } from "../types.ts";
 import { asBool, asInt, asJson, iso } from "./serialize.ts";
+import { collectionHealth } from "./collection-health.mjs";
+
+export async function getCollectionHealth() {
+  return collectionHealth(await getSql());
+}
 
 function platformOf(value: unknown): PlatformId {
   const s = String(value);
@@ -52,6 +57,7 @@ export function mapSource(row: Record<string, unknown>): SourceRow {
     next_attempt_at: iso(row.next_attempt_at),
     consecutive_failures: asInt(row.consecutive_failures) ?? 0,
     last_success_at: iso(row.last_success_at),
+    last_content_at: iso(row.last_content_at),
     last_error_code: String(row.last_error_code ?? ""),
     status: (["idle", "running", "ok", "error"].includes(String(row.status))
       ? row.status
@@ -123,7 +129,7 @@ export function mapJob(row: Record<string, unknown>): JobRow {
     started_at: iso(row.started_at) ?? new Date().toISOString(),
     finished_at: iso(row.finished_at),
     status: (row.status as JobRow["status"]) ?? "ok",
-    items_found: asInt(row.items_found) ?? 0,
+    items_found: asInt(row.items_found),
     items_new: asInt(row.items_new) ?? 0,
     error: String(row.error ?? ""),
     kind: String(row.kind ?? "incremental"),
@@ -132,6 +138,14 @@ export function mapJob(row: Record<string, unknown>): JobRow {
       .filter((attempt): attempt is string => typeof attempt === "string")
       .map((attempt) => attempt.slice(0, 80)).slice(0, 8),
     paid_call: asBool(row.paid_call),
+    adapter: row.adapter == null ? null : String(row.adapter),
+    error_code: row.error_code == null ? null : String(row.error_code),
+    duration_ms: asInt(row.duration_ms),
+    items_updated: asInt(row.items_updated),
+    items_invalid: asInt(row.items_invalid),
+    bytes: asInt(row.bytes),
+    coverage: asJson<JobRow['coverage']>(row.coverage, null),
+    retry_at: iso(row.retry_at),
     keyword_id: row.keyword_id ? String(row.keyword_id) : "",
     source_name: row.source_name ? String(row.source_name) : undefined,
   };

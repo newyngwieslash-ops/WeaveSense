@@ -540,6 +540,7 @@ export async function publicFetch(
     as = "text",
     signal,
     allowNotModified = false,
+    metrics,
   }: {
     headers?: Record<string, string>;
     timeoutMs?: number;
@@ -551,6 +552,7 @@ export async function publicFetch(
     as?: "text" | "bytes";
     signal?: AbortSignal;
     allowNotModified?: boolean;
+    metrics?: { bytes: number | null };
   } = {},
 ): Promise<{ text?: string; bytes?: Uint8Array; url: string; contentType: string; status: number; headers: Record<string, string> }> {
   const deadline = new AbortController();
@@ -602,6 +604,7 @@ export async function publicFetch(
         continue;
       }
       if (status === 304 && allowNotModified && redirects === 0) {
+        if (metrics) metrics.bytes = (metrics.bytes ?? 0);
         cancelBody(response.body);
         response = undefined;
         return { url: url.href, contentType: responseHeaders['content-type'] ?? '', status, headers: responseHeaders };
@@ -612,6 +615,7 @@ export async function publicFetch(
       const contentType = responseHeaders["content-type"] ?? "";
       const limit = maxBytes ?? capFor(contentType, kind);
       const bytes = await readCapped(response.body, limit, combined);
+      if (metrics) metrics.bytes = (metrics.bytes ?? 0) + bytes.byteLength;
       response = undefined;
       if (as === "bytes") return { bytes, url: url.href, contentType, status, headers: responseHeaders };
       return { text: new TextDecoder().decode(bytes), url: url.href, contentType, status, headers: responseHeaders };

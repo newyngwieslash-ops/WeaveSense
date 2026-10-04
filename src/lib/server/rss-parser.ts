@@ -180,6 +180,8 @@ export function parseFeedXml(xml: string, sourceId: string, platform: PlatformId
       // ponytail: IDs support at most 320 characters; accepting longer IDs requires a persisted-ID migration.
       if (id.length > 320) throw new Error("feed_entry_id_limit");
       const extra = { ...loomExtra(raw, platform), rss_identity: "raw-v1" } as Record<string, unknown>;
+      // Atom updated alone is an edit time, never evidence of publication/discovery latency.
+      if (!textOf(raw.pubDate ?? raw.published ?? raw["dc:date"] ?? '') && textOf(raw.updated)) extra.publication_time_kind = 'updated';
       // Compatibility evidence only: reproduce the prior XML scalar coercion,
       // never use this alias as the identity of new content.
       const legacyRaw = legacyItems[index] as Record<string, unknown>;

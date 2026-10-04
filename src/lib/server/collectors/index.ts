@@ -112,7 +112,9 @@ const wechatGatewayAdapter: CollectorAdapter = {
     try {
       // A gateway feed is text; an explicit ceiling keeps a wedged gateway from
       // streaming an unbounded body into memory before the parse.
-      const text = new TextDecoder().decode(await readCapped(response.body, WECHAT_GATEWAY_FEED_MAX_BYTES, signal));
+      const bytes = await readCapped(response.body, WECHAT_GATEWAY_FEED_MAX_BYTES, signal);
+      if (io.metrics) io.metrics.bytes = (io.metrics.bytes ?? 0) + bytes.byteLength;
+      const text = new TextDecoder().decode(bytes);
       items = parseFeedXml(text, source.id, "wechat", { feedUrl: response.url || gatewayFeedUrl(source.id), stats });
     } catch (error) {
       throw new CollectorBatchError("wechat_gateway_invalid_feed", meta,

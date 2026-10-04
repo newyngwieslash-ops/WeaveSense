@@ -256,7 +256,7 @@ export async function persistCollectedBatch(database: Sql, source: SourceRecord,
       }
     }
     const phrases = await sql.query<{ id: string; phrase: string }>("select id, phrase from keywords where enabled = true");
-    let itemsNew = 0;
+    let itemsNew = 0, itemsUpdated = 0, contentProgress = false;
 
     for (const it of fetched.filter((item) => item.external_id)) {
       const published = it.published_at ? new Date(it.published_at) : null;
@@ -274,12 +274,15 @@ export async function persistCollectedBatch(database: Sql, source: SourceRecord,
           ? { ...providerHistory, ...it.extra, providers_seen: providerHistory.providers_seen }
           : it.extra, it.extra.provider ?? meta.provider)
         : it.extra;
+      const primaryContent = source.platform !== 'wechat' || it.extra.provider === 'primary' || meta.provider === 'primary';
       if (existingItem) {
         // An existing coerced identity is not proven raw merely by an exact-ID
         // refresh; retain legacy provenance until an operator verifies it.
         if (it.extra.rss_identity && existingExtra.rss_identity !== "raw-v1") delete itemExtra.rss_identity;
-        await mergeExistingItem(sql, existingItem.id,
+        const bodyProgress = await mergeExistingItem(sql, existingItem.id,
           { ...it, extra: itemExtra, published_at: publishedIso }, matched);
+        if (bodyProgress) itemsUpdated += 1;
+        contentProgress ||= bodyProgress && primaryContent;
         if (source.platform === 'wechat' && !existingItem.url) {
           existingItem.normalized_wechat_url = normalizedUrl(it.url);
           existingItem.url = it.url.slice(0,1000);
@@ -321,6 +324,7 @@ export async function persistCollectedBatch(database: Sql, source: SourceRecord,
       );
       if (await finishItemInsert(inserted, it.media_urls, it.media_type, (id,urls,type)=>enqueueItemMedia(id,urls,type,sql))) {
         itemsNew += 1;
+        contentProgress ||= primaryContent;
         const saved = { id, external_id: it.external_id.slice(0, 320),
           url: it.url.slice(0, 1000), extra: itemExtra, normalized_wechat_url: normalizedUrl(it.url) };
         existingByExternalId.set(saved.external_id, saved);
@@ -359,11 +363,14 @@ export async function persistCollectedBatch(database: Sql, source: SourceRecord,
       nextCursor,
       cursorItem?.published_at ?? (nextCursor === previousCursor ? null : latestPublished(fetched, nextCursor)),
       { scan_state: collected.next_scan_state ?? source.scan_state, has_more: collected.has_more,
+        content_progress: contentProgress,
         coverage: collected.coverage, rejected_entries: collected.rejected_entries,
         feed_validators: validators, feed_validator_identity: feedComplete ? collected.feed_validator_identity : '' },
     );
     if (!completed) throw new Error(SCHEDULER_LEASE_LOST);
-    await finishSourceJob(sql, claimToken, "ok", "", fetched.length, itemsNew, meta);
+    const invalid = (collected.rejected_entries ?? 0) + fetched.filter(item=>!item.external_id).length;
+    await finishSourceJob(sql, claimToken, "ok", "", fetched.length + (collected.rejected_entries ?? 0), itemsNew, meta,
+      {items_updated:itemsUpdated, items_invalid:invalid, bytes:collected.bytes, coverage:collected.coverage});
     return { items_new: itemsNew };
   });
 }
@@ -387,11 +394,13 @@ export async function runSourceJob(
   const source = mapSource(raw);
 
   let jobCreated = false;
+  const metrics = {bytes: null as number | null};
   let meta: CollectorMeta = { provider: "", attempts: [], paid_call: false };
+  let collected: CollectorBatch | undefined;
   try {
     await sql.query(
-      `insert into jobs (id, source_id, platform, status, kind) values ($1,$2,$3,'running',$4)`,
-      [jobId, source.id, source.platform, kind],
+      `insert into jobs (id, source_id, platform, status, kind, adapter) values ($1,$2,$3,'running',$4,$5)`,
+      [jobId, source.id, source.platform, kind, source.adapter],
     );
     jobCreated = true;
     const record: SourceRecord = {
@@ -410,7 +419,8 @@ export async function runSourceJob(
       last_external_id: source.last_external_id,
       scan_state: asJson<SourceRecord["scan_state"]>(raw.scan_state, { bootstrap: "latest" }),
     };
-    const collected = await collectSource(record, io);
+    collected = await collectSource(record, {...io, metrics});
+    collected.bytes = metrics.bytes;
     meta = collected.meta;
     const {items_new} = await persistCollectedBatch(sql, record, jobId, collected);
     return {items_found: collected.items.length, items_new, error: ""};
@@ -428,7 +438,10 @@ export async function runSourceJob(
       if (conflict) await tx.query(`insert into collection_identity_conflicts(source_id,kind,evidence)
         values($1,$2,$3::jsonb)`,[source.id,conflict.kind,JSON.stringify(conflict.evidence)]);
       await failSourceClaim(tx, source.id, jobId, err);
-      if (jobCreated) await finishSourceJob(tx, jobId, "error", message, 0, 0, meta);
+      if (jobCreated) await finishSourceJob(tx, jobId, "error", message,
+        collected ? collected.items.length+(collected.rejected_entries ?? 0) : null,0,meta,
+        {bytes:metrics.bytes,coverage:collected?.coverage,items_updated:collected ? 0 : undefined,
+          items_invalid:collected ? (collected.rejected_entries ?? 0)+collected.items.filter(item=>!item.external_id).length : undefined});
       return message;
     });
     return { items_found: 0, items_new: 0, error: jobError };
@@ -456,19 +469,21 @@ export async function runKeywordJob(
   const kw = mapKeyword(raw);
 
   let jobCreated = false;
+  const metrics = {bytes:null as number | null};
   try {
     await sql.query(
-      `insert into jobs (id, source_id, platform, status, kind, keyword_id)
-       values ($1,$2,'rss','running',$3,$4)`,
+      `insert into jobs (id, source_id, platform, status, kind, keyword_id, adapter)
+       values ($1,$2,'rss','running',$3,$4,'keyword_index')`,
       [jobId, RADAR_SOURCE_ID, kind, kw.id],
     );
     jobCreated = true;
-    const batch = await collectKeyword(kw.phrase, kw.platforms, io);
+    const batch = await collectKeyword(kw.phrase, kw.platforms, {...io,metrics});
     const fetched = batch.items;
-    let itemsNew = 0;
+    let itemsNew = 0, itemsUpdated = 0;
     for (const it of fetched) {
       const result = await persistHit(it, kw.phrase, "rss");
       if (result === "new") itemsNew += 1;
+      if (result === 'tagged') itemsUpdated += 1;
     }
     const localTagged = await tagCorpusWithPhrase(kw.phrase, { platforms: kw.platforms });
     const hits = await recountKeywordHits(kw.phrase, false);
@@ -495,9 +510,14 @@ export async function runKeywordJob(
       return { items_found: 0, items_new: 0, error: SCHEDULER_LEASE_LOST, phrase: kw.phrase };
     }
     await sql.query(
-      `update jobs set status = $5, finished_at = now(), items_found = $2, items_new = $3, error = $4
+      `update jobs set status = $5, finished_at = now(), items_found = $2, items_new = $3, error = $4,
+         duration_ms=greatest(0,floor(extract(epoch from(now()-started_at))*1000))::bigint,
+         items_updated=$6, bytes=$7, attempts=$8::jsonb,
+         error_code=(select last_error_code from keywords where id=jobs.keyword_id),
+         retry_at=(select next_attempt_at from keywords where id=jobs.keyword_id)
        where id = $1`,
-      [jobId, fetched.length + localTagged, itemsNew, note, jobStatus],
+      [jobId, fetched.length + localTagged, itemsNew, note, jobStatus,itemsUpdated+localTagged,metrics.bytes,
+        JSON.stringify(batch.attempts.map(attempt=>attempt.source))],
     );
     return { items_found: fetched.length + localTagged, items_new: itemsNew, error: note, phrase: kw.phrase };
   } catch (err) {
@@ -506,8 +526,12 @@ export async function runKeywordJob(
     const jobError = released ? message : SCHEDULER_LEASE_LOST;
     if (jobCreated) {
       await sql.query(
-        `update jobs set status = 'error', finished_at = now(), error = $2 where id = $1`,
-        [jobId, jobError],
+        `update jobs set status = 'error', finished_at = now(), error = $2,
+          duration_ms=greatest(0,floor(extract(epoch from(now()-started_at))*1000))::bigint,
+          items_found=null,items_updated=null,bytes=$3,error_code=case when $4::boolean then
+            (select last_error_code from keywords where id=jobs.keyword_id) else 'scheduler_lease_lost' end,
+          retry_at=(select next_attempt_at from keywords where id=jobs.keyword_id) where id = $1`,
+        [jobId, jobError,metrics.bytes,released],
       );
     }
     return { items_found: 0, items_new: 0, error: jobError, phrase: kw.phrase };

@@ -67,6 +67,16 @@ test("real scheduler manual and keyword entrances preserve partial Retry-After a
     assert.equal(kw.consecutive_failures, 1);
     assert.ok(new Date(kw.next_attempt_at).getTime() > Date.now() + 47 * 3600000);
     assert.equal(new Date(kw.last_success_at).toISOString(), "2026-01-01T00:00:00.000Z");
+    const {mapJob,getCollectionHealth} = await vite.ssrLoadModule('/src/lib/server/queries.ts');
+    const keywordJob = mapJob((await sql.query(`select * from jobs where keyword_id='kw' order by started_at desc limit 1`))[0]);
+    assert.equal(keywordJob.status,'ok','partial upstream failure retains T08 outcome');
+    assert.equal(keywordJob.adapter,'keyword_index');assert.equal(keywordJob.error_code,'rate_limited');
+    assert.ok(keywordJob.duration_ms>=0);assert.ok(keywordJob.bytes>0);
+    assert.equal(keywordJob.items_updated,0);assert.equal(keywordJob.items_invalid,null);assert.equal(keywordJob.coverage,null);
+    assert.equal(keywordJob.attempts.length,3);assert.ok(Date.parse(keywordJob.retry_at)>Date.now()+47*3600000);
+    const diagnostics = await getCollectionHealth();
+    const keywordRate = diagnostics.adapter_jobs.find((row:any)=>row.adapter==='keyword_index');
+    assert.equal(keywordRate.failed,1);assert.equal(keywordRate.total,1,'partial upstream failure belongs to job error numerator');
     const after = calls;
     assert.match((await runKeywordJob("kw", "manual", io)).error, /冷却/);
     assert.equal(calls, after);

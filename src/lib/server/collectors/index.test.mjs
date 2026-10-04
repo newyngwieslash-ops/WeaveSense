@@ -126,7 +126,7 @@ test("gateway byte caps and cancellation retain collector errors without replayi
     const controller = new AbortController();
     /** @type {string[]} */
     const fallbackUrls = [];
-    const io = { signal: controller.signal, transport: async (url) => {
+    const io = { signal: controller.signal, transport: async (/** @type {URL} */ url) => {
       fallbackUrls.push(url.href);
       return { status: 200, headers: {}, body: new Response("").body };
     } };
@@ -203,7 +203,7 @@ test("adapters using an explicit RSS URL do not replay its failed request", asyn
       await assert.rejects(() => collectSource({ id: "source", platform: "rss", name: "source", handle: "", url: "",
         feed_url: "https://feed.example/", adapter }, {
         resolver: { async lookup() { return [{ address: "1.1.1.1", family: 4 }]; } },
-        transport: async (url) => { urls.push(url.href); return { status: 503, headers: {}, body: new Response("failed").body }; },
+        transport: async (/** @type {URL} */ url) => { urls.push(url.href); return { status: 503, headers: {}, body: new Response("failed").body }; },
       }), { code: "http_error", status: 503 });
       assert.deepEqual(urls, ["https://feed.example/"], adapter);
     }

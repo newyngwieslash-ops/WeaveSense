@@ -59,6 +59,7 @@ export type CollectorCoverage = {
 };
 
 export type CollectorBatch = {
+  bytes?: number | null;
   items: NormalizedItem[];
   not_modified?: boolean;
   feed_validators?: { etag: string; last_modified: string };

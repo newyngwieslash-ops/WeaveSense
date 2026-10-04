@@ -22,6 +22,7 @@ test("persisted retries fence scheduled/manual workers, survive reopen, and succ
       `create table ${table} (id text primary key, enabled boolean default true, status text default 'idle', last_error text default '', last_scanned_at timestamptz, interval_minutes int default 30, claim_token text default '', claimed_at timestamptz, last_external_id text default '', last_published_at timestamptz, has_more boolean default false, hits int default 0)`,
     );
   await pg.exec(readFileSync("migrations/0023_collection_retry.sql", "utf8"));
+  await pg.exec('alter table sources add column last_content_at timestamptz');
   const sql = {
     async query<T>(text: string, params: unknown[] = []): Promise<T[]> {
       return (await pg.query<T>(text, params)).rows;
