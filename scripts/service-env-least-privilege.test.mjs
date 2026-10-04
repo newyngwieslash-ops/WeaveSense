@@ -18,7 +18,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { SERVICE_VARS } from "./write-service-envs.mjs";
+import { SERVICE_VARS, REQUIRED_VARS, serviceEnvs } from "./write-service-envs.mjs";
 
 const compose = readFileSync(new URL("../docker-compose.yml", import.meta.url), "utf8");
 
@@ -63,28 +63,21 @@ test("no service reads a single shared credentials file", () => {
   );
 });
 
-test("credential variables are not interpolated from the command line", () => {
+test("per-service variables are not overridden by Compose environment interpolation", () => {
   // Interpolated credentials are what caused the T24 incident: `compose up` injects
   // command-line variables into every related service. They must come from env_file.
-  for (const name of ["POSTGRES_PASSWORD", "MINIO_ROOT_PASSWORD", "CRON_SECRET", "WECHAT_GATEWAY_TOKEN"]) {
-    assert.ok(
-      !new RegExp(`\\$\\{${name}[:?]`).test(compose),
-      `${name} must not be interpolated (use env_file)`,
-    );
+  const blocks = serviceBlocks(compose);
+  for (const [service, names] of Object.entries(SERVICE_VARS)) {
+    for (const name of names) assert.ok(!blocks[service].some((line) => new RegExp(`^      ${name}:`).test(line)), `${service}:${name} must come only from its env_file`);
   }
 });
 
-test("each service env file declares only that service's variables", () => {
-  // 文件由 write-service-envs.mjs 生成；这里只校验**变量名集合**，不读值。
+test("synthetic service env files declare only that service's variables", () => {
+  const values = Object.fromEntries(Object.values(SERVICE_VARS).flat().map((name) => [name, "SYNTHETIC_ONLY"]));
+  values.UNRELATED_SECRET = "MUST_NOT_BE_ROUTED";
+  const files = serviceEnvs(values);
   for (const [service, names] of Object.entries(SERVICE_VARS)) {
-    let text;
-    try {
-      text = readFileSync(`F:/loom-backups/env/${service}.env`, "utf8");
-    } catch {
-      // 凭据文件在工作树外、可能不在（如新开发机）。守护测试只在它存在时校验内容，
-      // 上面的 compose 断言仍会强制"每服务一个文件"的结构。
-      continue;
-    }
+    const text = files[service];
     const declared = text.split(/\r?\n/)
       .map((line) => /^([A-Z_][A-Z0-9_]*)=/.exec(line)?.[1])
       .filter(Boolean);
@@ -94,6 +87,25 @@ test("each service env file declares only that service's variables", () => {
       `${service}.env must declare exactly ${names.join(", ")}`,
     );
   }
+});
+
+test("optional provider absence only disables its capability and app depends only on the database", () => {
+  const files = serviceEnvs({ ...Object.fromEntries(REQUIRED_VARS.map((name) => [name, "SYNTHETIC_ONLY"])), TELEGRAM_API_HASH: '""', XAI_API_KEY: "''" });
+  assert.ok(!files.telethon.includes("TELEGRAM_API_HASH"));
+  assert.ok(!files["wechat-gateway"].includes("DAJIALA_KEY"));
+  assert.ok(!files.app.includes("MINIO_SECRET_KEY"));
+  assert.ok(!files.app.includes("XAI_API_KEY"));
+  const app = serviceBlocks(compose).app.join("\n");
+  const dependencies = app.split("    depends_on:")[1]?.split("    healthcheck:")[0];
+  assert.match(dependencies, /postgres:\s*\n\s*condition: service_healthy/);
+  for (const service of ["telethon", "minio", "wechat-gateway"]) assert.ok(!dependencies.includes(`${service}:`));
+  assert.ok(!compose.includes("${XAI_API_KEY"), "the optional agent profile also must not implicitly borrow the app provider key");
+});
+
+test("writer fails missing core variables before emitting files, without disclosing values", () => {
+  assert.throws(() => serviceEnvs({ DATABASE_URL: "SECRET_TEST" }), (error) => error.message.includes("POSTGRES_PASSWORD") && !error.message.includes("SECRET_TEST"));
+  assert.throws(() => serviceEnvs(Object.fromEntries(REQUIRED_VARS.map((name) => [name, name === "POSTGRES_PASSWORD" ? '""' : "SYNTHETIC_ONLY"]))), /POSTGRES_PASSWORD/);
+  assert.throws(() => serviceEnvs(Object.fromEntries(REQUIRED_VARS.map((name) => [name, name === "MINIO_ROOT_PASSWORD" ? "" : "SYNTHETIC_ONLY"]))), /MINIO_ROOT_PASSWORD/);
 });
 
 test("no credential appears in the repository tree", () => {

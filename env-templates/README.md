@@ -22,7 +22,7 @@ cp env-templates/*.env /f/loom-backups/env/
 #    MINIO_SECRET_KEY = minio.env 的 MINIO_ROOT_PASSWORD
 
 # 3. Telegram：到 https://my.telegram.org 申请 api_id / api_hash，
-#    写进项目根 .env（gitignored）——compose 用 ${TELEGRAM_API_ID:-} 插值读取：
+#    只写进工作树外的 telethon.env（不要重复写进 Compose environment）：
 #    TELEGRAM_API_ID=...
 #    TELEGRAM_API_HASH=...
 
@@ -30,7 +30,8 @@ cp env-templates/*.env /f/loom-backups/env/
 #    compose 挂载 F:/loom-backups/model-config -> /app/config。
 #    最小内容是一份 model.local.json（含 baseURL/model/apiKey）。
 
-# 5. 首次登录 Telegram 会话（之后写在 telethon-session volume，无需重复）
+# 5. 仅在需要 Telegram 工作器且凭据已填写时，主动完成首次登录。
+#    会话写在 telethon-session volume，无需重复；预检不会发起登录。
 docker compose run --rm -it telethon python login.py
 
 # 6. 起全栈
@@ -45,19 +46,58 @@ docker compose up --build
 | `minio.env` | `MINIO_ROOT_USER/PASSWORD` | 是 | 自定强密码 |
 | `minio-init.env` | `MINIO_ROOT_USER/PASSWORD` + `MINIO_BUCKET` | 是 | 与 minio.env 一致；bucket 建议 `loom` |
 | `app.env` | `DATABASE_URL` | 是 | `postgres://<user>:<pwd>@postgres:5432/<db>`，密码与 postgres.env 一致 |
-| | `MINIO_ACCESS_KEY/SECRET_KEY` | 是 | 与 minio.env 的 ROOT_USER/PASSWORD 一致 |
-| | `MINIO_BUCKET` / `MINIO_PUBLIC_URL` | 是 | `loom` / `http://127.0.0.1:9000/loom` |
-| | `CRON_SECRET` | 是 | `<GEN>`；app 与 scheduler.env 必须相同 |
-| | `WECHAT_GATEWAY_TOKEN` | 是 | `<GEN>`；与 wechat-gateway.env 相同 |
+| | `MINIO_ACCESS_KEY/SECRET_KEY` | 媒体上传需要 | 与 minio.env 的 ROOT_USER/PASSWORD 一致；缺失不影响文本采集 |
+| | `MINIO_BUCKET` / `MINIO_PUBLIC_URL` | 媒体需要 | `loom` / `http://127.0.0.1:9000/loom` |
+| | `CRON_SECRET` | 自动调度需要 | `<GEN>`；app 与 scheduler.env 必须相同；缺失不禁用手动文本阅读 |
+| | `WECHAT_GATEWAY_TOKEN` | 微信接入需要 | `<GEN>`；与 wechat-gateway.env 相同 |
+| | `XAI_API_KEY` | 否 | OCR/ASR；缺失只关闭此供应商能力，模型档案另行配置 |
 | `scheduler.env` | `CRON_SECRET` | 是 | 与 app.env 相同 |
-| `telethon.env` | `MINIO_ACCESS_KEY/SECRET_KEY/BUCKET/PUBLIC_URL` | 是 | 与 app.env 一致（媒体上传用） |
+| `telethon.env` | `MINIO_ACCESS_KEY/SECRET_KEY/BUCKET/PUBLIC_URL` | 媒体上传需要 | 与 app.env 一致 |
+| | `TELEGRAM_API_ID/HASH` | 工作器需要 | 凭据存在不代表会话已登录；缺失仍可使用公开频道回退 |
+| | `TELEGRAM_SESSION` | 否 | 可选字符串会话；默认使用 volume 内 `/data/loom.session` |
+| | `TELETHON_CONCURRENCY` | 否 | 默认 `3`，按服务文件配置 |
 | `wechat-gateway.env` | `WECHAT_GATEWAY_TOKEN` | 是 | 与 app.env 相同 |
 | | `WECHAT_PRIMARY_ALLOWED_HOSTS` | 是 | 可信主源域名（不含协议/端口，逗号分隔）。本机 wewe-rss 部署填 `host.docker.internal`；自建 RSSHub 填其域名 |
-| 根 `.env`（模板 `.env.example`） | `TELEGRAM_API_ID/HASH` | 生产是 | Telegram 采集；不填则公开频道回退 t.me/s |
+| | `DAJIALA_KEY/VERIFYCODE` | 否 | 付费兜底只从此服务文件读取；密钥缺失关闭付费兜底 |
+| | `DAJIALA_BASE_URL/DAILY_BUDGET_RMB/DAILY_CALL_LIMIT` | 否 | 保留供应商默认地址、每日预算与调用硬上限，可在此文件覆盖 |
+| | `DAJIALA_LIST_COST_RMB/DETAIL_COST_RMB` | 付费调用需要 | 经核实的每次费用上界；留空时拒绝付费调用，不猜价格 |
 
-可选（写入 wechat-gateway 的 `environment` 或用 compose 默认）：
-`DAJIALA_KEY`/`DAJIALA_VERIFYCODE`（极致了付费兜底）、`DAJIALA_DAILY_BUDGET_RMB`、
-`DAJIALA_DAILY_CALL_LIMIT`、`XAI_API_KEY`（OCR/ASR）、`AI_ENGINE`。
+凭据的唯一来源是对应的服务文件：`TELEGRAM_*` → `telethon.env`，
+`DAJIALA_*` → `wechat-gateway.env`，`XAI_API_KEY` → `app.env`。
+不要在 `environment` 中再次声明这些字段，空插值与默认值都会覆盖 `env_file`。
+可选 agent profile 保持单独显式配置：启用时需要自己的 `AGENT_MODEL_API_KEY`，
+不再隐式借用 `XAI_API_KEY`。
+
+若从组合来源生成文件，`node scripts/write-service-envs.mjs --check` 只打印变量名，
+不打印值、不写文件；不带 `--check` 才写入。缺失 Telegram/付费/xAI 变量会被省略，
+不会阻止生成。当前 Compose 默认启用 Postgres、MinIO、微信网关与调度器，因此
+生成器继续要求它们的基础凭据；尤其不能生成缺失 MinIO ROOT 凭据的文件，避免使用
+服务默认账号。生产 app 只依赖数据库健康，其他能力通过独立诊断判断。
+
+## 接入预检
+
+默认不连接任何服务、不读取凭据文件、不登录、不采集；输出仅含 `code/ready`。
+使用 Node 自带 `--env-file` 显式加载运维选定的文件，或在相应容器环境运行：
+
+```bash
+node --experimental-strip-types scripts/collection-preflight.mjs
+# 显式在线诊断：仅固定健康端点，各请求最多 3 秒、响应最多 16 KiB、禁止重定向。
+node --experimental-strip-types scripts/collection-preflight.mjs --probe-workers
+# 显式出口诊断：仅请求固定 example.com，复用公共 URL/DNS 固定/SSRF/体积限制。
+node --experimental-strip-types scripts/collection-preflight.mjs --probe-egress
+```
+
+检查范围以进程实际注入的变量为准：app 不应持有 Telegram/付费供应商凭据；
+其结果中对应的凭据行缺失不代表 worker 文件也缺失。Telegram 的
+`telegram_credentials` 仅代表字段存在，`telegram_session` 仅代表字符串会话或
+指定会话文件存在；`telegram_worker_endpoint` 仅代表地址配置有效。
+只有显式 probe 的 `telegram_worker_connectivity` 和 `telegram_session_authorized`
+才报告当前健康端点状态；连接失败时输出 `telegram_session_authorization_unchecked`。
+微信 probe 只调用 `/v1/health`，不会访问 feed、ACK、对账或付费 API。
+数据库与 MinIO 行是配置检查，不宣称数据库鉴权、桶权限或上游采集已经成功。
+`collection_egress_policy` 检查声明范围是否可被现有安全策略接受，未声明表示默认
+公共出口策略；只有显式出口 probe 才报告该固定目标的当前连接结果。
+默认退出码仅因数据库配置缺失而失败；显式在线 probe 失败也返回非零。
 
 ## 网络出口注意（2026-09-30 事故教训）
 

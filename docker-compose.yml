@@ -86,12 +86,8 @@ services:
     env_file:
       - F:/loom-backups/env/telethon.env
     environment:
-      TELEGRAM_API_ID: ${TELEGRAM_API_ID:-}
-      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH:-}
-      TELEGRAM_SESSION: ${TELEGRAM_SESSION:-}
       TELEGRAM_SESSION_PATH: /data/loom.session
       MINIO_ENDPOINT: minio:9000
-      TELETHON_CONCURRENCY: ${TELETHON_CONCURRENCY:-3}
       PORT: "8787"
     volumes:
       - telethon-session:/data
@@ -120,11 +116,6 @@ services:
     env_file:
       - F:/loom-backups/env/wechat-gateway.env
     environment:
-      DAJIALA_KEY: ${DAJIALA_KEY:-}
-      DAJIALA_VERIFYCODE: ${DAJIALA_VERIFYCODE:-}
-      DAJIALA_BASE_URL: ${DAJIALA_BASE_URL:-https://www.dajiala.com/fbmain/monitor/v3}
-      DAJIALA_DAILY_BUDGET_RMB: ${DAJIALA_DAILY_BUDGET_RMB:-20}
-      DAJIALA_DAILY_CALL_LIMIT: ${DAJIALA_DAILY_CALL_LIMIT:-250}
       GATEWAY_DB_PATH: /data/wechat-gateway.sqlite
       PORT: "8790"
     volumes:
@@ -159,7 +150,8 @@ services:
       AGENT_SERVICE_TOKEN: ${AGENT_SERVICE_TOKEN:-}
       AGENT_MODEL_BASE_URL: ${AGENT_MODEL_BASE_URL:-https://api.x.ai/v1}
       AGENT_MODEL_NAME: ${AGENT_MODEL_NAME:-grok-4.5}
-      AGENT_MODEL_API_KEY: ${AGENT_MODEL_API_KEY:-${XAI_API_KEY:-}}
+      # Optional agent profile requires its own explicit model credential.
+      AGENT_MODEL_API_KEY: ${AGENT_MODEL_API_KEY:-}
       AGENT_DATA_URL: ${AGENT_DATA_URL:-http://app:8080/api/internal/agent-data}
       AGENT_DATA_TOKEN: ${AGENT_DATA_TOKEN:-}
       AGENT_SKILLS_DIR: /app/skills
@@ -216,7 +208,6 @@ services:
       LOOM_MODEL_MANAGE_ALLOWED: "true"
       TELEGRAM_WORKER_URL: http://telethon:8787
       MINIO_ENDPOINT: http://minio:9000
-      XAI_API_KEY: ${XAI_API_KEY:-}
       TICK_LIMIT: ${TICK_LIMIT:-20}
       CRON_TICK_LIMIT: ${CRON_TICK_LIMIT:-200}
       EXTRACT_AUTO: ${EXTRACT_AUTO:-false}
@@ -243,12 +234,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      telethon:
-        condition: service_started
-      minio:
-        condition: service_started
-      wechat-gateway:
-        condition: service_started
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s

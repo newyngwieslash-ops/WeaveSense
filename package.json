@@ -10,6 +10,7 @@
     "test:manual-fixes": "node --experimental-strip-types --test src/lib/server/legacy-output.test.ts src/lib/server/text-cleaning.test.ts src/lib/server/analyze.test.ts src/lib/server/queries.test.ts src/lib/server/rss.test.ts src/lib/server/model-config.test.ts",
     "model:setup": "node scripts/model-setup.mjs",
     "test:model-settings": "node --experimental-strip-types --test src/lib/server/model-config.test.ts",
+    "test:collection-config": "node scripts/readiness-offline.mjs -- node --experimental-strip-types --test scripts/collection-preflight.test.mjs scripts/service-env-least-privilege.test.mjs",
     "dev": "node scripts/with-app-env.mjs vite dev --host 0.0.0.0 --port 8080",
     "start": "node scripts/migrate.mjs && node scripts/with-app-env.mjs vite preview --host 0.0.0.0 --port 8080",
     "build": "node scripts/with-app-env.mjs vite build && npm run db:migrate && node scripts/copy-pglite-assets.mjs",
