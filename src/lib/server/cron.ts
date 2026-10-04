@@ -18,6 +18,8 @@ const GATEWAY_RECONCILIATION_KEYS = new Set([
 export const CRON_SERVER_BUDGET_MS = 720_000;
 export const CRON_SOURCE_RESERVE_MS = 100_000;
 export const CRON_INGEST_RESERVE_MS = 55_000;
+// Worker request (including local queue) 130s + trusted verification 30s + legacy PUT 30s + bookkeeping.
+export const CRON_TELEGRAM_INGEST_RESERVE_MS = 195_000;
 export const CRON_EXTRACT_RESERVE_MS = 460_000;
 export const CRON_GATEWAY_RESERVE_MS = 125_000;
 export const CRON_SOURCE_CONCURRENCY = 9;

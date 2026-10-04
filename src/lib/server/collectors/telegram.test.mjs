@@ -215,7 +215,7 @@ test("Telethon health rejects truthy authorization and oversized JSON", async ()
   delete process.env.TELEGRAM_WORKER_URL;
 });
 
-test("worker audio history is normalized to file without losing its attachment", async () => {
+test("worker audio history preserves the audio kind and attachment", async () => {
   process.env.TELEGRAM_WORKER_URL = "http://telethon:8787";
   const originalFetch = globalThis.fetch;
   const audio = { external_id: "7", title: "voice", body: "caption", author: "channel", url: "https://t.me/channel/7",
@@ -227,7 +227,7 @@ test("worker audio history is normalized to file without losing its attachment",
     const { fetchTelethonHistory } = await vite.ssrLoadModule("/src/lib/server/telethon.ts");
     const items = await fetchTelethonHistory("channel", "0");
     assert.equal(items.length, 2);
-    assert.equal(items[0].media_type, "file");
+    assert.equal(items[0].media_type, "audio");
     assert.deepEqual(items[0].media_urls, audio.media_urls);
     assert.equal(items[0].extra.mime_type, "audio/ogg");
     assert.equal(items[0].extra.telegram_id, 7);
@@ -237,6 +237,87 @@ test("worker audio history is normalized to file without losing its attachment",
     await vite.close();
     globalThis.fetch = originalFetch;
     delete process.env.TELEGRAM_WORKER_URL;
+  }
+});
+
+test("Telegram attachment metadata is validated and canonicalized without media IO", async () => {
+  process.env.TELEGRAM_WORKER_URL = "http://telethon:8787";
+  const originalFetch = globalThis.fetch;
+  const valid = { external_id: "101", title: "attachment", body: "caption", author: "channel", url: "https://t.me/channel/101",
+    media_type: "audio", media_urls: [], thumbnail_url: "", views: null, likes: null, published_at: null,
+    extra: { forwards: 4, telegram_media: { channel: "Channel", message_id: "101", kind: "audio", size: 6 } } };
+  /** @type {any} Deliberately malformed wire fixtures below. */
+  let payload = valid;
+  globalThis.fetch = async (input) => {
+    assert.equal(String(input), "http://telethon:8787/v1/history");
+    return json({ items: [payload] });
+  };
+  const { vite } = await loadCollector();
+  try {
+    const { fetchTelethonHistory } = await vite.ssrLoadModule("/src/lib/server/telethon.ts");
+    const [item] = await fetchTelethonHistory("channel", "0");
+    assert.equal(item.media_type, "audio");
+    assert.deepEqual(item.media_urls, ["telegram://channel/101"]);
+    assert.deepEqual(item.extra.telegram_media, { channel: "channel", message_id: "101", kind: "audio", size: 6 });
+    assert.equal(item.likes, null); assert.equal(item.extra.forwards, 4);
+    for (const extra of [null, {}, { channel: "otherchannel", message_id: "101", kind: "audio", size: 6 },
+      { channel: "channel", message_id: "102", kind: "audio", size: 6 },
+      { channel: "channel", message_id: "101", kind: "image", size: 6 },
+      { channel: "channel", message_id: "101", kind: "audio", size: -1 }]) {
+      payload = { ...valid, extra: { ...valid.extra, telegram_media: extra } };
+      await assert.rejects(fetchTelethonHistory("channel", "0"), { code: "invalid_response" });
+    }
+    payload = { ...valid, extra: {}, media_urls: ["telegram://channel/101"] };
+    await assert.rejects(fetchTelethonHistory("channel", "0"), { code: "invalid_response" });
+  } finally {
+    await vite.close(); globalThis.fetch = originalFetch; delete process.env.TELEGRAM_WORKER_URL;
+  }
+});
+
+test("serialized media leaves history a host permit and cancelled waiters cannot release predecessors", async () => {
+  process.env.TELEGRAM_WORKER_URL = "http://telethon:8787";
+  process.env.TELEGRAM_MEDIA_TOKEN = "synthetic";
+  const originalFetch = globalThis.fetch;
+  /** @type {Array<(response: Response) => void>} */
+  const releases = [];
+  let mediaCalls = 0;
+  globalThis.fetch = async (input) => {
+    if (String(input).endsWith("/v1/history")) return json({ items: [] });
+    assert.equal(String(input), "http://telethon:8787/v1/media");
+    mediaCalls++;
+    return new Promise(resolve => releases.push(resolve));
+  };
+  const { vite } = await loadCollector();
+  try {
+    const { fetchTelethonMedia, fetchTelethonHistory } = await vite.ssrLoadModule("/src/lib/server/telethon.ts");
+    const result = { object_key: "telegram/channel/101", content_type: "image/jpeg", bytes: 1, sha256: "a".repeat(64) };
+    const first = fetchTelethonMedia("telegram://channel/101");
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(mediaCalls, 1);
+    const controller = new AbortController();
+    const cancelled = fetchTelethonMedia("telegram://channel/101", controller.signal);
+    const cancellation = assert.rejects(cancelled, { code: "aborted" });
+    controller.abort();
+    await cancellation;
+    const third = fetchTelethonMedia("telegram://channel/101");
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(mediaCalls, 1);
+    assert.equal((await fetchTelethonHistory("channel", "0", 80, AbortSignal.timeout(200))).length, 0);
+    releases.shift()?.(json(result));
+    await first;
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(mediaCalls, 2);
+    releases.shift()?.(json({ error: "unavailable" }, 503));
+    await assert.rejects(third, { status: 503 });
+    const afterError = fetchTelethonMedia("telegram://channel/101");
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(mediaCalls, 3);
+    releases.shift()?.(json(result));
+    assert.deepEqual(await afterError, result);
+  } finally {
+    for (const release of releases) release(json({}, 503));
+    await vite.close(); globalThis.fetch = originalFetch;
+    delete process.env.TELEGRAM_WORKER_URL; delete process.env.TELEGRAM_MEDIA_TOKEN;
   }
 });
 

@@ -3,9 +3,12 @@ import { guessKind } from "./media-kind.ts";
 import { getSql, type Queryable, type Sql } from "@/lib/db";
 import { shortId } from "@/lib/utils";
 import { asJson } from "./serialize";
-import { minioConfigured } from "./config";
+import { minioConfigured, prod } from "./config";
 import { publicFetch, CollectionHttpError } from "./outbound-policy.ts";
-import { putObject } from "./storage";
+import { putObject, getObject, objectPublicUrl } from "./storage";
+import { telegramMediaLocator, fetchTelethonMedia } from "./telethon";
+import { CRON_INGEST_RESERVE_MS, CRON_TELEGRAM_INGEST_RESERVE_MS } from "./cron";
+import { stageWindowKey, STAGE_CLAIM_TIMEOUT_MINUTES } from "./stage-windows";
 import type { FetchIo } from "./http.ts";
 
 /**
@@ -25,8 +28,10 @@ export async function enqueueItemMedia(
 ): Promise<number> {
   sql ??= await getSql();
   let n = 0;
-  for (const url of urls.slice(0, 8)) {
-    if (!url) continue;
+  for (const source of urls.slice(0, 8)) {
+    if (!source) continue;
+    const locator = /^telegram:/i.test(source) ? telegramMediaLocator(source) : undefined;
+    const url = locator ? `telegram://${locator.channel}/${locator.message_id}` : source;
     const inserted = await sql.query(
       `insert into media_objects (id, item_id, source_url, kind, status, public_url)
        values ($1,$2,$3,$4,'remote',$3)
@@ -41,6 +46,32 @@ export async function enqueueItemMedia(
 // Initial attempt + three automatic retries. Expired claims consume attempts too.
 const RETRY_MS = [60_000, 300_000, 900_000];
 export const MEDIA_LEASE_MS = 5 * 60_000;
+
+/** Advisory metadata only; shared claim still fences races and enforces the selected cost class. */
+export async function mediaIngestPlan(sql: Queryable, now: number, allowTelegram = true): Promise<{
+  reserveMs: number; allowTelegram: boolean; deferred: boolean;
+}> {
+  const baseline = { reserveMs: CRON_INGEST_RESERVE_MS, allowTelegram: false, deferred: false };
+  if (!minioConfigured()) return baseline;
+  const [window] = await sql.query<{ status: string; claimed_at: Date | string }>(
+    "select status,claimed_at from stage_windows where stage='ingest' and window_key=$1",
+    [stageWindowKey("ingest", now)],
+  );
+  if (window && (window.status !== "claimed" || new Date(window.claimed_at).getTime() > now - STAGE_CLAIM_TIMEOUT_MINUTES * 60_000)) return baseline;
+  const at = new Date(now).toISOString(), expired = new Date(now - MEDIA_LEASE_MS).toISOString();
+  const query = `select source_url from media_objects where attempts<4
+    and ($3::boolean or source_url !~* '^telegram:') and (
+      (status='remote' and (next_attempt_at is null or next_attempt_at<=$1::timestamptz))
+      or (status='error' and next_attempt_at<=$1::timestamptz)
+      or (status='running' and (claimed_at is null or claimed_at<=$2::timestamptz)))
+    order by created_at,id limit 1`;
+  const [next] = await sql.query<{ source_url: string }>(query,
+    [at, expired, Boolean(prod.telegramWorkerUrl && prod.telegramMediaToken)]);
+  if (!next || !/^telegram:/i.test(next.source_url)) return baseline;
+  if (allowTelegram) return { reserveMs: CRON_TELEGRAM_INGEST_RESERVE_MS, allowTelegram: true, deferred: false };
+  const publicRows = await sql.query(query, [at, expired, false]);
+  return { ...baseline, deferred: publicRows.length === 0 };
+}
 
 export type MediaRow = {
   id: string;
@@ -65,6 +96,7 @@ export async function claimMedia(
   sql: Queryable,
   token: string,
   now = Date.now(),
+  allowTelegram = true,
 ): Promise<MediaRow | null> {
   if (!token || !Number.isFinite(now)) throw new Error("invalid_media_claim");
   const at = new Date(now).toISOString(),
@@ -79,16 +111,21 @@ export async function claimMedia(
   );
   const [row] = await sql.query<MediaRow>(
     `with candidate as (
-      select id from media_objects where attempts < 4 and (
+      select id from media_objects where attempts < 4
+        and ($4::boolean or source_url !~* '^telegram:') and (
         (status='remote' and (next_attempt_at is null or next_attempt_at <= $2::timestamptz))
         or (status='error' and next_attempt_at <= $2::timestamptz)
         or (status='running' and (claimed_at is null or claimed_at <= $3::timestamptz)))
       order by created_at,id for update skip locked limit 1
     ) update media_objects m set status='running', attempts=m.attempts+1,
       claim_token=$1,claimed_at=$2::timestamptz,next_attempt_at=null,
-      object_key=case when m.object_key='' then m.item_id || '/' || m.id else m.object_key end
+      object_key=case when m.object_key<>'' then m.object_key
+        when m.source_url ~ '^telegram://[A-Za-z0-9_]{5,32}/[1-9][0-9]*$'
+          and length(split_part(m.source_url,'/',4))<=320
+          then 'telegram/' || lower(substring(m.source_url from 12))
+        else m.item_id || '/' || m.id end
     from candidate c where m.id=c.id returning m.*`,
-    [token, at, expired],
+    [token, at, expired, allowTelegram && Boolean(prod.telegramWorkerUrl && prod.telegramMediaToken)],
   );
   return row ?? null;
 }
@@ -116,6 +153,7 @@ export async function ingestPending(
   limit = 6,
   io: Pick<FetchIo, "resolver" | "transport"> & {
     now?: () => number;
+    allowTelegram?: boolean;
   } = {},
 ): Promise<{ stored: number; errors: number }> {
   if (!minioConfigured()) return { stored: 0, errors: 0 };
@@ -124,22 +162,31 @@ export async function ingestPending(
   let stored = 0,
     errors = 0;
   for (let n = 0; n < Math.min(20, Math.max(1, Math.floor(limit) || 1)); n++) {
-    const row = await claimMedia(sql, randomUUID(), now());
+    const row = await claimMedia(sql, randomUUID(), now(), io.allowTelegram ?? true);
     if (!row) break;
     try {
-      const fetched = await publicFetch(row.source_url, {
+      const telegram = /^telegram:/i.test(row.source_url) ? await fetchTelethonMedia(row.source_url) : undefined;
+      const fetched = telegram ? await getObject(telegram.object_key) : await publicFetch(row.source_url, {
         timeoutMs: 20000,
         kind: "media",
         as: "bytes",
         resolver: io.resolver,
         transport: io.transport,
       });
+      if ("ok" in fetched && !fetched.ok) throw new CollectionHttpError("storage_http_error", "storage_read_failed", {
+        status: fetched.status, retryAt: fetched.retryAt,
+      });
       const buf = Buffer.from(fetched.bytes ?? new Uint8Array());
-      const contentType = (fetched.contentType || "application/octet-stream").slice(0, 120);
+      const contentType = (telegram?.content_type || ("contentType" in fetched ? fetched.contentType : "") || "application/octet-stream").slice(0, 120);
       const mime = contentType.split(";")[0].trim().toLowerCase();
       const kind = /^(image|audio|video)\//.exec(mime)?.[1] ?? "file";
       const sha = createHash("sha256").update(buf).digest("hex");
-      const put = await putObject(row.object_key, buf, contentType);
+      if (telegram && (telegram.bytes !== buf.length || telegram.sha256 !== sha))
+        throw new CollectionHttpError("media_integrity_mismatch");
+      // A legacy nonempty key is immutable; reuse the one locator object and overwrite its existing destination.
+      const put = telegram?.object_key === row.object_key
+        ? { ok: true, url: objectPublicUrl(row.object_key), status: 200, retryAt: undefined }
+        : await putObject(row.object_key, buf, contentType);
       if (!put.ok)
         throw new CollectionHttpError("storage_http_error", "storage_upload_failed", {
           status: put.status,

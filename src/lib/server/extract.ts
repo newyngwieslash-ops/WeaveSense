@@ -146,7 +146,8 @@ export async function extractPending(limit = 3, io: Pick<FetchIo, "resolver" | "
     `select i.id from items i where i.pipeline_status='ingested' and exists (
        select 1 from (
          (select m.id as target_key,
-           (m.object_key='' or (m.status='stored' and m.content_type<>'')) as ready
+           ((m.object_key='' and m.source_url !~* '^telegram:') or
+             (m.object_key<>'' and m.status='stored' and m.content_type<>'')) as ready
           from media_objects m where m.item_id=i.id order by m.created_at,m.id limit $2)
          union all
          (select 'url:' || encode(sha256(convert_to(u.url,'UTF8')),'hex') as target_key,true as ready

@@ -72,7 +72,7 @@ async function withCollector(fn) {
     configFile: false,
     logLevel: "silent",
     resolve: { alias: { "@": path.resolve("src") } },
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, watch: null },
   });
   try {
     const mod = await vite.ssrLoadModule("/src/lib/server/collectors/index.ts");

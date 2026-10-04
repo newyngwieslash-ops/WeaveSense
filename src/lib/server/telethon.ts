@@ -4,7 +4,7 @@ import { prod, telethonConfigured } from "./config";
 import type { NormalizedItem } from "./collectors/types";
 import { parseTelegramHandle, parseTelegramHandles } from "../telegram-handle";
 import { z } from "zod";
-import { collectionFetch, abortable, CollectionHttpError, collectionHttpError, parseRetryAfter, readCapped, TEXT_MAX_BYTES } from "./outbound-policy.ts";
+import { collectionFetch, abortable, CollectionHttpError, collectionHttpError, parseRetryAfter, readCapped, TEXT_MAX_BYTES, MEDIA_MAX_BYTES } from "./outbound-policy.ts";
 
 export { parseTelegramHandle, parseTelegramHandles };
 
@@ -16,6 +16,8 @@ export type TelethonHealth = {
   status?: number;
   me?: string;
   minio?: boolean;
+  media_available?: boolean;
+  media_error?: string;
   paused_until?: number;
   error?: string;
 };
@@ -25,6 +27,12 @@ const healthSchema = z.object({
   state: z.enum(["unconfigured", "unauthorized", "connecting", "ready", "cooldown", "unavailable"]).optional(),
   retry_after_seconds: z.number().finite().nonnegative().optional(),
   paused_until: z.number().finite().nonnegative().optional(), error: z.string().nullable().optional(),
+  media_available: z.boolean().optional(), media_error: z.string().nullable().optional(),
+});
+const telegramMediaSchema = z.object({
+  channel: z.string().regex(/^[A-Za-z0-9_]{5,32}$/).transform(v => v.toLowerCase()),
+  message_id: z.string().regex(/^[1-9][0-9]{0,319}$/),
+  kind: z.enum(["image", "audio", "video", "file"]), size: z.number().int().nonnegative().nullable(),
 });
 const historySchema = z.object({
   items: z.array(z.object({
@@ -68,6 +76,8 @@ export async function telethonHealth(signal?: AbortSignal): Promise<TelethonHeal
       authorized: body.authorized,
       me: body.me,
       minio: body.minio,
+      media_available: body.media_available,
+      media_error: body.media_error ? "media_unavailable" : undefined,
       paused_until: body.paused_until,
       error: body.error ? `telethon_${state}` : undefined,
     };
@@ -136,11 +146,19 @@ export async function fetchTelethonHistory(
       failure.data.error === "timeout" ? "timeout" : failure.data.error === "membership_required" ? "Telethon membership_required" : `Telethon HTTP ${res.status}`, details);
     const parsed = historySchema.safeParse(json);
     if (!parsed.success) throw new CollectionHttpError("invalid_response");
-    const items = parsed.data.items.map((it) => ({
-      ...it,
-      media_type: it.media_type === "audio" ? "file" : it.media_type,
-      extra: { ...(it.extra ?? {}), ...(it.media_type === "audio" ? { telethon_media_type: "audio" } : {}), collector: "telethon" },
-    }));
+    const items: NormalizedItem[] = parsed.data.items.map((it) => {
+      const attachment = it.extra.telegram_media === undefined ? undefined : telegramMediaSchema.safeParse(it.extra.telegram_media);
+      if (attachment && (!attachment.success || attachment.data.channel !== handle.toLowerCase() ||
+          attachment.data.message_id !== it.external_id || attachment.data.kind !== it.media_type))
+        throw new CollectionHttpError("invalid_response");
+      const locator = attachment?.success ? attachment.data : undefined;
+      if (it.media_urls.some(url => /^telegram:/i.test(url)) && !locator) throw new CollectionHttpError("invalid_response");
+      return { ...it,
+        media_urls: locator ? [`telegram://${locator.channel}/${locator.message_id}`] : it.media_urls,
+        extra: { ...it.extra, ...(locator ? { telegram_media: locator } : {}),
+          ...(it.media_type === "audio" ? { telethon_media_type: "audio" } : {}), collector: "telethon" },
+      };
+    });
     if (items.some(it => telegramMessageId(it.external_id, handle) !== it.external_id)) throw new CollectionHttpError("invalid_response");
     const maximum = maxNumericId(items.map(it => it.external_id)) ?? cursor;
     const boundary = parsed.data.last_id ?? maximum;
@@ -153,5 +171,50 @@ export async function fetchTelethonHistory(
   } catch (error) {
     throw collectionHttpError(error, combined);
   }
+}
+
+/** Strict logical locator, never a public URL or an operator endpoint override. */
+export function telegramMediaLocator(url: string): { channel: string; message_id: string; object_key: string } {
+  const match = /^telegram:\/\/([a-zA-Z0-9_]{5,32})\/([1-9][0-9]{0,319})$/.exec(url);
+  if (!match) throw new CollectionHttpError("invalid_media_locator");
+  const channel = match[1].toLowerCase(), message_id = match[2];
+  return { channel, message_id, object_key: `telegram/${channel}/${message_id}` };
+}
+
+// ponytail: serialize attachments in this server process so the shared host limiter leaves room for history;
+// use distributed admission only if the app gains multiple replicas. The worker also has its own media slot.
+let mediaTail = Promise.resolve();
+
+export async function fetchTelethonMedia(url: string, callerSignal?: AbortSignal): Promise<{ object_key: string; content_type: string; bytes: number; sha256: string }> {
+  const locator = telegramMediaLocator(url);
+  if (!prod.telegramWorkerUrl || !prod.telegramMediaToken) throw new CollectionHttpError("media_unavailable", "media_unavailable", { status: 503 });
+  const deadline = AbortSignal.timeout(130_000);
+  const signal = callerSignal ? AbortSignal.any([callerSignal, deadline]) : deadline;
+  const previous = mediaTail;
+  let release!: () => void;
+  const slot = new Promise<void>(resolve => { release = resolve; });
+  // A cancelled waiter releases only its own link; the tail still waits for its predecessor.
+  mediaTail = previous.then(() => slot);
+  try {
+    await abortable(previous, signal);
+    const res = await abortable(collectionFetch(`${prod.telegramWorkerUrl}/v1/media`, {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${prod.telegramMediaToken}` },
+      body: JSON.stringify({ channel: locator.channel, message_id: locator.message_id }), signal, redirect: "error",
+    }), signal);
+    const text = new TextDecoder().decode(await readCapped(res.body, TEXT_MAX_BYTES, signal));
+    if (!res.ok) throw new CollectionHttpError("telegram_media_http_error", "telegram_media_http_error", {
+      status: res.status, retryAt: parseRetryAfter(res.headers.get("retry-after"), Date.now()) ?? undefined,
+    });
+    let json: unknown;
+    try { json = JSON.parse(text); }
+    catch { throw new CollectionHttpError("invalid_response"); }
+    const parsed = z.object({
+      object_key: z.literal(locator.object_key), content_type: z.string().max(120).regex(/^[\w.+-]+\/[\w.+-]+$/),
+      bytes: z.number().int().positive().max(MEDIA_MAX_BYTES), sha256: z.string().regex(/^[a-f0-9]{64}$/),
+    }).safeParse(json);
+    if (!parsed.success) throw new CollectionHttpError("invalid_response");
+    return parsed.data;
+  } catch (error) { throw collectionHttpError(error, signal); }
+  finally { release(); }
 }
 

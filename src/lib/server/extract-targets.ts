@@ -118,7 +118,8 @@ export async function runExtractTargets({ sql, itemId, targets, load, ocr, asr }
   let deferred = false;
   for (const { target, key } of eligible) {
     // Ingest reserves a key before upload/MIME commit. Wait without spending an extraction attempt.
-    if (target.object_key && (!target.content_type || (target.status !== undefined && target.status !== "stored"))) {
+    if ((target.object_key || /^telegram:/i.test(target.source_url)) &&
+        (!target.object_key || !target.content_type || (target.status !== undefined && target.status !== "stored"))) {
       deferred = true;
       continue;
     }

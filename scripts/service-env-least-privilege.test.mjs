@@ -22,6 +22,11 @@ import { SERVICE_VARS, REQUIRED_VARS, serviceEnvs } from "./write-service-envs.m
 
 const compose = readFileSync(new URL("../docker-compose.yml", import.meta.url), "utf8");
 
+test("independent Telegram media token reaches only app and telethon", () => {
+  assert.deepEqual(Object.entries(SERVICE_VARS).filter(([, names]) => names.includes("TELEGRAM_MEDIA_TOKEN")).map(([service]) => service).sort(), ["app", "telethon"]);
+  assert.ok(!REQUIRED_VARS.includes("TELEGRAM_MEDIA_TOKEN"));
+});
+
 /** Split the compose text into service blocks keyed by name. */
 function serviceBlocks(text) {
   const blocks = {};

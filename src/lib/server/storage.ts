@@ -126,10 +126,10 @@ export async function putObject(
   return { ok: true, url: objectPublicUrl(key) };
 }
 
-export async function getObject(key: string): Promise<{ ok: boolean; bytes: Buffer; error?: string }> {
+export async function getObject(key: string): Promise<{ ok: boolean; bytes: Buffer; error?: string; status?: number; retryAt?: number }> {
   if (!minioConfigured()) return { ok: false, bytes: Buffer.alloc(0), error: "MinIO 未配置" };
   const result = await s3("GET", key);
-  if (!result.ok) return { ok: false, bytes: Buffer.alloc(0), error: `读取失败 ${result.status}` };
+  if (!result.ok) return { ok: false, bytes: Buffer.alloc(0), error: `读取失败 ${result.status}`, status: result.status, retryAt: result.retryAt };
   return { ok: true, bytes: result.bytes };
 }
 

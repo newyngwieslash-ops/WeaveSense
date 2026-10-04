@@ -26,7 +26,9 @@ export type NormalizedItem = {
   views: number | null;
   likes: number | null;
   published_at: string | null;
-  extra: Record<string, unknown>;
+  extra: Record<string, unknown> & {
+    telegram_media?: { channel: string; message_id: string; kind: string; size: number | null };
+  };
 };
 
 export type CollectorMeta = {

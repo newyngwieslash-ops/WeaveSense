@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { createServer } from "vite";
 import type { Sql } from "../db.ts";
 import type { OutboundTransport } from "./outbound-policy.ts";
@@ -81,7 +82,7 @@ test("media queue: actual ingest, SQL leases/retries and fixed storage boundary"
       await sql.query(
         `insert into items(id,source_id,platform,external_id,media_urls,thumbnail_url)
         values('i','s','rss','1',$1::jsonb,$2)`,
-        [JSON.stringify(urls), urls[0]],
+        [JSON.stringify(urls), urls[0] ?? ""],
       );
       for (const [i, url] of urls.entries())
         await sql.query(
@@ -101,6 +102,292 @@ test("media queue: actual ingest, SQL leases/retries and fixed storage boundary"
       objects.clear();
       now = Date.parse("2026-10-04T00:00:00Z");
     };
+
+    await t.test("Telegram waits without storage/token, then actual worker handoff and extraction recover", async () => {
+      await reset([]);
+      const previousKey = process.env.XAI_API_KEY;
+      process.env.XAI_API_KEY = "synthetic-only";
+      const { extractItem, extractPending } = await vite.ssrLoadModule("/src/lib/server/extract.ts");
+      const { fetchTelethonHistory } = await vite.ssrLoadModule("/src/lib/server/telethon.ts");
+      const fixtureFetch = globalThis.fetch;
+      let calls = 0, modelCalls = 0;
+      const bytes = Buffer.from("fixture");
+      globalThis.fetch = async (url, init) => {
+        const target = new URL(String(url));
+        if (target.origin === "http://telethon.fixture") {
+          if (target.pathname === "/v1/history") return Response.json({ items: [{
+            external_id: "101", title: "photo", body: "caption", author: "channel", url: "https://t.me/channel/101",
+            media_type: "image", media_urls: [], thumbnail_url: "", views: null, likes: null, published_at: null,
+            extra: { telegram_media: { channel: "Channel", message_id: "101", kind: "image", size: bytes.length } },
+          }] });
+          assert.equal(target.pathname, "/v1/media");
+          assert.equal(init?.redirect, "error");
+          assert.equal(new Headers(init?.headers).get("authorization"), "Bearer synthetic-media-token");
+          assert.deepEqual(JSON.parse(String(init?.body)), { channel: "channel", message_id: "101" });
+          calls++;
+          objects.set("/fixture/telegram/channel/101", bytes);
+          return Response.json({ object_key: "telegram/channel/101", content_type: "image/jpeg", bytes: bytes.length,
+            sha256: createHash("sha256").update(bytes).digest("hex") });
+        }
+        if (target.origin === "https://api.x.ai") {
+          assert.equal(target.pathname, "/v1/chat/completions");
+          modelCalls++;
+          return Response.json({ choices: [{ message: { content: "telegram picture" } }] });
+        }
+        return fixtureFetch(url, init);
+      };
+      Object.assign(prod, { telegramWorkerUrl: "http://telethon.fixture", telegramMediaToken: "" });
+      try {
+        prod.minioSecretKey = "";
+        const [message] = await fetchTelethonHistory("channel", "0");
+        await sql.query("update items set media_urls=$1::jsonb where id='i'", [JSON.stringify(message.media_urls)]);
+        assert.equal(await media.enqueueItemMedia("i", message.media_urls, message.media_type, sql), 1);
+        const [queued] = await sql.query<any>("select id from media_objects where item_id='i'");
+        assert.deepEqual(await ingest(), { stored: 0, errors: 0 });
+        assert.deepEqual(await extractPending(1, io), { ran: 0, errors: 0 });
+        assert.equal((await extractItem("i", io)).ran, 0);
+        assert.equal((await row(queued.id)).attempts, 0);
+        prod.minioSecretKey = "fake-secret";
+        assert.deepEqual(await ingest(), { stored: 0, errors: 0 });
+        assert.deepEqual(await extractPending(1, io), { ran: 0, errors: 0 });
+        assert.equal(calls, 0); assert.equal(requests, 0); assert.equal(modelCalls, 0);
+        assert.deepEqual(await sql.query("select * from extract_jobs"), []);
+        prod.telegramMediaToken = "synthetic-media-token";
+        assert.deepEqual(await ingest(), { stored: 1, errors: 0 });
+        assert.equal((await row(queued.id)).object_key, "telegram/channel/101");
+        assert.equal((await row(queued.id)).kind, "image");
+        assert.equal((await row(queued.id)).status, "stored");
+        assert.equal(uploads, 0, "same locator key must not create redundant copies");
+        assert.deepEqual(await extractPending(1, io), { ran: 1, errors: 0 });
+        assert.deepEqual(await extractPending(1, io), { ran: 0, errors: 0 });
+        assert.equal(modelCalls, 1); assert.equal(calls, 1); assert.equal(requests, 0);
+      } finally {
+        prod.minioSecretKey = "fake-secret";
+        prod.telegramWorkerUrl = ""; prod.telegramMediaToken = "";
+        globalThis.fetch = fixtureFetch;
+        if (previousKey === undefined) delete process.env.XAI_API_KEY;
+        else process.env.XAI_API_KEY = previousKey;
+      }
+    });
+
+    await t.test("Telegram production reserves its bounded path without consuming deferred/extract-slot windows", async () => {
+      await reset(["telegram://channel/101"]);
+      await sql.query("delete from stage_windows");
+      const { runProductionTick } = await vite.ssrLoadModule("/src/lib/server/nodes.ts");
+      const { stageWindowKey } = await vite.ssrLoadModule("/src/lib/server/stage-windows.ts");
+      const { CRON_TELEGRAM_INGEST_RESERVE_MS, CRON_SERVER_BUDGET_MS, CRON_SOURCE_RESERVE_MS, runCronBatch } = await vite.ssrLoadModule("/src/lib/server/cron.ts");
+      const fixtureFetch = globalThis.fetch;
+      const bytes = Buffer.from("telegram");
+      let mediaCalls = 0;
+      globalThis.fetch = async (url, init) => {
+        if (String(url).endsWith("/v1/media")) {
+          mediaCalls++;
+          objects.set("/fixture/telegram/channel/101", bytes);
+          return Response.json({ object_key: "telegram/channel/101", content_type: "image/jpeg", bytes: bytes.length,
+            sha256: createHash("sha256").update(bytes).digest("hex") });
+        }
+        return fixtureFetch(url, init);
+      };
+      Object.assign(prod, { telegramWorkerUrl: "http://telethon.fixture", telegramMediaToken: "synthetic" });
+      try {
+        let result = await runProductionTick({ now: () => now, deadlineMs: now + 194999, allowExtract: false });
+        assert.equal(result.stages.ingest, "deferred_budget");
+        assert.equal((await row()).attempts, 0);
+        assert.deepEqual(await sql.query("select * from stage_windows where stage='ingest'"), []);
+        assert.equal(CRON_TELEGRAM_INGEST_RESERVE_MS, 195000);
+        assert.equal((await media.mediaIngestPlan(sql, now, true)).reserveMs, 195000);
+        result = await runProductionTick({ now: () => now, deadlineMs: now + 720000, allowExtract: true, allowTelegram: false });
+        assert.equal(result.stages.ingest, "deferred_telegram");
+        assert.deepEqual(await sql.query("select * from stage_windows where stage='ingest'"), []);
+        assert.equal(mediaCalls, 0);
+        result = await runProductionTick({ now: () => now, deadlineMs: now + 195000, allowExtract: false });
+        assert.equal(result.stored, 1); assert.equal(mediaCalls, 1);
+        await sql.query("update media_objects set status='remote',attempts=0 where id='m'");
+        for (const state of ["done", "failed", "claimed"]) {
+          await sql.query("update stage_windows set status=$1,claimed_at=$2 where stage='ingest'", [state, new Date(now).toISOString()]);
+          assert.equal((await media.mediaIngestPlan(sql, now, true)).reserveMs, 55000);
+          assert.equal((await runProductionTick({ now: () => now, deadlineMs: now + 195000, allowExtract: false })).stored, 0);
+        }
+        assert.equal(mediaCalls, 1);
+        await sql.query("delete from stage_windows");
+        await sql.query("update media_objects set status='running',attempts=1,claimed_at=$1 where id='m'", [new Date(now - media.MEDIA_LEASE_MS).toISOString()]);
+        assert.equal((await media.mediaIngestPlan(sql, now, true)).reserveMs, 195000);
+        await sql.query("update media_objects set attempts=4 where id='m'");
+        assert.equal((await media.mediaIngestPlan(sql, now, true)).reserveMs, 55000);
+        await runProductionTick({ now: () => now, deadlineMs: now + 55000, allowExtract: false });
+        assert.equal((await row()).status, "dead");
+        await sql.query("delete from stage_windows");
+        await sql.query("update media_objects set status='error',attempts=1,next_attempt_at=$1 where id='m'", [new Date(now + 1000).toISOString()]);
+        assert.equal((await media.mediaIngestPlan(sql, now, true)).reserveMs, 55000);
+        now += 1000;
+        assert.equal((await media.mediaIngestPlan(sql, now, true)).reserveMs, 195000);
+        await sql.query("update media_objects set source_url='https://cdn.example/older',created_at=$1 where id='m'", [new Date(now - 1000).toISOString()]);
+        await sql.query("insert into media_objects(id,item_id,source_url,created_at) values('tg-newer','i','telegram://channel/101',$1)", [new Date(now).toISOString()]);
+        const plan = await media.mediaIngestPlan(sql, now, true);
+        assert.equal(plan.reserveMs, 55000); assert.equal(plan.allowTelegram, false);
+        // Probe/claim race: if the old public target is taken, a baseline claim cannot steal TG work.
+        await sql.query("update media_objects set status='stored' where id='m'");
+        assert.equal(await media.claimMedia(sql, "race", now, plan.allowTelegram), null);
+        assert.equal((await row("tg-newer")).attempts, 0);
+        const started = now;
+        const gatewayReserve = 125000;
+        const batch = await runCronBatch(Array(8).fill(0), async () => { now += CRON_SOURCE_RESERVE_MS; }, {
+          now: () => now, concurrency: 1, reserveMs: CRON_SOURCE_RESERVE_MS,
+          deadlineMs: started + CRON_SERVER_BUDGET_MS - gatewayReserve - 195000,
+        });
+        assert.ok(batch.deferred > 0);
+        assert.ok(now + 195000 + gatewayReserve <= started + CRON_SERVER_BUDGET_MS);
+
+        // Actual route wiring: extract slot defers TG, next collection slot admits it.
+        await reset(["telegram://channel/101"]);
+        await sql.query("delete from stage_windows");
+        const { Route } = await vite.ssrLoadModule("/src/routes/api/cron/tick.ts");
+        const actualNow = Date.now;
+        const oldSecret = prod.cronSecret, oldExtract = prod.extractAuto;
+        prod.cronSecret = "synthetic-cron"; prod.extractAuto = true;
+        Date.now = () => now;
+        try {
+          now = Date.parse("2026-10-04T01:30:00Z");
+          const invoke = () => Route.options.server.handlers.POST({ request: new Request("http://app.fixture/api/cron/tick", {
+            method: "POST", headers: { Authorization: "Bearer synthetic-cron" },
+          }) });
+          const extractTick = await (await invoke()).json();
+          assert.equal(extractTick.production.stages.ingest, "deferred_telegram");
+          assert.equal((await row()).attempts, 0);
+          assert.deepEqual(await sql.query("select * from stage_windows where stage='ingest'"), []);
+          now = Date.parse("2026-10-04T02:00:00Z");
+          const collectTick = await (await invoke()).json();
+          assert.equal(collectTick.production.stored, 1);
+          assert.equal((await row()).attempts, 1);
+        } finally {
+          Date.now = actualNow; prod.cronSecret = oldSecret; prod.extractAuto = oldExtract;
+        }
+      } finally {
+        globalThis.fetch = fixtureFetch; prod.telegramWorkerUrl = ""; prod.telegramMediaToken = "";
+        await sql.query("delete from stage_windows");
+      }
+    });
+
+    await t.test("Telegram node keeps text live while attachment configuration is unavailable", async () => {
+      const fixtureFetch = globalThis.fetch;
+      globalThis.fetch = async (url, init) => String(url).endsWith("/health")
+        ? Response.json({ ok: true, authorized: true, state: "ready", media_available: true, media_error: null })
+        : fixtureFetch(url, init);
+      prod.telegramWorkerUrl = "http://telethon.fixture";
+      try {
+        prod.telegramMediaToken = "";
+        let node = (await getNodesStatus()).nodes.find((n: any) => n.id === "telethon");
+        assert.equal(node.status, "live"); assert.match(node.detail, /附件不可用/);
+        prod.telegramMediaToken = "synthetic-token";
+        prod.minioSecretKey = "";
+        node = (await getNodesStatus()).nodes.find((n: any) => n.id === "telethon");
+        assert.equal(node.status, "live"); assert.match(node.detail, /附件不可用/);
+        prod.minioSecretKey = "fake-secret";
+        node = (await getNodesStatus()).nodes.find((n: any) => n.id === "telethon");
+        assert.equal(node.status, "live"); assert.match(node.detail, /附件已配置/);
+      } finally {
+        globalThis.fetch = fixtureFetch;
+        prod.minioSecretKey = "fake-secret"; prod.telegramWorkerUrl = ""; prod.telegramMediaToken = "";
+      }
+    });
+
+    await t.test("Telegram stable keys, worker/read cooling, integrity and audio/video extraction", async () => {
+      const fixtureFetch = globalThis.fetch;
+      const previousKey = process.env.XAI_API_KEY;
+      process.env.XAI_API_KEY = "synthetic-only";
+      const { extractPending } = await vite.ssrLoadModule("/src/lib/server/extract.ts");
+      const bytes = Buffer.from("fixture");
+      let workerStatus = 200, readStatus = 200, calls = 0, modelCalls = 0, wrongHash = false, wrongKey = false;
+      let contentType = "audio/ogg";
+      globalThis.fetch = async (url, init) => {
+        const target = new URL(String(url));
+        if (target.origin === "http://telethon.fixture") {
+          calls++;
+          objects.set("/fixture/telegram/channel/101", bytes);
+          return Response.json({ object_key: wrongKey ? "outside/key" : "telegram/channel/101", content_type: contentType,
+            bytes: bytes.length, sha256: wrongHash ? "0".repeat(64) : createHash("sha256").update(bytes).digest("hex") },
+          { status: workerStatus, headers: { "Retry-After": "172800" } });
+        }
+        if (target.origin === "https://api.x.ai") {
+          assert.equal(target.pathname, "/v1/stt");
+          assert.ok(init?.body instanceof FormData);
+          modelCalls++;
+          return Response.json({ text: "fixture speech" });
+        }
+        if (init?.method === "GET" && readStatus !== 200) return new Response("", { status: readStatus, headers: { "Retry-After": "172800" } });
+        return fixtureFetch(url, init);
+      };
+      Object.assign(prod, { telegramWorkerUrl: "http://telethon.fixture", telegramMediaToken: "synthetic-media-token" });
+      try {
+        for (const kind of ["audio", "video"]) {
+          await reset(["telegram://Channel/101"], kind);
+          contentType = `${kind}/${kind === "audio" ? "ogg" : "mp4"}`;
+          await sql.query("update media_objects set object_key='legacy/final' where id='m'");
+          assert.deepEqual(await ingest(), { stored: 1, errors: 0 });
+          assert.equal((await row()).object_key, "legacy/final");
+          assert.equal((await row()).kind, kind);
+          assert.equal(uploads, 1);
+          assert.deepEqual([...objects.keys()].sort(), ["/fixture/legacy/final", "/fixture/telegram/channel/101"]);
+          assert.deepEqual(await extractPending(1, io), { ran: 1, errors: 0 });
+          assert.deepEqual(await extractPending(1, io), { ran: 0, errors: 0 });
+          assert.equal(requests, 0);
+        }
+        assert.equal(modelCalls, 2);
+        for (const upstream of ["worker", "read"]) {
+          await reset(["telegram://channel/101"]);
+          now = Date.now();
+          await sql.query("update media_objects set attempts=3 where id='m'");
+          workerStatus = upstream === "worker" ? 429 : 200;
+          readStatus = upstream === "read" ? 429 : 200;
+          const before = now;
+          assert.deepEqual(await ingest(), { stored: 0, errors: 1 });
+          const failed = await row();
+          assert.equal(failed.status, "dead");
+          assert.equal(failed.attempts, 4);
+          assert.ok(new Date(failed.next_attempt_at).getTime() >= before + 172800000);
+          assert.equal(failed.object_key, "telegram/channel/101");
+          const claimedCalls = calls;
+          assert.equal(await media.replayMedia(sql, "m", now), true);
+          assert.deepEqual(await ingest(), { stored: 0, errors: 0 });
+          assert.equal(calls, claimedCalls);
+          assert.deepEqual(await extractPending(1, io), { ran: 0, errors: 0 });
+          assert.deepEqual(await sql.query("select * from extract_jobs"), []);
+          now = new Date(failed.next_attempt_at).getTime() + 1;
+          workerStatus = readStatus = 200;
+          assert.deepEqual(await ingest(), { stored: 1, errors: 0 });
+          assert.equal((await row()).object_key, failed.object_key);
+          assert.equal(uploads, 0);
+        }
+        for (const fault of ["hash", "key", "invalid-locator"]) {
+          await reset([fault === "invalid-locator" ? "telegram://channel/../private" : "telegram://channel/101"]);
+          wrongHash = fault === "hash"; wrongKey = fault === "key";
+          const before = calls;
+          assert.deepEqual(await ingest(), { stored: 0, errors: 1 });
+          assert.equal((await row()).status, "dead");
+          assert.equal(uploads, 0); assert.equal(requests, 0);
+          if (fault === "invalid-locator") assert.equal(calls, before);
+        }
+        wrongHash = wrongKey = false;
+        await reset([]);
+        assert.equal(await media.enqueueItemMedia("i", ["telegram://Channel/101"], "audio", sql), 1);
+        const [queued] = await sql.query<any>("select * from media_objects");
+        assert.equal(queued.object_key, "");
+        assert.equal(queued.source_url, "telegram://channel/101");
+        await sql.query("update media_objects set status='error',attempts=2,next_attempt_at=$1 where id=$2", [new Date(now + 60000).toISOString(), queued.id]);
+        assert.equal(await media.enqueueItemMedia("i", ["telegram://Channel/101"], "audio", sql), 0);
+        assert.equal((await row(queued.id)).attempts, 2);
+        now += 60000;
+        assert.deepEqual(await ingest(), { stored: 1, errors: 0 });
+        assert.equal((await row(queued.id)).object_key, "telegram/channel/101");
+        assert.equal((await row(queued.id)).attempts, 3);
+        assert.equal(uploads, 0);
+      } finally {
+        prod.telegramWorkerUrl = ""; prod.telegramMediaToken = "";
+        globalThis.fetch = fixtureFetch;
+        if (previousKey === undefined) delete process.env.XAI_API_KEY;
+        else process.env.XAI_API_KEY = previousKey;
+      }
+    });
 
     await t.test(
       "single atomic winner, expiry replaces token and consumes an attempt",
@@ -651,7 +938,7 @@ test("media queue: actual ingest, SQL leases/retries and fixed storage boundary"
       async () => {
         await reset();
         now = Date.now();
-        const base = now;
+        const base = Math.floor(now / 1_800_000) * 1_800_000;
         const { runProductionTick } = await vite.ssrLoadModule("/src/lib/server/nodes.ts");
         await sql.query("delete from stage_windows");
         let automatic: any;

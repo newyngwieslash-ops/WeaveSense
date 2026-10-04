@@ -3,9 +3,9 @@ import { prod, minioConfigured, telethonConfigured } from "./config";
 import { minioHealth } from "./storage";
 import { telethonHealth } from "./telethon";
 import { xaiReady } from "./extract";
-import { ingestPending } from "./media";
+import { ingestPending, mediaIngestPlan } from "./media";
 import { extractPending } from "./extract";
-import { cronHasBudget, CRON_EXTRACT_RESERVE_MS, CRON_INGEST_RESERVE_MS } from "./cron";
+import { cronHasBudget, CRON_EXTRACT_RESERVE_MS } from "./cron";
 import { autoAnalyzeConfigFromEnv, claimAiJob, enqueueReadyAnalyses, finishAiJob } from "./agent-queue";
 import { analyzeItemWith } from "./analyze";
 import { confirmJobNotSent } from "./agent-budget";
@@ -68,7 +68,7 @@ export async function getNodesStatus(): Promise<{
       role: "100–1000 频道增量 · GetHistory",
       status: tg.ok && tg.authorized ? "live" : telethonConfigured() ? "wait" : "off",
       detail: tg.ok && tg.authorized
-        ? `已登录 ${tg.me || "session"}`
+        ? `已登录 ${tg.me || "session"} · ${tg.media_available && prod.telegramMediaToken && minioConfigured() ? "附件已配置" : "附件不可用（媒体配置未就绪）"}`
         : tg.error || "Docker 中配置 TELEGRAM_API_ID / HASH 并登录会话",
     },
     {
@@ -115,10 +115,11 @@ export async function getNodesStatus(): Promise<{
  * The stage's own counts are captured inside the window callback; nothing is run
  * twice, and a window that does not admit returns zeros with the reason.
  */
-export async function runProductionTick({ deadlineMs, now = Date.now, allowExtract = true }: {
+export async function runProductionTick({ deadlineMs, now = Date.now, allowExtract = true, allowTelegram = true }: {
   deadlineMs?: number;
   now?: () => number;
   allowExtract?: boolean;
+  allowTelegram?: boolean;
 } = {}): Promise<{
   stored: number;
   extracted: number;
@@ -136,11 +137,14 @@ export async function runProductionTick({ deadlineMs, now = Date.now, allowExtra
   // how much fits. Budget refusal is a deferral, not a failure, so it must not
   // consume the window's "done" claim for the next tick.
   let ingest = { stored: 0, errors: 0 };
-  const ingestWindow = await runStageOnce(stageSql, "ingest", async () => {
-    if (bounded && !cronHasBudget(deadlineMs, CRON_INGEST_RESERVE_MS, now)) {
-      return { ok: true, note: "deferred_budget", counts: { stored: 0, errors: 0 } };
-    }
-    const result = await ingestPending(bounded ? 1 : 8);
+  const mediaPlan = bounded ? await mediaIngestPlan(stageSql, now(), allowTelegram) : null;
+  const ingestWindow = mediaPlan?.deferred
+    ? { ran: false, reason: "deferred_telegram", result: undefined }
+    : bounded && !cronHasBudget(deadlineMs, mediaPlan!.reserveMs, now)
+    ? { ran: false, reason: "deferred_budget", result: undefined }
+    : await runStageOnce(stageSql, "ingest", async () => {
+    const result = await ingestPending(bounded ? 1 : 8, { now,
+      allowTelegram: mediaPlan?.allowTelegram ?? allowTelegram });
     ingest = result;
     return { ok: result.errors === 0, note: `stored=${result.stored} errors=${result.errors}`, counts: result };
   }, nowMs);
@@ -148,10 +152,9 @@ export async function runProductionTick({ deadlineMs, now = Date.now, allowExtra
   let extract = { ran: 0, errors: 0 };
   const extractEligible = allowExtract && prod.extractAuto;
   const extractWindow = extractEligible
-    ? await runStageOnce(stageSql, "extract", async () => {
-        if (bounded && !cronHasBudget(deadlineMs, CRON_EXTRACT_RESERVE_MS, now)) {
-          return { ok: true, note: "deferred_budget", counts: { ran: 0, errors: 0 } };
-        }
+    ? bounded && !cronHasBudget(deadlineMs, CRON_EXTRACT_RESERVE_MS, now)
+      ? { ran: false, reason: "deferred_budget", result: undefined }
+      : await runStageOnce(stageSql, "extract", async () => {
         const result = await extractPending(bounded ? 1 : 2);
         extract = result;
         return { ok: result.errors === 0, note: `ran=${result.ran} errors=${result.errors}`, counts: result };

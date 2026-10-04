@@ -37,6 +37,7 @@ class FakeMessage:
         self.sticker = None
         # media_kind() checks this on the no-media path.
         self.web_preview = None
+        self.file = None
 
 
 def page_of(ids):
@@ -87,7 +88,9 @@ class FakeClient:
     async def get_entity(self, channel):
         return channel
 
-    async def get_messages(self, entity, min_id=0, limit=80, reverse=False):
+    async def get_messages(self, entity, min_id=0, limit=80, reverse=False, ids=None):
+        if ids is not None:
+            return await self.get_messages_impl(ids=ids)
         return await self.get_messages_impl(min_id=min_id, limit=limit, reverse=reverse)
 
 
@@ -119,6 +122,226 @@ class HistoryPaginationTests(unittest.TestCase):
         module.Message = FakeMessage
         module.connection_state = "ready"
         self.mod = module
+
+    def test_history_defers_attachments_and_media_endpoint_streams_later(self):
+        import hashlib
+        import json
+        from types import SimpleNamespace
+        mod = self.mod
+        async def run():
+            message = FakeMessage(101)
+            message.media = mod.MessageMediaPhoto()
+            message.file = SimpleNamespace(size=6, mime_type="image/jpeg")
+            message.forwards = 9
+            async def messages(**kwargs):
+                return message if "ids" in kwargs else [message]
+            candidate = FakeClient(messages)
+            download_calls = 0
+            async def download(media, **kwargs):
+                nonlocal download_calls
+                download_calls += 1
+                self.assertIs(media, message.media)
+                yield b"abc"
+                yield b"def"
+            candidate.iter_download = download
+            mod.client = candidate
+            saved = []
+            class Store:
+                def put_object(self, bucket, key, data, length, content_type, num_parallel_uploads):
+                    saved.append((key, data.read(), length, content_type))
+            mod.minio_client = Store()
+            mod.MEDIA_TOKEN = "synthetic-media-token"
+            result = await mod.history("Channel", 100, 80)
+            self.assertEqual(download_calls, 0)
+            item = result["items"][0]
+            self.assertEqual(item["extra"]["telegram_media"]["message_id"], "101")
+            self.assertEqual(item["extra"]["telegram_media"]["size"], 6)
+            self.assertEqual(item["media_urls"], ["telegram://channel/101"])
+            self.assertIsNone(item["likes"])
+            self.assertEqual(item["extra"]["forwards"], 9)
+            class Request:
+                headers = {"Authorization": "Bearer synthetic-media-token"}
+                async def json(self): return {"channel": "Channel", "message_id": "101"}
+            response = await mod.handle_media(Request())
+            self.assertEqual(response.status, 200, response.text)
+            body = json.loads(response.text)
+            self.assertEqual(body, {"object_key": "telegram/channel/101", "content_type": "image/jpeg",
+                                    "bytes": 6, "sha256": hashlib.sha256(b"abcdef").hexdigest()})
+            self.assertEqual(saved, [("telegram/channel/101", b"abcdef", 6, "image/jpeg")])
+            self.assertEqual(download_calls, 1)
+        asyncio.run(run())
+
+    def test_media_auth_validation_limits_cleanup_and_shared_cooldown(self):
+        import json
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        mod = self.mod
+        async def run():
+            class Request:
+                headers = {"Authorization": "Bearer synthetic"}
+                payload = {"channel": "channel", "message_id": "101"}
+                async def json(self): return self.payload
+            request = Request()
+            message = FakeMessage(101)
+            message.media = mod.MessageMediaDocument()
+            message.document = SimpleNamespace(mime_type="audio/ogg")
+            message.file = SimpleNamespace(size=6, mime_type="audio/ogg")
+            reads, downloads, uploads, temps = [], [], [], []
+            storage_failure = False
+            async def messages(**kwargs):
+                reads.append(kwargs)
+                return message if "ids" in kwargs else [message]
+            candidate = FakeClient(messages)
+            async def download(media, **kwargs):
+                downloads.append(True)
+                yield b"abc"
+                yield b"def"
+            candidate.iter_download = download
+            mod.client = candidate
+            class Store:
+                def put_object(self, bucket, key, data, length, **kwargs):
+                    self_outer.assertEqual(kwargs["num_parallel_uploads"], 1)
+                    if storage_failure: raise OSError("synthetic disk failure")
+                    uploads.append(data.read())
+            self_outer = self
+            mod.MEDIA_TOKEN = ""
+            self.assertEqual((await mod.handle_media(request)).status, 503)
+            mod.MEDIA_TOKEN = "synthetic"
+            request.headers = {"Authorization": "Bearer wrong"}
+            self.assertEqual((await mod.handle_media(request)).status, 401)
+            request.headers = {"Authorization": "Bearer synthetic"}
+            for payload in [None, [], {}, {"channel": "channel", "message_id": 101},
+                            {"channel": "http://evil", "message_id": "101"},
+                            {"channel": "channel", "message_id": "01"},
+                            {"channel": "channel", "message_id": "101", "url": "http://evil"}]:
+                request.payload = payload
+                self.assertEqual((await mod.handle_media(request)).status, 400)
+            request.payload = {"channel": "channel", "message_id": "101"}
+            self.assertEqual((await mod.handle_media(request)).status, 503)
+            self.assertEqual(reads, [])
+            mod.minio_client = Store()
+            actual_temp = mod.tempfile.TemporaryFile
+            def temp_file(**kwargs):
+                temp = actual_temp(**kwargs)
+                temps.append(temp)
+                return temp
+            with patch.object(mod.tempfile, "TemporaryFile", temp_file):
+                mod.MEDIA_MAX_BYTES = 5
+                response = await mod.handle_media(request)
+                self.assertEqual(response.status, 413)
+                self.assertEqual(downloads, [])
+                message.file.size = None
+                response = await mod.handle_media(request)
+                self.assertEqual(json.loads(response.text)["error"], "media_too_large")
+                self.assertTrue(temps[-1].closed)
+                self.assertEqual(uploads, [])
+                mod.MEDIA_MAX_BYTES = 6
+                response = await mod.handle_media(request)
+                self.assertEqual(response.status, 200)
+                self.assertEqual(json.loads(response.text)["content_type"], "audio/ogg")
+                self.assertTrue(temps[-1].closed)
+                storage_failure = True
+                response = await mod.handle_media(request)
+                self.assertEqual(response.status, 503)
+                self.assertTrue(temps[-1].closed)
+                self.assertEqual(mod.connection_state, "ready")
+                self.assertEqual((await mod.history("channel", 100, 80))["items"][0]["media_type"], "audio")
+                storage_failure = False
+                message.file.size = 5
+                response = await mod.handle_media(request)
+                self.assertEqual(json.loads(response.text)["error"], "media_size_mismatch")
+                self.assertTrue(temps[-1].closed)
+                async def flooding(media, **kwargs):
+                    raise mod.FloodWaitError(request=None, capture=30)
+                    yield b""
+                candidate.iter_download = flooding
+                response = await mod.handle_media(request)
+                self.assertEqual(response.status, 429)
+                self.assertGreaterEqual(int(response.headers["Retry-After"]), 30)
+                self.assertTrue(temps[-1].closed)
+                count = len(reads)
+                self.assertEqual((await mod.history("channel", 100, 80))["error"], "flood_wait")
+                self.assertEqual((await mod.handle_media(request)).status, 429)
+                self.assertEqual(len(reads), count)
+            self.assertEqual(uploads, [b"abcdef"])
+        asyncio.run(run())
+
+    def test_media_upload_timeout_or_cancel_retains_slot_file_and_text_progress(self):
+        import threading
+        from types import SimpleNamespace
+        mod = self.mod
+        async def run():
+            class Request:
+                headers = {"Authorization": "Bearer synthetic"}
+                async def json(self): return {"channel": "channel", "message_id": "101"}
+            for cancel in [False, True]:
+                message = FakeMessage(101)
+                message.media = mod.MessageMediaPhoto()
+                message.file = SimpleNamespace(size=3, mime_type="image/jpeg")
+                entered, release = threading.Event(), threading.Event()
+                files = []
+                async def messages(**kwargs): return message if "ids" in kwargs else [message]
+                candidate = FakeClient(messages)
+                async def download(media, **kwargs): yield b"abc"
+                candidate.iter_download = download
+                mod.client, mod.MEDIA_TOKEN = candidate, "synthetic"
+                mod.MEDIA_TIMEOUT_SECONDS = 0.02
+                class Store:
+                    def put_object(self, bucket, key, data, length, **kwargs):
+                        files.append(data)
+                        entered.set()
+                        if not release.wait(2): raise TimeoutError("test release missing")
+                        self_outer.assertFalse(data.closed)
+                        self_outer.assertEqual(data.read(), b"abc")
+                self_outer = self
+                mod.minio_client = Store()
+                pending = asyncio.create_task(mod.handle_media(Request()))
+                try:
+                    await until(entered.is_set)
+                    if cancel:
+                        pending.cancel()
+                    await asyncio.sleep(0.04)
+                    if cancel:
+                        pending.cancel()  # repeated cancellation must not orphan the native thread
+                        await asyncio.sleep(0)
+                    self.assertFalse(pending.done())
+                    self.assertFalse(files[0].closed)
+                    self.assertTrue(mod.media_gate.locked())
+                    result = await asyncio.wait_for(mod.history("channel", 100, 80), 0.2)
+                    self.assertEqual(result["items"][0]["external_id"], "101")
+                    queued = await mod.handle_media(Request())
+                    self.assertEqual(queued.status, 504, "queue wait shares the async deadline")
+                finally:
+                    release.set()
+                    if cancel:
+                        with self.assertRaises(asyncio.CancelledError): await pending
+                    else:
+                        self.assertEqual((await pending).status, 504)
+                self.assertTrue(files[0].closed)
+                self.assertFalse(mod.media_gate.locked())
+        asyncio.run(run())
+
+    def test_media_uses_installed_sdk_interfaces_and_safe_storage_timeouts(self):
+        from inspect import signature
+        from unittest.mock import patch
+        from telethon import utils
+        from telethon.tl import types
+        from telethon.tl.custom.file import File
+        mod = self.mod
+        photo = types.Photo(id=1, access_hash=2, file_reference=b"", date=None,
+                            sizes=[types.PhotoSize(type="x", w=2, h=2, size=6)], dc_id=1)
+        media = types.MessageMediaPhoto(photo=photo)
+        info = utils._get_file_info(media)
+        self.assertEqual(info.size, File(photo).size)
+        self.assertEqual(info.location.thumb_size, "x")
+        self.assertIn("request_size", signature(mod.TelegramClient.iter_download).parameters)
+        self.assertIn("num_parallel_uploads", signature(mod.Minio.put_object).parameters)
+        with patch.object(mod, "minio_ready", return_value=True), patch.object(mod, "Minio") as sdk:
+            mod.build_minio()
+            http = sdk.call_args.kwargs["http_client"]
+            self.assertIs(http.connection_pool_kw["retries"].total, False)
+            self.assertEqual(http.connection_pool_kw["timeout"].connect_timeout, 5)
+            self.assertEqual(http.connection_pool_kw["timeout"].read_timeout, 20)
 
     def test_ascending_window_returns_the_oldest_not_yet_seen_page(self):
         """With cursor=100 and messages 101..350, the first page must be 101..180."""
