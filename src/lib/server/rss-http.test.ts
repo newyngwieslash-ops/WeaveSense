@@ -3,12 +3,22 @@ import test from 'node:test';
 import * as rss from './rss.ts';
 import { fetchText, fetchJson, type FetchIo } from './http.ts';
 import { publicFetch } from './outbound-policy.ts';
+import { createHash } from 'node:crypto';
 
 const feedUrl = 'https://feed.example/feed';
 const source = { id: 'rss-http', platform: 'rss' as const };
 const xml = '<rss><channel><item><guid>0001</guid><title>one</title></item></channel></rss>';
 const modified = 'Wed, 01 Oct 2025 00:00:00 GMT';
 const resolver = { async lookup() { return [{ address: '93.184.216.34', family: 4 }]; } };
+
+test('previous parser scope cannot reuse conditional validators after timestamp metadata correction', async () => {
+  const oldScope=createHash('sha256').update(JSON.stringify([feedUrl,'rss','raw-v1-body-v2'])).digest('hex');
+  let headers:Record<string,string>={};
+  const result=await rss.fetchRssBatch(feedUrl,{...source,feed_etag:'"old"',feed_last_modified:modified,feed_validator_identity:oldScope},
+    {resolver,transport:async(_url,options)=>{headers=options.headers ?? {};return {status:200,headers:{},body:new Response(xml).body!};}});
+  assert.equal(headers['If-None-Match'],undefined);assert.equal(headers['If-Modified-Since'],undefined);
+  assert.notEqual(result.feed_validator_identity,oldScope);assert.equal(result.items[0].external_id,'0001');
+});
 
 test('real RSS wrapper sends committed validators and skips XML parse on 304', async () => {
   const headers: Record<string, string>[] = [];

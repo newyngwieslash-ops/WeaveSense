@@ -1,4 +1,63 @@
 import test from "node:test";
+
+test('keyword outcome metadata stays with its fenced attempt through real interleaving', async () => {
+  const vite=await createServer({configFile:false,logLevel:'silent',resolve:{alias:{'@':path.resolve('src')}},server:{middlewareMode:true,watch:null}});
+  try {
+    const {getSql}=await vite.ssrLoadModule('/src/lib/db.ts');const sql=await getSql();
+    const {runKeywordJob}=await vite.ssrLoadModule('/src/lib/server/scheduler.ts');
+    const {getCollectionHealth}=await vite.ssrLoadModule('/src/lib/server/queries.ts');
+    await sql.query("insert into app_meta(key,value) values('seeded','1') on conflict(key) do update set value='1'");
+    const query=sql.query.bind(sql);
+    for(const mode of ['success','partial','error','exception','lost','exception-lost']) {
+      const id=`interleave-${mode}`;
+      const upstream=['partial','error','exception','exception-lost'].includes(mode);
+      await query(`insert into keywords(id,phrase,platforms) values($1,'synthetic',$2::jsonb)`,[id,JSON.stringify(upstream?['rss']:['wechat'])]);
+      let interleaved=false,firstJobId='',exception=false;
+      const io={resolver:{async lookup(){return [{address:'93.184.216.34',family:4}];}},transport:async(url:URL)=>({
+        status:mode==='partial' && url.hostname==='news.google.com'?200:429,
+        headers:{'retry-after':'3600'},body:new Response('<rss><channel/></rss>').body})};
+      sql.query=async(text:string,params:unknown[]=[])=>{
+        if(text.includes('insert into jobs') && params[3]===id) firstJobId=String(params[0]);
+        if(mode.startsWith('exception') && !exception && text.includes('select count(*)::int as n from items')) {
+          if(mode==='exception-lost') {
+            await query(`update keywords set claim_token='other-owner',last_error_code='rate_limited',next_attempt_at=now()+interval '1 day' where id=$1`,[id]);
+            interleaved=true;
+          }
+          exception=true;throw Object.assign(new Error('synthetic failure'),{code:'network_error'});
+        }
+        if(mode==='lost' && !interleaved && text.includes('update keywords set') && text.includes("status = 'ok'")) {
+          await query(`update keywords set claim_token='other-owner',last_error_code='rate_limited',next_attempt_at=now()+interval '1 day' where id=$1`,[id]);
+          interleaved=true;
+        }
+        const result=await query(text,params);
+        if(!mode.endsWith('lost') && !interleaved && text.includes('update keywords set') && text.includes('claim_token')) {
+          interleaved=true;
+          await query(`update keywords set platforms='["rss"]',next_attempt_at=null where id=$1`,[id]);
+          // A real subsequent attempt takes the just-released claim before job1 completion.
+          sql.query=query;
+          await runKeywordJob(id,'manual',{...io,transport:async()=>({status:429,headers:{'retry-after':'7200'},body:new Response('').body})});
+        }
+        return result;
+      };
+      await runKeywordJob(id,'manual',io);sql.query=query;
+      const [job]=await query('select * from jobs where id=$1',[firstJobId]);
+      assert.ok(interleaved);
+      assert.equal(job.status,['error','exception','lost','exception-lost'].includes(mode)?'error':'ok');
+      assert.equal(job.error_code,mode==='success'?'':mode==='exception'?'network_error':mode.endsWith('lost')?'scheduler_lease_lost':'rate_limited');
+      assert.ok(job.duration_ms>=0);
+      if(mode==='success' || mode.endsWith('lost')) assert.equal(job.retry_at,null);
+      else assert.ok(new Date(job.retry_at).getTime()<Date.now()+90*60000,'must not inherit second two-hour retry');
+      assert.deepEqual(job.attempts,upstream?['google_news_zh','google_news_en','hacker_news']:[]);
+      const rate=(await getCollectionHealth()).adapter_jobs.find((row:any)=>row.adapter==='keyword_index');
+      assert.equal(rate.total,mode.endsWith('lost')?1:2);
+      assert.equal(rate.failed,mode==='success'?1:rate.total,'first success must not inherit second failure in the numerator');
+      if(mode.endsWith('lost')) assert.equal((await query('select claim_token from keywords where id=$1',[id]))[0].claim_token,'other-owner');
+      await query('delete from jobs where keyword_id=$1',[id]);await query('delete from keywords where id=$1',[id]);
+    }
+  } finally {
+    await vite.close();const pg=await (globalThis as any).__pgliteInstance__;if(pg)await pg.close();delete (globalThis as any).__pgliteInstance__;
+  }
+});
 import assert from "node:assert/strict";
 import path from "node:path";
 import { createServer } from "vite";

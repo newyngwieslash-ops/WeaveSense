@@ -76,14 +76,22 @@ export async function completeSourceClaim(
   lastExternalId: string,
   lastPublishedAt: string | null,
   progress?: { scan_state?: unknown; has_more?: boolean; coverage?: unknown; rejected_entries?: number;
-    content_progress?: boolean;
+    content_progress?: boolean; primary_content_at?:string | null;
     feed_validators?: { etag: string; last_modified: string }; feed_validator_identity?: string },
 ): Promise<boolean> {
+  const params=[sourceId, lastExternalId, lastPublishedAt, claimToken, ...(progress ? [
+    JSON.stringify(progress.scan_state ?? { bootstrap: "latest" }), progress.has_more ?? false,
+    JSON.stringify(progress.coverage ?? null), progress.rejected_entries ?? 0,
+    ...(progress.feed_validators ? [progress.feed_validators.etag, progress.feed_validators.last_modified,
+      progress.feed_validator_identity ?? ''] : [])] : [])];
+  const primaryAt=progress?.primary_content_at;
+  const observed=primaryAt ? `$${params.length+1}::timestamptz` : null;
   const rows = await sql.query<{ id: unknown }>(
     `update sources set
        status = 'ok', next_attempt_at = null, consecutive_failures = 0, last_success_at = now(), last_error_code = '',
        last_scanned_at = now(),
-       last_content_at = case when ${progress?.content_progress === true ? 'true' : 'false'} then now() else last_content_at end,
+       last_content_at = ${observed ? `greatest(last_content_at,case when ${observed}<=clock_timestamp() then ${observed} end)`
+         : `case when ${progress?.content_progress === true ? 'true' : 'false'} then now() else last_content_at end`},
        last_error = '',
        last_external_id = coalesce(nullif($2, ''), last_external_id),
        last_published_at = coalesce($3::timestamptz, last_published_at),
@@ -93,11 +101,7 @@ export async function completeSourceClaim(
        feed_etag = $9, feed_last_modified = $10, feed_validator_identity = $11` : ''}` : ''}
      where id = $1 and claim_token = $4
      returning id`,
-    [sourceId, lastExternalId, lastPublishedAt, claimToken, ...(progress ? [
-      JSON.stringify(progress.scan_state ?? { bootstrap: "latest" }), progress.has_more ?? false,
-      JSON.stringify(progress.coverage ?? null), progress.rejected_entries ?? 0,
-      ...(progress.feed_validators ? [progress.feed_validators.etag, progress.feed_validators.last_modified,
-        progress.feed_validator_identity ?? ''] : [])] : [])],
+    [...params,...(primaryAt ? [primaryAt] : [])],
   );
   return rows.length === 1;
 }
@@ -113,20 +117,22 @@ function retryFailure(error: unknown) {
   return { message: (permanent ? `${message}；请检查信源地址、授权或服务配置` : message).slice(0,400), code: retryAt ? 'rate_limited' : permanent ? 'config_error' : /^[a-z][a-z0-9_]{0,79}$/.test(value?.code ?? '') ? value!.code! : 'collection_failed', retryAt, permanent };
 }
 
-async function failClaim(sql: Queryable, table: 'sources' | 'keywords', id: string, token: string, error: unknown, hits?: number): Promise<boolean> {
+type ClaimOutcome = { last_error_code:string; next_attempt_at:string | null };
+
+async function failClaim(sql: Queryable, table: 'sources' | 'keywords', id: string, token: string, error: unknown, hits?: number): Promise<ClaimOutcome | null> {
   const failure = retryFailure(error);
-  const rows = await sql.query<{id: unknown}>(`update ${table} set status='error', last_scanned_at=now(), last_error=$2,
+  const rows = await sql.query<ClaimOutcome>(`update ${table} set status='error', last_scanned_at=now(), last_error=$2,
     last_error_code=$4, consecutive_failures=consecutive_failures+1,
     next_attempt_at=greatest(next_attempt_at, to_timestamp($5::double precision / 1000), now() +
       (least(360, (case when $6::boolean then 360 when consecutive_failures=0 then 1
         when consecutive_failures=1 then 5 when consecutive_failures=2 then 15 else 60 end) * (1 + random()*0.2)) * interval '1 minute')),
-    claim_token='', claimed_at=null${table === 'keywords' ? ', hits=coalesce($7::integer,hits)' : ''} where id=$1 and claim_token=$3 returning id`,
+    claim_token='', claimed_at=null${table === 'keywords' ? ', hits=coalesce($7::integer,hits)' : ''} where id=$1 and claim_token=$3 returning last_error_code,next_attempt_at`,
     [id, failure.message, token, failure.code, failure.retryAt, failure.permanent, ...(table === 'keywords' ? [hits ?? null] : [])]);
-  return rows.length===1;
+  return rows[0] ?? null;
 }
 
 export async function failSourceClaim(sql: Queryable, sourceId: string, claimToken: string, error: unknown): Promise<boolean> {
-  return failClaim(sql, 'sources', sourceId, claimToken, error);
+  return (await failClaim(sql, 'sources', sourceId, claimToken, error)) !== null;
 }
 
 export async function completeKeywordClaim(
@@ -135,19 +141,19 @@ export async function completeKeywordClaim(
   claimToken: string,
   note: string,
   hits: number,
-): Promise<boolean> {
-  const rows = await sql.query<{ id: unknown }>(
+): Promise<ClaimOutcome | null> {
+  const rows = await sql.query<ClaimOutcome>(
     `update keywords set
        status = 'ok', next_attempt_at = null, consecutive_failures = 0, last_success_at = now(), last_error_code = '', last_scanned_at = now(), last_error = $2, hits = $3,
        claim_token = '', claimed_at = null
      where id = $1 and claim_token = $4
-     returning id`,
+     returning last_error_code,next_attempt_at`,
     [keywordId, note, hits, claimToken],
   );
-  return rows.length === 1;
+  return rows[0] ?? null;
 }
 
-export async function failKeywordClaim(sql: Queryable, keywordId: string, claimToken: string, error: unknown, hits?: number): Promise<boolean> {
+export async function failKeywordClaim(sql: Queryable, keywordId: string, claimToken: string, error: unknown, hits?: number): Promise<ClaimOutcome | null> {
   return failClaim(sql, 'keywords', keywordId, claimToken, error, hits);
 }
 

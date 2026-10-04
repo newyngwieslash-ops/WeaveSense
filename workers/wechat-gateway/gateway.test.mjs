@@ -571,12 +571,13 @@ test("serializes the required XML-safe Atom contract", () => {
     body_text: "正文 \u0001 ]]> 尾", body_complete: true,
     cover_url: "https://mmbiz.qpic.cn/cover.jpg?a=1&b=2",
     provider: "primary", providers_seen: '["primary","dajiala"]',
-    discovered_at: "2026-08-28T09:00:00Z",
+    discovered_at: "2026-08-28T09:00:00Z", primary_content_at:"2026-08-28T08:30:00Z",
   }]);
   assert.match(xml, /wx:MzA1:9:1/);
   assert.match(xml, /loom:provider>primary/);
   assert.match(xml, /loom:providers_seen>primary,dajiala<\/loom:providers_seen>/);
   assert.match(xml, /loom:body_complete>true<\/loom:body_complete>/);
+  assert.match(xml, /loom:primary_content_at>2026-08-28T08:30:00Z<\/loom:primary_content_at>/);
   assert.match(xml, /media:thumbnail/);
   assert.match(xml, /]]]]><!\[CDATA\[>/);
   assert.equal(xml.includes("\u0001"), false);

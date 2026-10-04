@@ -31,12 +31,12 @@ function SourcesPage() {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const opener = useRef<HTMLButtonElement | null>(null);
-  const sources = useQuery({ queryKey: ["sources"], queryFn: () => listSourcesFn() });
+  const sources = useQuery({ queryKey: ["sources"], queryFn: () => listSourcesFn(), refetchInterval:60000 });
   const collection = useQuery({queryKey:['collection-health'],queryFn:()=>collectionHealthFn(),refetchInterval:60000});
   const hasWechatSources = Boolean(sources.data?.some((source) =>
     source.platform === "wechat" && source.id !== RADAR_SOURCE_ID));
   const wechatHealth = useQuery({ queryKey: ["wechat-health"], queryFn: () => listWechatHealthFn(),
-    enabled: hasWechatSources });
+    enabled: hasWechatSources, refetchInterval:60000 });
   const scan = useMutation({
     mutationFn: (id: string) => scanSourceFn({ data: { id } }),
     onSuccess: (r) => {
@@ -124,7 +124,8 @@ function SourcesPage() {
                         {formatRelative(s.last_scanned_at)}
                       </p>
                       <p className="mt-1 text-xs text-muted">最近成功验证：{s.last_success_at ? formatRelative(s.last_success_at) : "未验证"} · 最近扫描：{formatRelative(s.last_scanned_at)}</p>
-                      <p className="mt-1 text-xs text-muted">最近内容进展 / 正文补全：{s.last_content_at ? formatRelative(s.last_content_at) : '未知'} · 请求成功不代表有新内容</p>
+                      <p className="mt-1 text-xs text-muted">{s.platform==='wechat' ? '已观察主源内容进展 / 正文确认' : '最近内容进展 / 正文补全'}：{s.last_content_at ? formatRelative(s.last_content_at) : '未知'} · 请求成功不代表有新内容</p>
+                      {s.platform==='wechat' ? <p className="mt-1 text-xs text-muted">主源观察时间；不代表发布时间或抓取延迟，混合缓存正文不证明主源进展。</p> : null}
                       {s.last_content_at && Date.now()-Date.parse(s.last_content_at)>Math.max(1440,s.interval_minutes*3)*60000 ? <p className="mt-1 text-xs text-warn">内容疑似停滞：检查原 Feed 更新时间与正文完整性；窗口或低频发布需人工确认。</p> : null}
                       {s.last_error_code ? <p className="mt-1 break-words text-xs text-muted">诊断 {s.last_error_code} · {s.last_error_code==='rate_limited' ? '等待上游冷却，避免连续扫描' : s.last_error_code==='config_error' ? '检查地址、账号授权和服务配置' : '检查出口连接、节点健康及上游响应'}</p> : null}
                       {s.next_attempt_at ? <p className="mt-1 break-words text-xs text-muted">最早重试：{new Date(s.next_attempt_at).toLocaleString()} · 修复配置不会提前上游冷却</p> : null}

@@ -117,7 +117,7 @@ test("persisted retries fence scheduled/manual workers, survive reopen, and succ
   );
   assert.equal(await claimSource(sql, "cold", "manual", true), null);
   assert.ok(await claimSource(sql, "continuation", "page"));
-  assert.equal(await completeKeywordClaim(sql, "k", "obsolete", "", 0), false);
+  assert.equal(await completeKeywordClaim(sql, "k", "obsolete", "", 0), null);
   await pg.close();
 });
 

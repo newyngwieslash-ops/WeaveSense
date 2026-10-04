@@ -5,6 +5,69 @@ import { createServer } from 'vite';
 import { readFileSync, readdirSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 
+test('gateway verified primary observation survives paid cache Atom parser atomic health flow', async () => {
+  const {openStore}=await import(new URL('../../../workers/wechat-gateway/store.mjs',import.meta.url).href);
+  const {toAtom}=await import(new URL('../../../workers/wechat-gateway/atom.mjs',import.meta.url).href);
+  const store=openStore(':memory:');
+  const source={id:'primary-clock',name:'synthetic',account_id:'gh_synthetic',priority:'normal',sample_url:'https://mp.weixin.qq.com/s/synthetic',primary_feed_url:'https://feed.invalid/primary'};
+  const initial='2026-10-01T00:00:00Z',completeAt='2026-10-03T12:00:00Z';
+  const item={canonical_id:'wx:MzSynthetic:1:1',account_id:source.account_id,account_name:'synthetic',title:'synthetic',published_at:initial,
+    original_url:'https://mp.weixin.qq.com/s?__biz=MzSynthetic&mid=1&idx=1',body_text:'summary',body_complete:false,cover_url:'',provider:'primary',discovered_at:initial};
+  store.upsertSource(source,initial);store.upsertGatewayItems(source.id,[item],initial);
+  const firstXml=toAtom(source.id,source.name,store.listGatewayItems(source.id,initial));
+  store.upsertGatewayItems(source.id,[{...item,provider:'dajiala',body_text:'paid complete',body_complete:true}],'2026-10-02T00:00:00Z');
+  store.upsertGatewayItems(source.id,[item],'2026-10-03T00:00:00Z');
+  const paidXml=toAtom(source.id,source.name,store.listGatewayItems(source.id,initial));
+  assert.equal(store.getSource(source.id).last_primary_content_at,initial);
+  const vite=await createServer({configFile:false,logLevel:'silent',resolve:{alias:{'@':path.resolve('src')}},server:{middlewareMode:true,watch:null}});
+  try {
+    const {getSql}=await vite.ssrLoadModule('/src/lib/db.ts');const sql=await getSql();
+    const {parseFeedXml}=await vite.ssrLoadModule('/src/lib/server/rss-parser.ts');
+    const {persistCollectedBatch}=await vite.ssrLoadModule('/src/lib/server/scheduler.ts');
+    await sql.query(`insert into sources(id,platform,name,adapter,enabled) values('primary-clock','wechat','synthetic','wechat_gateway',false)`);
+    const persist=async(xml:string,token:string)=>{
+      await sql.query(`update sources set status='running',claim_token=$1 where id='primary-clock'`,[token]);
+      await sql.query(`insert into jobs(id,source_id,platform,adapter) values($1,'primary-clock','wechat','wechat_gateway')`,[token]);
+      const [row]=await sql.query(`select * from sources where id='primary-clock'`);
+      await persistCollectedBatch(sql,row,token,{items:parseFeedXml(xml,'primary-clock','wechat'),meta:{provider:'primary',attempts:['primary'],paid_call:false}});
+      return (await sql.query(`select last_content_at from sources where id='primary-clock'`))[0].last_content_at;
+    };
+    assert.equal(new Date(await persist(firstXml,'primary-first')).toISOString(),initial.replace('Z','.000Z'));
+    assert.equal(new Date(await persist(paidXml,'primary-paid-cache')).toISOString(),initial.replace('Z','.000Z'),'paid cached body never refreshes primary clock');
+    assert.equal((await sql.query(`select items_updated from jobs where id='primary-paid-cache'`))[0].items_updated,1,'actual body improvement still recorded');
+    store.upsertGatewayItems(source.id,[{...item,body_text:'verified primary complete',body_complete:true}],completeAt);
+    assert.equal(store.getSource(source.id).last_primary_content_at,completeAt,'T11 first actual completeness still advances');
+    const completeXml=toAtom(source.id,source.name,store.listGatewayItems(source.id,initial));
+    assert.equal(new Date(await persist(completeXml,'primary-complete')).toISOString(),completeAt.replace('Z','.000Z'));
+    assert.equal((await sql.query(`select items_updated from jobs where id='primary-complete'`))[0].items_updated,0,'first verified primary completeness clock is independent from already cached paid completeness');
+    for(const [token,xml] of [['primary-missing',completeXml.replace(/\s*<loom:primary_content_at>.*?<\/loom:primary_content_at>/,'')],
+      ['primary-invalid',completeXml.replace(completeAt,'invalid')],['primary-future',completeXml.replace(completeAt,'2099-01-01T00:00:00Z')],
+      ['primary-older',completeXml.replace(completeAt,initial)]]) {
+      assert.equal(new Date(await persist(xml,token)).toISOString(),completeAt.replace('Z','.000Z'),'unknown/invalid/future/older evidence cannot refresh or regress');
+    }
+    await sql.query(`delete from items where source_id='primary-clock'`);await sql.query(`delete from jobs where source_id='primary-clock'`);await sql.query(`delete from sources where id='primary-clock'`);
+  } finally {store.close();await vite.close();const pg=await (globalThis as any).__pgliteInstance__;if(pg)await pg.close();delete (globalThis as any).__pgliteInstance__;}
+});
+
+test('selected updated plus dc date stays editing-only in parser and real health percentiles', async () => {
+  const vite=await createServer({configFile:false,logLevel:'silent',resolve:{alias:{'@':path.resolve('src')}},server:{middlewareMode:true,watch:null}});
+  try {
+    const {getSql}=await vite.ssrLoadModule('/src/lib/db.ts');const sql=await getSql();
+    const {parseFeedXml}=await vite.ssrLoadModule('/src/lib/server/rss-parser.ts');
+    const {persistCollectedBatch}=await vite.ssrLoadModule('/src/lib/server/scheduler.ts');
+    const {getCollectionHealth}=await vite.ssrLoadModule('/src/lib/server/queries.ts');
+    const xml='<feed><entry><id>000123</id><title>synthetic edit</title><updated>2026-10-01T00:00:00Z</updated><dc:date>2026-09-01T00:00:00Z</dc:date></entry></feed>';
+    const items=parseFeedXml(xml,'mixed-date','rss');assert.equal(items[0].external_id,'000123');assert.equal(items[0].extra.rss_identity,'raw-v1');
+    assert.equal(items[0].published_at,'2026-10-01T00:00:00Z');assert.equal(items[0].extra.publication_time_kind,'updated');
+    await sql.query(`insert into sources(id,platform,name,adapter,status,claim_token,enabled) values('mixed-date','rss','synthetic','rss','running','mixed-date-job',false)`);
+    await sql.query(`insert into jobs(id,source_id,platform,adapter) values('mixed-date-job','mixed-date','rss','rss')`);
+    const [source]=await sql.query(`select * from sources where id='mixed-date'`);
+    await persistCollectedBatch(sql,source,'mixed-date-job',{items,meta:{provider:'',attempts:['rss'],paid_call:false}});
+    const health=await getCollectionHealth();assert.equal(health.discovery.observed,0);assert.equal(health.discovery.unknown,1);assert.equal(health.discovery.p50_seconds,null);assert.equal(health.discovery.p95_seconds,null);
+    await sql.query(`delete from items where source_id='mixed-date'`);await sql.query(`delete from jobs where source_id='mixed-date'`);await sql.query(`delete from sources where id='mixed-date'`);
+  } finally {await vite.close();const pg=await (globalThis as any).__pgliteInstance__;if(pg)await pg.close();delete (globalThis as any).__pgliteInstance__;}
+});
+
 test('actual attempts persist actionable metrics and keep request success separate from content progress', async () => {
   const vite = await createServer({configFile:false,logLevel:'silent',resolve:{alias:{'@':path.resolve('src')}},server:{middlewareMode:true,watch:null}});
   try {

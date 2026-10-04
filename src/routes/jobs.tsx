@@ -11,7 +11,7 @@ import { attemptLabel, telegramChannelKind, telegramChannelLabel } from "@/lib/t
 export const Route = createFileRoute("/jobs")({ component: JobsPage });
 
 function JobsPage() {
-  const jobs = useQuery({ queryKey: ["jobs"], queryFn: () => listJobsFn() });
+  const jobs = useQuery({ queryKey: ["jobs"], queryFn: () => listJobsFn(), refetchInterval:60000 });
   const health = useQuery({queryKey:['collection-health'],queryFn:()=>collectionHealthFn(),refetchInterval:60000});
   return (
     <AppShell title="任务" kicker="Incremental crawls">

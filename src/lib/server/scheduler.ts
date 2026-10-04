@@ -274,7 +274,6 @@ export async function persistCollectedBatch(database: Sql, source: SourceRecord,
           ? { ...providerHistory, ...it.extra, providers_seen: providerHistory.providers_seen }
           : it.extra, it.extra.provider ?? meta.provider)
         : it.extra;
-      const primaryContent = source.platform !== 'wechat' || it.extra.provider === 'primary' || meta.provider === 'primary';
       if (existingItem) {
         // An existing coerced identity is not proven raw merely by an exact-ID
         // refresh; retain legacy provenance until an operator verifies it.
@@ -282,7 +281,7 @@ export async function persistCollectedBatch(database: Sql, source: SourceRecord,
         const bodyProgress = await mergeExistingItem(sql, existingItem.id,
           { ...it, extra: itemExtra, published_at: publishedIso }, matched);
         if (bodyProgress) itemsUpdated += 1;
-        contentProgress ||= bodyProgress && primaryContent;
+        contentProgress ||= bodyProgress && source.platform !== 'wechat';
         if (source.platform === 'wechat' && !existingItem.url) {
           existingItem.normalized_wechat_url = normalizedUrl(it.url);
           existingItem.url = it.url.slice(0,1000);
@@ -324,7 +323,7 @@ export async function persistCollectedBatch(database: Sql, source: SourceRecord,
       );
       if (await finishItemInsert(inserted, it.media_urls, it.media_type, (id,urls,type)=>enqueueItemMedia(id,urls,type,sql))) {
         itemsNew += 1;
-        contentProgress ||= primaryContent;
+        contentProgress ||= source.platform !== 'wechat';
         const saved = { id, external_id: it.external_id.slice(0, 320),
           url: it.url.slice(0, 1000), extra: itemExtra, normalized_wechat_url: normalizedUrl(it.url) };
         existingByExternalId.set(saved.external_id, saved);
@@ -356,6 +355,11 @@ export async function persistCollectedBatch(database: Sql, source: SourceRecord,
       (!coverage || coverage.complete || (coverage.window_only && coverage.note === 'feed_window'));
     const validators = collected.feed_validators && (feedComplete
       ? collected.feed_validators : { etag: '', last_modified: '' });
+    // A merged provider label does not prove cached body provenance. Reuse T11's
+    // raw-primary observation clock; paid/unknown bodies never create a new clock.
+    const primaryTimes=source.platform==='wechat' ? fetched.map(item=>Date.parse(String(item.extra.primary_content_at ?? '')))
+      .filter(at=>Number.isFinite(at) && at<=Date.now()) : [];
+    const primaryContentAt=primaryTimes.length ? new Date(Math.max(...primaryTimes)).toISOString() : null;
     const completed = await completeSourceClaim(
       sql,
       source.id,
@@ -364,6 +368,7 @@ export async function persistCollectedBatch(database: Sql, source: SourceRecord,
       cursorItem?.published_at ?? (nextCursor === previousCursor ? null : latestPublished(fetched, nextCursor)),
       { scan_state: collected.next_scan_state ?? source.scan_state, has_more: collected.has_more,
         content_progress: contentProgress,
+        primary_content_at:primaryContentAt,
         coverage: collected.coverage, rejected_entries: collected.rejected_entries,
         feed_validators: validators, feed_validator_identity: feedComplete ? collected.feed_validator_identity : '' },
     );
@@ -470,6 +475,7 @@ export async function runKeywordJob(
 
   let jobCreated = false;
   const metrics = {bytes:null as number | null};
+  let attempts:string[]=[];
   try {
     await sql.query(
       `insert into jobs (id, source_id, platform, status, kind, keyword_id, adapter)
@@ -478,6 +484,7 @@ export async function runKeywordJob(
     );
     jobCreated = true;
     const batch = await collectKeyword(kw.phrase, kw.platforms, {...io,metrics});
+    attempts=batch.attempts.map(attempt=>attempt.source);
     const fetched = batch.items;
     let itemsNew = 0, itemsUpdated = 0;
     for (const it of fetched) {
@@ -502,23 +509,18 @@ export async function runKeywordJob(
       message: note, code: failures[0].error_code, status: failures.find(a => a.http_status === 401 || a.http_status === 403)?.http_status,
       retryAt: retryAt || undefined,
     }, hits) : await completeKeywordClaim(sql, kw.id, jobId, note, hits);
-    if (!completed) {
-      await sql.query(
-        `update jobs set status = 'error', finished_at = now(), error = $2 where id = $1`,
-        [jobId, SCHEDULER_LEASE_LOST],
-      );
-      return { items_found: 0, items_new: 0, error: SCHEDULER_LEASE_LOST, phrase: kw.phrase };
-    }
     await sql.query(
       `update jobs set status = $5, finished_at = now(), items_found = $2, items_new = $3, error = $4,
          duration_ms=greatest(0,floor(extract(epoch from(now()-started_at))*1000))::bigint,
          items_updated=$6, bytes=$7, attempts=$8::jsonb,
-         error_code=(select last_error_code from keywords where id=jobs.keyword_id),
-         retry_at=(select next_attempt_at from keywords where id=jobs.keyword_id)
+         error_code=$9,retry_at=$10::timestamptz
        where id = $1`,
-      [jobId, fetched.length + localTagged, itemsNew, note, jobStatus,itemsUpdated+localTagged,metrics.bytes,
-        JSON.stringify(batch.attempts.map(attempt=>attempt.source))],
+      [jobId, fetched.length + localTagged, itemsNew, completed ? note : SCHEDULER_LEASE_LOST,
+        completed ? jobStatus : 'error',itemsUpdated+localTagged,metrics.bytes,
+        JSON.stringify(attempts),completed?.last_error_code ?? SCHEDULER_LEASE_LOST,
+        completed?.next_attempt_at ?? null],
     );
+    if (!completed) return { items_found:0, items_new:0, error:SCHEDULER_LEASE_LOST, phrase:kw.phrase };
     return { items_found: fetched.length + localTagged, items_new: itemsNew, error: note, phrase: kw.phrase };
   } catch (err) {
     const message = errMessage(err);
@@ -528,10 +530,8 @@ export async function runKeywordJob(
       await sql.query(
         `update jobs set status = 'error', finished_at = now(), error = $2,
           duration_ms=greatest(0,floor(extract(epoch from(now()-started_at))*1000))::bigint,
-          items_found=null,items_updated=null,bytes=$3,error_code=case when $4::boolean then
-            (select last_error_code from keywords where id=jobs.keyword_id) else 'scheduler_lease_lost' end,
-          retry_at=(select next_attempt_at from keywords where id=jobs.keyword_id) where id = $1`,
-        [jobId, jobError,metrics.bytes,released],
+          items_found=null,items_updated=null,bytes=$3,error_code=$4,retry_at=$5::timestamptz,attempts=$6::jsonb where id = $1`,
+        [jobId, jobError,metrics.bytes,released?.last_error_code ?? SCHEDULER_LEASE_LOST,released?.next_attempt_at ?? null,JSON.stringify(attempts)],
       );
     }
     return { items_found: 0, items_new: 0, error: jobError, phrase: kw.phrase };

@@ -5,7 +5,7 @@ import type { NormalizedItem } from "./collectors/types.ts";
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 // Bump when normalized content/identity semantics change; old validators must not skip reprocessing.
-export const RSS_PARSER_VERSION = 'raw-v1-body-v2';
+export const RSS_PARSER_VERSION = 'raw-v1-body-v3';
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -171,7 +171,8 @@ export function parseFeedXml(xml: string, sourceId: string, platform: PlatformId
       const tooLarge = Buffer.byteLength(rawBody, "utf8") > MAX_BODY_BYTES;
       const body = tooLarge ? "" : stripHtml(rawBody);
       const author = stripHtml(authorOf(raw));
-      const published = textOf(raw.pubDate ?? raw.published ?? raw.updated ?? raw["dc:date"] ?? "") || null;
+      const timestampField = ['pubDate','published','updated','dc:date'].find(field=>raw[field]!=null);
+      const published = textOf(timestampField ? raw[timestampField] : '') || null;
       if (published && Number.isNaN(Date.parse(published))) throw new Error("feed_invalid_entry");
       const thumb = webUrl(pickThumb(raw), options.feedUrl);
       const media = webUrl(enclosureUrl(raw), options.feedUrl);
@@ -181,7 +182,9 @@ export function parseFeedXml(xml: string, sourceId: string, platform: PlatformId
       if (id.length > 320) throw new Error("feed_entry_id_limit");
       const extra = { ...loomExtra(raw, platform), rss_identity: "raw-v1" } as Record<string, unknown>;
       // Atom updated alone is an edit time, never evidence of publication/discovery latency.
-      if (!textOf(raw.pubDate ?? raw.published ?? raw["dc:date"] ?? '') && textOf(raw.updated)) extra.publication_time_kind = 'updated';
+      if (timestampField==='updated' && published) extra.publication_time_kind = 'updated';
+      const primaryContentAt=textOf((doc.feed as Record<string,unknown> | undefined)?.['loom:primary_content_at']);
+      if (platform==='wechat' && primaryContentAt) extra.primary_content_at=primaryContentAt;
       // Compatibility evidence only: reproduce the prior XML scalar coercion,
       // never use this alias as the identity of new content.
       const legacyRaw = legacyItems[index] as Record<string, unknown>;

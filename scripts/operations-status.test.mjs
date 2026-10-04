@@ -133,20 +133,39 @@ test("actual local event runs deduplicate stale content and cooling, then resolv
     { id: 's2', adapter: 'telegram_web', interval_minutes: 30, last_error_code: 'rate_limited',
       next_attempt_at: new Date(now + 3600000).toISOString(), last_error: 'Bearer secret' },
   ] };
-  operations.writeAlertEvents(dir, operations.evaluateAlerts(facts), now);
-  operations.writeAlertEvents(dir, operations.evaluateAlerts({ ...facts, now: now + 60000 }), now + 60000);
+  operations.writeAlertEvents(dir, operations.evaluateAlerts(facts), now, facts);
+  operations.writeAlertEvents(dir, operations.evaluateAlerts({ ...facts, now: now + 60000 }), now + 60000, facts);
   let events = readFileSync(join(dir, 'events.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
   assert.equal(events.filter(e => e.code === 'content_stale:s1').length, 1);
   assert.equal(events.filter(e => e.code === 'rate_limited:s2').length, 1);
-  operations.writeAlertEvents(dir, [], now + 90000, false);
+  operations.writeAlertEvents(dir, [], now + 90000, {...healthy, sources:undefined});
   assert.equal(readFileSync(join(dir, 'events.jsonl'), 'utf8').trim().split('\n').length,2,'unavailable diagnostics do not prove recovery');
   const recovered = {...facts,sources:[{...facts.sources[0],last_content_at:new Date(now).toISOString()},
     {...facts.sources[1],last_error_code:''}]};
-  operations.writeAlertEvents(dir, operations.evaluateAlerts(recovered), now + 120000);
-  operations.writeAlertEvents(dir, operations.evaluateAlerts(recovered), now + 180000);
+  operations.writeAlertEvents(dir, operations.evaluateAlerts(recovered), now + 120000, recovered);
+  operations.writeAlertEvents(dir, operations.evaluateAlerts(recovered), now + 180000, recovered);
   events = readFileSync(join(dir, 'events.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
   assert.equal(events.filter(e => e.status === 'resolved').length, 2);
   assert.equal(JSON.stringify(events).includes('Bearer '), false);
   assert.equal(JSON.stringify(events).includes('https://'), false);
   assert.equal(JSON.stringify(events).includes('secret'), false);
+});
+
+test('missing stage and queue evidence cannot resolve actual local events', () => {
+  const dir=mkdtempSync(join(tmpdir(),'t16-unknown-family-'));
+  const now=Date.now();
+  const stale={...healthy,now,stages:{collection:61},oldestQueueMinutes:61,queue_observed:true};
+  operations.writeAlertEvents(dir,operations.evaluateAlerts(stale),now,stale);
+  const unknown={...stale,stages:{},oldestQueueMinutes:null,queue_observed:false};
+  operations.writeAlertEvents(dir,operations.evaluateAlerts(unknown),now+60000,unknown);
+  const noSuccess={...unknown,stages:{collection:null}};
+  operations.writeAlertEvents(dir,operations.evaluateAlerts(noSuccess),now+120000,noSuccess);
+  let events=readFileSync(join(dir,'events.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
+  assert.equal(events.some(e=>e.status==='resolved'),false);
+  const recovered={...stale,stages:{collection:1},oldestQueueMinutes:null};
+  operations.writeAlertEvents(dir,operations.evaluateAlerts(recovered),now+180000,recovered);
+  operations.writeAlertEvents(dir,operations.evaluateAlerts(recovered),now+240000,recovered);
+  events=readFileSync(join(dir,'events.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
+  assert.deepEqual(events.filter(e=>e.status==='resolved').map(e=>e.code).sort(),
+    ['queue_backlog','stage_never_succeeded:collection','stage_stale:collection']);
 });

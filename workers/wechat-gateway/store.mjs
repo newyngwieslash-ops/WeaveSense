@@ -366,7 +366,8 @@ function createStore(db) {
       cover_url=excluded.cover_url, provider=excluded.provider,
       providers_seen=excluded.providers_seen, discovered_at=excluded.discovered_at,
       updated_at=excluded.updated_at`);
-  const listItems = db.prepare(`select * from gateway_items
+  const listItems = db.prepare(`select *, (select last_primary_content_at from gateway_sources
+    where source_id=gateway_items.source_id) as primary_content_at from gateway_items
     where source_id = ? and unixepoch(published_at) >= unixepoch(?)
     order by unixepoch(published_at) desc, canonical_id`);
   const deleteItems = db.prepare("delete from gateway_items where unixepoch(published_at) < unixepoch(?)");

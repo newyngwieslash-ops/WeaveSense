@@ -19,6 +19,8 @@
  *   node scripts/operations-status.mjs                # JSON to stdout
  *   node scripts/operations-status.mjs --pglite       # isolated demo DB
  *   node scripts/operations-status.mjs --alerts <dir> # also write alert events
+ * Serialize all invocations using the same alerts directory: one operator writer,
+ * never overlapping cron/manual commands. This command does not provide a lock.
  *   node scripts/operations-status.mjs --backup-dir <dir>
  *
  * Exit code: 0 when nothing is alarming, 1 when any alert is raised. That makes
@@ -103,11 +105,11 @@ export function evaluateAlerts(facts) {
   return alerts;
 }
 
-/** @param {string} dir @param {{code:string,level:string}[]} alerts @param {number} now @param {boolean} resolveSources */
-export function writeAlertEvents(dir, alerts, now, resolveSources = true) {
+/** @param {string} dir @param {{code:string,level:string}[]} alerts @param {number} now @param {any} facts */
+export function writeAlertEvents(dir, alerts, now, facts) {
   mkdirSync(dir, {recursive:true});
   const file = join(dir,'events.jsonl');
-  // ponytail: replay a single local event file; rotate it when operator history grows beyond memory.
+  // ponytail: one operator writer; serialize cron/manual runs for this directory. Add an exclusive guard before supporting overlap; rotate history beyond memory.
   const previous = existsSync(file) ? readFileSync(file,'utf8') : '';
   const active = new Map();
   for (const line of previous.trim().split('\n').filter(Boolean)) {
@@ -117,7 +119,18 @@ export function writeAlertEvents(dir, alerts, now, resolveSources = true) {
   const current = new Map(alerts.filter(a=>/^[a-z][a-z0-9_]*(?::[A-Za-z0-9_-]{1,100})?$/.test(a.code)).map(a=>[a.code,a.level]));
   const events = [];
   for (const [code,level] of current) if (!active.has(code)) events.push({at:new Date(now).toISOString(),code,level,status:'open'});
-  for (const [code,level] of active) if (!current.has(code) && (resolveSources || code.startsWith('stage_') || (!code.includes(':') && !['source_due_backlog','media_backlog'].includes(code)))) events.push({at:new Date(now).toISOString(),code,level,status:'resolved'});
+  for (const [code,level] of active) {
+    const stage=code.startsWith('stage_') ? code.split(':')[1] : null;
+    const age=stage ? facts?.stages?.[stage] : null;
+    const verified=stage ? Number.isFinite(age) && age<=STAGE_MAX_AGE_MINUTES[stage]
+      : code==='queue_backlog' ? facts?.queue_observed===true
+      : code==='unknown_spend' ? facts?.unknownSpend?.count===0
+      : code==='backup_missing' ? Number.isFinite(facts?.backupAgeHours)
+      : code==='backup_stale' ? Number.isFinite(facts?.backupAgeHours) && facts.backupAgeHours<=BACKUP_MAX_AGE_HOURS
+      : code.includes(':') ? Array.isArray(facts?.sources)
+      : ['source_due_backlog','media_backlog'].includes(code) ? facts?.collection!=null : false;
+    if (!current.has(code) && verified) events.push({at:new Date(now).toISOString(),code,level,status:'resolved'});
+  }
   if (events.length || !existsSync(file)) {
     writeFileSync(`${file}.tmp`,previous + events.map(e=>JSON.stringify(e)+'\n').join(''));
     renameSync(`${file}.tmp`,file);
@@ -161,11 +174,13 @@ async function collectFacts(sql, { backupDir, now }) {
   }
   // Collection queue: the oldest job still running tells us about stuck work.
   let oldestQueueMinutes = null;
+  let queue_observed = false;
   try {
     const [row] = await sql.query(
       `select min(started_at) as oldest from jobs where status = 'running'`,
     );
     oldestQueueMinutes = row?.oldest ? minutesBetween(now, new Date(row.oldest).getTime()) : null;
+    queue_observed = true;
   } catch {
     // No jobs table (fresh/isolated database).
   }
@@ -181,6 +196,7 @@ async function collectFacts(sql, { backupDir, now }) {
     now,
     stages,
     oldestQueueMinutes,
+    queue_observed,
     unknownSpend,
     backupAgeHours: backupDir ? newestFileAgeHours(backupDir, now) : null,
     sources: collection?.sources,
@@ -240,7 +256,7 @@ async function main() {
       // Local sink only: the plan requires no external notification until the user
       // names a channel. One event per open/resolved transition; polling a
       // cooling source does not append a fresh failure each minute.
-      const file = writeAlertEvents(alertDir,alerts,now,facts.collection!==null);
+      const file = writeAlertEvents(alertDir,alerts,now,facts);
       report.alerts_file = file;
     }
     console.log(JSON.stringify(report, null, 2));
