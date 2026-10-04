@@ -227,9 +227,12 @@ test("V10 legacy -> eino -> legacy uses the selected transport for all three pub
   const {pg,sql}=await setup();
   await sql.query("insert into items(id,source_id,platform,external_id,title,body,published_at) values('switch','s','rss','switch','Battery','Battery material',clock_timestamp())");
   const originalFetch=globalThis.fetch;
-  const names=['AI_ENGINE','XAI_API_KEY','AGENT_SERVICE_URL','AGENT_SERVICE_TOKEN'] as const;
+  const names=['AI_ENGINE','XAI_API_KEY','AGENT_SERVICE_URL','AGENT_SERVICE_TOKEN','LOOM_MODEL_CONFIG'] as const;
+  const modelDir=mkdtempSync(join(tmpdir(),'loom-offline-model-'));
+  const modelPath=join(modelDir,'model.local.json');
+  writeFileSync(modelPath,JSON.stringify({baseURL:'https://api.x.ai/v1',model:'offline-test',apiKey:'offline-intercept-only'}));
   const previous=Object.fromEntries(names.map(k=>[k,process.env[k]]));
-  Object.assign(process.env,{XAI_API_KEY:'offline-intercept-only',AGENT_SERVICE_URL:'http://offline.invalid',AGENT_SERVICE_TOKEN:'offline-intercept-only'});
+  Object.assign(process.env,{LOOM_MODEL_CONFIG:modelPath,XAI_API_KEY:'offline-intercept-only',AGENT_SERVICE_URL:'http://offline.invalid',AGENT_SERVICE_TOKEN:'offline-intercept-only'});
   const calls:string[]=[];
   globalThis.fetch=(async (url,init)=>{
     const body=JSON.parse(String(init?.body));
@@ -257,6 +260,7 @@ test("V10 legacy -> eino -> legacy uses the selected transport for all three pub
   } finally {
     globalThis.fetch=originalFetch;
     for(const k of names) {if(previous[k]===undefined)delete process.env[k];else process.env[k]=previous[k];}
+    rmSync(modelDir,{recursive:true});
     await pg.close();
   }
 });
@@ -266,6 +270,11 @@ test("legacy analysis accepts the flat JSON its own prompt requests", async () =
   await pg.query("insert into items (id,source_id,platform,external_id,title,body) values ('item-1','s','rss','e1','电池研究','电池原始正文。')");
   const originalFetch = globalThis.fetch;
   const originalKey = process.env.XAI_API_KEY;
+  const originalModel = process.env.LOOM_MODEL_CONFIG;
+  const modelDir = mkdtempSync(join(tmpdir(), "loom-offline-model-"));
+  const modelPath = join(modelDir, "model.local.json");
+  writeFileSync(modelPath, JSON.stringify({ baseURL: "https://api.x.ai/v1", model: "offline-test", apiKey: "review-only-never-sent" }));
+  process.env.LOOM_MODEL_CONFIG = modelPath;
   process.env.XAI_API_KEY = "review-only-never-sent";
   let calls = 0;
   globalThis.fetch = (async () => {
@@ -290,6 +299,9 @@ test("legacy analysis accepts the flat JSON its own prompt requests", async () =
     globalThis.fetch = originalFetch;
     if (originalKey === undefined) delete process.env.XAI_API_KEY;
     else process.env.XAI_API_KEY = originalKey;
+    if (originalModel === undefined) delete process.env.LOOM_MODEL_CONFIG;
+    else process.env.LOOM_MODEL_CONFIG = originalModel;
+    rmSync(modelDir, { recursive: true });
     await pg.close();
   }
 });

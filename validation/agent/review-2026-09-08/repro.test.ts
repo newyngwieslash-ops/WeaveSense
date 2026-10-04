@@ -2,7 +2,9 @@
 // Isolated PGlite and protocol doubles only. No live database or model requests.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { PGlite } from "@electric-sql/pglite";
 import { analyzeItemWith, askKnowledgeWith } from "../../../src/lib/server/analyze.ts";
@@ -44,6 +46,11 @@ test("R01: legacy analysis accepts the exact JSON shape its own prompt requests"
   const { sql } = await setup(t);
   const originalFetch = globalThis.fetch;
   const originalKey = process.env.XAI_API_KEY;
+  const originalModel = process.env.LOOM_MODEL_CONFIG;
+  const modelDir = mkdtempSync(join(tmpdir(), "loom-offline-model-"));
+  const modelPath = join(modelDir, "model.local.json");
+  writeFileSync(modelPath, JSON.stringify({ baseURL: "https://api.x.ai/v1", model: "offline-test", apiKey: "review-only-never-sent" }));
+  process.env.LOOM_MODEL_CONFIG = modelPath;
   process.env.XAI_API_KEY = "review-only-never-sent";
   let calls = 0;
   globalThis.fetch = async () => { calls++;
@@ -58,6 +65,8 @@ test("R01: legacy analysis accepts the exact JSON shape its own prompt requests"
     assert.equal(result.ok, true, JSON.stringify(result));
   } finally { globalThis.fetch = originalFetch;
     if (originalKey === undefined) delete process.env.XAI_API_KEY; else process.env.XAI_API_KEY = originalKey;
+    if (originalModel === undefined) delete process.env.LOOM_MODEL_CONFIG; else process.env.LOOM_MODEL_CONFIG = originalModel;
+    rmSync(modelDir, { recursive: true });
   }
 });
 

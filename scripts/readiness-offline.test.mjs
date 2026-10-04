@@ -9,6 +9,7 @@
  * needs is passed explicitly through `overrides`.
  */
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { test } from "node:test";
 import { offlineEnv, offlineChildProcess } from "./readiness-offline.mjs";
 
@@ -37,8 +38,6 @@ test("drops known real configuration and unknown secrets alike", () => {
   const env = offlineEnv(parent);
   for (const key of [
     "DATABASE_URL",
-    "XAI_API_KEY",
-    "LOOM_MODEL_CONFIG",
     "WECHAT_GATEWAY_TOKEN",
     "CRON_SECRET",
     "SOME_FUTURE_UNKNOWN_SECRET",
@@ -53,9 +52,12 @@ test("applies offline-safe defaults", () => {
   assert.equal(env.EXTRACT_AUTO, "false");
   assert.equal(env.AGENT_WORKER_ENABLED, "false");
   assert.equal(env.AGENT_ASYNC_RESEARCH_ENABLED, "false");
-  // Explicitly unset rather than inherited: the app must not autodiscover the
-  // developer's real model file when none is passed.
-  assert.equal(env.LOOM_MODEL_CONFIG, undefined);
+  // Explicitly missing rather than unset: block real model autodiscovery.
+  assert.equal(env.LOOM_RUNTIME_MODE, "development");
+  assert.ok(env.LOOM_MODEL_CONFIG);
+  assert.equal(existsSync(env.LOOM_MODEL_CONFIG), false);
+  assert.notEqual(env.LOOM_MODEL_CONFIG, parent.LOOM_MODEL_CONFIG);
+  assert.equal(env.XAI_API_KEY, "");
   assert.equal(env.DATABASE_URL, undefined);
 });
 
@@ -73,14 +75,17 @@ test("an explicit override is visible and wins over the default", () => {
 test("a child process never sees the parent's real configuration", () => {
   const probe = offlineChildProcess(
     process.execPath,
-    ["-e", "process.stdout.write(JSON.stringify({db:process.env.DATABASE_URL??null,key:process.env.XAI_API_KEY??null,auto:process.env.AUTO_ANALYZE??null}))"],
+    ["-e", "process.stdout.write(JSON.stringify({db:process.env.DATABASE_URL??null,key:process.env.XAI_API_KEY??null,auto:process.env.AUTO_ANALYZE??null,extract:process.env.EXTRACT_AUTO,worker:process.env.AGENT_WORKER_ENABLED,async:process.env.AGENT_ASYNC_RESEARCH_ENABLED,runtime:process.env.LOOM_RUNTIME_MODE,model:process.env.LOOM_MODEL_CONFIG}))"],
     parent,
   );
   assert.equal(probe.status, 0, probe.stderr);
   const seen = JSON.parse(probe.stdout);
   assert.equal(seen.db, null);
-  assert.equal(seen.key, null);
+  assert.equal(seen.key, "");
   assert.equal(seen.auto, "false");
+  for (const key of ["extract", "worker", "async"]) assert.equal(seen[key], "false");
+  assert.equal(seen.runtime, "development");
+  assert.equal(existsSync(seen.model), false);
 });
 
 test("the wrapper never echoes values it drops", () => {
@@ -90,4 +95,10 @@ test("the wrapper never echoes values it drops", () => {
   for (const secret of ["realpw", "xai-real-key", "gateway-secret", "cron-secret", "unknown-secret"]) {
     assert.ok(!rendered.includes(secret), `value leaked: ${secret}`);
   }
+});
+
+test("parent enabled flags cannot suppress safe defaults", () => {
+  const env = offlineEnv({ ...parent, AUTO_ANALYZE: "true", EXTRACT_AUTO: "true", AGENT_WORKER_ENABLED: "true", AGENT_ASYNC_RESEARCH_ENABLED: "true", LOOM_RUNTIME_MODE: "production" });
+  for (const key of ["AUTO_ANALYZE", "EXTRACT_AUTO", "AGENT_WORKER_ENABLED", "AGENT_ASYNC_RESEARCH_ENABLED"]) assert.equal(env[key], "false");
+  assert.equal(env.LOOM_RUNTIME_MODE, "development");
 });
