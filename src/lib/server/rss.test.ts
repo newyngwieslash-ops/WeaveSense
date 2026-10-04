@@ -88,6 +88,23 @@ describe("parseFeedXml", () => {
     assert.equal(items[0].url, 'https://feed.example/nested/article');
   });
 
+  it("keeps legacy raw-link identity independently from clickable article links", () => {
+    const siblings = parseFeedXml('<feed><entry><title>persisted</title><published>2026-08-29T08:00:00Z</published><link rel="self" href="https://feed.example/self"/></entry><entry><title>persisted</title><published>2026-08-29T08:00:00Z</published><link rel="enclosure" href="https://feed.example/enclosure" type="audio/mpeg"/></entry></feed>', "s", "rss");
+    assert.deepEqual(siblings.map((item) => item.external_id), ["https://feed.example/self", "https://feed.example/enclosure"]);
+    assert.deepEqual(siblings.map((item) => item.url), ["", ""]);
+    for (const [rel, href] of [["self", "https://feed.example/self"], ["enclosure", "https://feed.example/audio"], ["self", "../relative-self"], ["enclosure", "./relative-audio"]]) {
+      const [item] = parseFeedXml(`<feed><entry><title>persisted</title><link rel="${rel}" href="${href}" type="audio/mpeg"/></entry></feed>`, "s", "rss", { feedUrl: "https://feed.example/nested/feed.xml" });
+      assert.equal(item.external_id, href);
+      assert.equal(item.url, "");
+    }
+    const [relative] = parseFeedXml('<feed><entry><link rel="alternate" href="../article"/></entry></feed>', "s", "rss", { feedUrl: "https://feed.example/nested/feed.xml" });
+    assert.equal(relative.external_id, "../article");
+    assert.equal(relative.url, "https://feed.example/article");
+    const [untitled] = parseFeedXml('<feed><entry><link rel="self" href="https://feed.example/untitled"/></entry></feed>', "s", "rss");
+    assert.equal(untitled.external_id, "https://feed.example/untitled");
+    assert.equal(untitled.url, "");
+  });
+
   it("keeps WeChat Atom article metadata and its complete body", () => {
     const body = "正文".repeat(5000);
     const [item] = parseFeedXml(atomEntry(body), "source-1", "wechat");

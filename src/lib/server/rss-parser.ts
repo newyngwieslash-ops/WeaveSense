@@ -32,7 +32,7 @@ function textOf(value: unknown): string {
   return "";
 }
 
-function pickLink(raw: unknown): string {
+function pickLink(raw: unknown, articleOnly = false): string {
   const links = asArray(raw);
   const mapped = links.map((link) => {
     if (typeof link === "string") return { href: link, rel: "" };
@@ -43,7 +43,7 @@ function pickLink(raw: unknown): string {
     };
   });
   const alternate = mapped.find((link) => link.rel === "alternate" && link.href);
-  return (alternate ?? mapped.find((link) => !link.rel && link.href) ?? { href: "" }).href;
+  return (alternate ?? mapped.find((link) => (!articleOnly || !link.rel) && link.href) ?? { href: "" }).href;
 }
 
 function webUrl(raw: string, base?: string): string {
@@ -141,7 +141,7 @@ export function parseFeedXml(xml: string, sourceId: string, platform: PlatformId
       if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("feed_invalid_entry");
       const rawLink = pickLink(raw.link);
       const guid = raw.guid as Record<string, unknown> | undefined;
-      const url = webUrl(rawLink, options.feedUrl) ||
+      const url = webUrl(pickLink(raw.link, true), options.feedUrl) ||
         (guid?.["@_isPermaLink"] === "false" ? "" : webUrl(textOf(raw.guid))) || webUrl(textOf(raw.id));
       const title = stripHtml(textOf(raw.title) || "未命名");
       const rawBody = textOf(
@@ -163,7 +163,7 @@ export function parseFeedXml(xml: string, sourceId: string, platform: PlatformId
       if (published && Number.isNaN(Date.parse(published))) throw new Error("feed_invalid_entry");
       const thumb = webUrl(pickThumb(raw), options.feedUrl);
       const media = webUrl(enclosureUrl(raw), options.feedUrl);
-      if (!textOf(raw.guid ?? raw.id) && !url && !textOf(raw.title) && !rawBody && !media) throw new Error("feed_invalid_entry");
+      if (!textOf(raw.guid ?? raw.id) && !rawLink && !url && !textOf(raw.title) && !rawBody && !media) throw new Error("feed_invalid_entry");
       const id = textOf(raw.guid ?? raw.id) || rawLink || url || `${sourceId}:${title}:${published ?? ""}`;
       // ponytail: IDs support at most 320 characters; accepting longer IDs requires a persisted-ID migration.
       if (id.length > 320) throw new Error("feed_entry_id_limit");
