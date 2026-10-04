@@ -125,11 +125,13 @@ test("caller cancellation drops a stalled body and generic errors omit secrets",
   }), (error: unknown) => error instanceof CollectionHttpError && error.code === "network_error" && !error.message.includes("secret"));
 });
 
-test("redirects share DNS and body time; each transport gets remaining budget", async () => {
+test("redirects share DNS and body time; each transport gets remaining budget", async (t) => {
   const budgets: number[] = [];
-  const started = Date.now();
+  let now = 0;
+  t.mock.method(Date, "now", () => now);
+  const started = performance.now();
   await assert.rejects(() => publicFetch("https://example.com/", { timeoutMs: 90,
-    resolver: { async lookup() { await new Promise((r) => setTimeout(r, 25)); return [{ address: "1.1.1.1", family: 4 }]; } },
+    resolver: { async lookup() { now += 25; return [{ address: "1.1.1.1", family: 4 }]; } },
     transport: async (_url, options) => {
       budgets.push(options.timeoutMs!);
       assert.ok(options.signals?.abortSignal);
@@ -137,9 +139,8 @@ test("redirects share DNS and body time; each transport gets remaining budget", 
       return { status: 200, headers: {}, body: { getReader: () => ({ read: () => new Promise(() => {}), cancel: async () => {}, releaseLock() {} }) } };
     },
   }), (error: unknown) => error instanceof CollectionHttpError && error.code === "timeout");
-  assert.equal(budgets.length, 2);
-  assert.ok(budgets[0] < 90 && budgets[1] < budgets[0]);
-  assert.ok(Date.now() - started < 500);
+  assert.deepEqual(budgets, [65, 40]);
+  assert.ok(performance.now() - started < 500);
 });
 
 test("protocol and credential boundaries", () => {
