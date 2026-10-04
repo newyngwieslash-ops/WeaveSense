@@ -1,4 +1,4 @@
-import { publicFetch, type DnsResolver, type OutboundTransport } from "./outbound-policy.ts";
+import { CollectionHttpError, publicFetch, type DnsResolver, type OutboundTransport } from "./outbound-policy.ts";
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -12,6 +12,7 @@ export type FetchIo = {
   resolver?: DnsResolver;
   transport?: OutboundTransport;
   maxBytes?: number;
+  signal?: AbortSignal;
 };
 
 /**
@@ -34,6 +35,7 @@ export async function fetchText(
     resolver: io.resolver,
     transport: io.transport,
     maxBytes: io.maxBytes,
+    signal: io.signal,
     headers: {
       "User-Agent": UA,
       Accept: accept,
@@ -54,11 +56,13 @@ export async function fetchJson<T>(
     resolver: io.resolver,
     transport: io.transport,
     maxBytes: io.maxBytes,
+    signal: io.signal,
     headers: {
       "User-Agent": UA,
       Accept: "application/json, text/plain, */*",
       Referer: "https://www.bilibili.com/",
     },
   });
-  return JSON.parse(result.text ?? "") as T;
+  try { return JSON.parse(result.text ?? "") as T; }
+  catch { throw new CollectionHttpError("invalid_response"); }
 }

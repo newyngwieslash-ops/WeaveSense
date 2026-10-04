@@ -7,6 +7,7 @@ import { fetchJson, type FetchIo } from "../http";
 import { parseFeedXml } from "../rss-parser";
 import { WECHAT_GATEWAY_FEED_TIMEOUT_MS } from "../cron";
 import { providerFromItems } from "../wechat-meta.ts";
+import { abortable, CollectionHttpError, collectionHttpError, parseRetryAfter, readCapped } from "../outbound-policy.ts";
 import { CollectorBatchError, collectorMeta,
   type CollectorAdapter, type CollectorBatch, type CollectorMeta, type NormalizedItem,
   type SourceRecord } from "./types";
@@ -17,7 +18,7 @@ const batch = (items: NormalizedItem[], adapter: string): CollectorBatch => ({
 
 // Gateway feed ceiling: generous for a WeChat Atom feed (bodies included), but
 // far below "unbounded". Kept next to the caller it guards.
-const WECHAT_GATEWAY_FEED_MAX_CHARS = 8 * 1024 * 1024;
+const WECHAT_GATEWAY_FEED_MAX_BYTES = 8 * 1024 * 1024;
 
 function gatewayMeta(headers: Headers): CollectorMeta {
   const provider = headers.get("x-loom-provider");
@@ -68,7 +69,7 @@ const rssAdapter: CollectorAdapter = {
 
 const wechatGatewayAdapter: CollectorAdapter = {
   id: "wechat_gateway",
-  async fetch(source) {
+  async fetch(source, io = {}) {
     if (!wechatGatewayConfigured()) throw new Error("微信公众号源网关未配置");
     // The WeChat gateway is an operator-configured INTERNAL service (compose
     // network / loopback), so it deliberately does NOT go through the public
@@ -76,31 +77,40 @@ const wechatGatewayAdapter: CollectorAdapter = {
     // carries a bearer token, so following a redirect would hand that token to
     // whatever host the redirect names.
     let response: Response;
+    const deadline = AbortSignal.timeout(WECHAT_GATEWAY_FEED_TIMEOUT_MS);
+    const signal = io.signal ? AbortSignal.any([io.signal, deadline]) : deadline;
     try {
-      response = await fetch(gatewayFeedUrl(source.id), {
+      response = await abortable(fetch(gatewayFeedUrl(source.id), {
         headers: { Accept: "application/atom+xml", Authorization: `Bearer ${prod.wechatGatewayToken}` },
-        signal: AbortSignal.timeout(WECHAT_GATEWAY_FEED_TIMEOUT_MS),
+        signal,
         redirect: "error",
-      });
-    } catch {
+      }), signal);
+    } catch (error) {
       throw new CollectorBatchError("wechat_gateway_unavailable",
-        { provider: "", attempts: ["primary"], paid_call: false });
+        { provider: "", attempts: ["primary"], paid_call: false }, collectionHttpError(error, signal));
     }
-    const meta = gatewayMeta(response.headers);
+    let meta: CollectorMeta;
+    try { meta = gatewayMeta(response.headers); }
+    catch (error) { void response.body?.cancel().catch(() => {}); throw error; }
     if (!response.ok) {
       try { await response.body?.cancel(); } catch { /* fixed error below */ }
-      throw new CollectorBatchError(`wechat_gateway_http_${response.status}`, meta);
+      throw new CollectorBatchError(`wechat_gateway_http_${response.status}`, meta,
+        new CollectionHttpError(response.status === 429 ? "rate_limited" : "http_error", `HTTP ${response.status}`,
+          { status: response.status, retryAt: parseRetryAfter(response.headers.get("retry-after"), Date.now()) ?? undefined }));
     }
-    if (!meta.provider) throw new CollectorBatchError("wechat_gateway_invalid_metadata", meta);
+    if (!meta.provider) {
+      void response.body?.cancel().catch(() => {});
+      throw new CollectorBatchError("wechat_gateway_invalid_metadata", meta);
+    }
     let items: NormalizedItem[];
     try {
       // A gateway feed is text; an explicit ceiling keeps a wedged gateway from
       // streaming an unbounded body into memory before the parse.
-      const text = await response.text();
-      if (text.length > WECHAT_GATEWAY_FEED_MAX_CHARS) throw new Error("wechat_gateway_feed_too_large");
+      const text = new TextDecoder().decode(await readCapped(response.body, WECHAT_GATEWAY_FEED_MAX_BYTES, signal));
       items = parseFeedXml(text, source.id, "wechat");
-    } catch {
-      throw new CollectorBatchError("wechat_gateway_invalid_feed", meta);
+    } catch (error) {
+      throw new CollectorBatchError("wechat_gateway_invalid_feed", meta,
+        error instanceof CollectionHttpError || signal.aborted ? collectionHttpError(error, signal) : new CollectionHttpError("invalid_response"));
     }
     return { items, meta: { ...meta, provider: meta.provider || providerFromItems(items) } };
   },
@@ -115,20 +125,20 @@ const telegramAdapter: CollectorAdapter = {
     const handle = parseTelegramHandle(source.handle) || parseTelegramHandle(source.url);
     if (!handle) throw new Error("请填写频道用户名，或 t.me/用户名 链接");
     const minId = source.last_external_id ?? "";
-    const health = await telethonHealth();
+    const health = await telethonHealth(io.signal);
     if (health.authorized) {
       if (health.paused_until && health.paused_until > 0) {
         throw new CollectorBatchError(`Telethon FloodWait ${health.paused_until}s`, {
           provider: "", attempts: ["telethon"], paid_call: false,
-        });
+        }, new CollectionHttpError("rate_limited", "rate_limited", { retryAt: Date.now() + health.paused_until * 1000 }));
       }
       try {
-        return batch(await fetchTelethonHistory(handle, minId, 80), "telethon");
+        return batch(await fetchTelethonHistory(handle, minId, 80, io.signal), "telethon");
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         throw new CollectorBatchError(msg, {
           provider: "", attempts: ["telethon"], paid_call: false,
-        });
+        }, err);
       }
     }
     try {
@@ -137,7 +147,7 @@ const telegramAdapter: CollectorAdapter = {
       const msg = err instanceof Error ? err.message : String(err);
       throw new CollectorBatchError(msg, {
         provider: "", attempts: ["t.me/s"], paid_call: false,
-      });
+      }, err);
     }
   },
 };
@@ -298,23 +308,25 @@ export async function collectSource(source: SourceRecord, io: FetchIo = {}): Pro
   } catch (err) {
     const failed = collectorMeta(err);
     const attempted = failed.attempts.length ? failed.attempts : [adapter.id];
-    if (source.feed_url.startsWith("http") && adapter.id !== "rss") {
+    // Other adapters already fetched feed_url via RSS; replaying it here resets its deadline.
+    if (source.feed_url.startsWith("http") && adapter.id === "wechat_gateway" && !io.signal?.aborted &&
+      !["aborted", "timeout"].includes((err as { code?: string })?.code ?? "")) {
       const attempts = [...new Set([...attempted, "rss"])];
       try {
         const fallback = await rssAdapter.fetch({ ...source, adapter: "rss" }, io);
         return { ...fallback, meta: { ...fallback.meta,
           attempts,
           paid_call: failed.paid_call || fallback.meta.paid_call } };
-      } catch {
+      } catch (fallbackError) {
         throw new CollectorBatchError("collector_fallback_failed", {
           provider: failed.provider, attempts, paid_call: failed.paid_call,
-        });
+        }, fallbackError);
       }
     }
     throw err instanceof CollectorBatchError ? err
       : new CollectorBatchError(err instanceof Error ? err.message : "collector_failed", {
         provider: failed.provider, attempts: attempted, paid_call: failed.paid_call,
-      });
+      }, err);
   }
 }
 

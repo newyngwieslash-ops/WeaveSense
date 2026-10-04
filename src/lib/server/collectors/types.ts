@@ -1,5 +1,6 @@
 import type { MediaType, PlatformId } from "@/lib/platforms";
 import type { FetchIo } from "../http.ts";
+import { CollectionHttpError } from "../outbound-policy.ts";
 
 export type SourceRecord = {
   id: string;
@@ -85,10 +86,13 @@ export type KeywordAttempt = {
 
 export type KeywordBatch = { items: NormalizedItem[]; attempts: KeywordAttempt[] };
 
-export class CollectorBatchError extends Error {
-  constructor(message: string, readonly meta: CollectorMeta) {
-    super(message);
+export class CollectorBatchError extends CollectionHttpError {
+  readonly meta: CollectorMeta;
+  constructor(message: string, meta: CollectorMeta, cause?: unknown) {
+    const failure = cause as { code?: string; status?: number; retryAt?: number } | undefined;
+    super(failure?.code ?? message, message, { status: failure?.status, retryAt: failure?.retryAt });
     this.name = "CollectorBatchError";
+    this.meta = meta;
   }
 }
 
