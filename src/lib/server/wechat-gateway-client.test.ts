@@ -17,6 +17,12 @@ const HEALTH = {
   sources: [{
     source_id: SOURCE.source_id,
     last_primary_ok_at: "2026-08-28T08:00:00.000Z",
+    last_primary_content_at: null,
+    latest_published_at: null,
+    expected_update_hours: null,
+    content_age_hours: null,
+    freshness_state: "unknown",
+    diagnostic_code: "",
     consecutive_primary_failures: 0,
     recent_error_type: "",
     last_paid_check_at: null,
@@ -30,6 +36,27 @@ const HEALTH = {
 };
 
 describe("createWechatGatewayClient", () => {
+  it("carries configured freshness independently of successful request health", async () => {
+    let body: Record<string, unknown> | undefined;
+    const source = { ...HEALTH.sources[0], last_primary_content_at: "2026-08-01T00:00:00Z",
+      latest_published_at: "2026-07-31T00:00:00Z", expected_update_hours: 24,
+      recent_error_type: "risk_control",
+      content_age_hours: 660, freshness_state: "suspected_stale", diagnostic_code: "primary_content_stale" };
+    const client = createWechatGatewayClient({ baseUrl: "http://gateway:8790", token: TOKEN,
+      fetchImpl: async (_input, init) => {
+        if (init?.method === "PUT") { body = JSON.parse(String(init.body)); return Response.json({ ok: true }); }
+        return Response.json({ ...HEALTH, sources: [source] });
+      } });
+    await client.putSource({ ...SOURCE, expected_update_hours: 24 });
+    assert.equal(body?.expected_update_hours, 24);
+    assert.deepEqual((await client.listHealth()).sources[0], source);
+    const legacy = { ...HEALTH.sources[0] } as Record<string, unknown>;
+    for (const field of ["last_primary_content_at", "latest_published_at", "expected_update_hours",
+      "content_age_hours", "freshness_state", "diagnostic_code"]) delete legacy[field];
+    const olderGateway = createWechatGatewayClient({ baseUrl: "http://gateway:8790", token: TOKEN,
+      fetchImpl: async () => Response.json({ ...HEALTH, sources: [legacy] }) });
+    assert.deepEqual((await olderGateway.listHealth()).sources[0], HEALTH.sources[0]);
+  });
   it("provisions the exact gateway source contract with bearer auth", async () => {
     let request: { url: string; init?: RequestInit } | undefined;
     const client = createWechatGatewayClient({
@@ -135,6 +162,13 @@ describe("createWechatGatewayClient", () => {
     const invalid = [
       { ...HEALTH, sources: Array.from({ length: 1_001 }, () => HEALTH.sources[0]) },
       { ...HEALTH, sources: [{ ...HEALTH.sources[0], alert_state: "secret-upstream-state" }] },
+      ...[0, -1, "24"].map((expected_update_hours) => ({ ...HEALTH,
+        sources: [{ ...HEALTH.sources[0], expected_update_hours }] })),
+      { ...HEALTH, sources: [{ ...HEALTH.sources[0], last_primary_content_at: "invalid" }] },
+      { ...HEALTH, sources: [{ ...HEALTH.sources[0], last_primary_content_at: "2026-08-29T00:00:00Z" }] },
+      { ...HEALTH, sources: [{ ...HEALTH.sources[0], latest_published_at: "invalid" }] },
+      { ...HEALTH, sources: [{ ...HEALTH.sources[0], freshness_state: "risk_control" }] },
+      { ...HEALTH, sources: [{ ...HEALTH.sources[0], diagnostic_code: "risk_control" }] },
       { ...HEALTH, sources: [{ ...HEALTH.sources[0], source_id: "../unsafe" }] },
       { ...HEALTH, sources: [{ ...HEALTH.sources[0], last_primary_ok_at: "2026" }] },
       { ...HEALTH, sources: [{ ...HEALTH.sources[0], last_primary_ok_at: "2026-02-30T08:00:00.000Z" }] },

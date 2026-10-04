@@ -161,6 +161,13 @@ function initialize(db) {
       updated_at text not null
     )`);
     const sourceColumns = db.prepare("pragma table_info(gateway_sources)").all();
+    for (const [column, type] of [["last_primary_content_at", "text"], ["latest_published_at", "text"],
+      ["expected_update_hours", "real check (expected_update_hours > 0)"],
+      ["last_primary_error_type", "text not null default ''"]]) {
+      if (!sourceColumns.some(({ name }) => name === column)) {
+        db.exec(`alter table gateway_sources add column ${column} ${type}`);
+      }
+    }
     if (!sourceColumns.some(({ name }) => name === "last_paid_ok_at")) {
       db.exec("alter table gateway_sources add column last_paid_ok_at text");
     }
@@ -194,6 +201,13 @@ function initialize(db) {
     create table if not exists reconciliation_outbox (
       source_id text primary key,
       created_at text not null
+    );
+    create table if not exists primary_content_evidence (
+      source_id text not null,
+      canonical_id text not null,
+      body_present integer not null default 0,
+      body_complete integer not null default 0,
+      primary key (source_id, canonical_id)
     );
     create table if not exists detail_queue (
       source_id text not null,
@@ -263,11 +277,12 @@ function validateGatewayItem(item) {
 
 function createStore(db) {
   const upsert = db.prepare(`insert into gateway_sources
-    (source_id, account_id, name, priority, sample_url, primary_feed_url, created_at, updated_at)
-    values (?, ?, ?, ?, ?, ?, ?, ?)
+    (source_id, account_id, name, priority, sample_url, primary_feed_url, expected_update_hours, created_at, updated_at)
+    values (?, ?, ?, ?, ?, ?, ?, ?, ?)
     on conflict(source_id) do update set
       name=excluded.name, priority=excluded.priority,
       sample_url=excluded.sample_url, primary_feed_url=excluded.primary_feed_url,
+      expected_update_hours=excluded.expected_update_hours,
       updated_at=excluded.updated_at`);
   const resetMapping = db.prepare(`update gateway_sources set
     last_paid_check_at = null, last_paid_result = '', next_retry_at = null,
@@ -275,11 +290,22 @@ function createStore(db) {
   const get = db.prepare("select * from gateway_sources where source_id = ?");
   const list = db.prepare("select * from gateway_sources order by source_id");
   const success = db.prepare(`update gateway_sources set
-    last_primary_ok_at = ?, consecutive_primary_failures = 0, updated_at = ?
+    last_primary_ok_at = ?, consecutive_primary_failures = 0, last_primary_error_type = '', updated_at = ?
     where source_id = ?`);
   const failure = db.prepare(`update gateway_sources set
-    consecutive_primary_failures = consecutive_primary_failures + 1, updated_at = ?
+    consecutive_primary_failures = consecutive_primary_failures + 1, last_primary_error_type = ?, updated_at = ?
     where source_id = ?`);
+  // ponytail: one compact row per primary canonical ID, unbounded history; archive per source only if exact dedupe is preserved.
+  const getEvidence = db.prepare("select * from primary_content_evidence where source_id = ? and canonical_id = ?");
+  const putEvidence = db.prepare(`insert into primary_content_evidence
+    (source_id, canonical_id, body_present, body_complete) values (?, ?, ?, ?)
+    on conflict(source_id, canonical_id) do update set
+      body_present = max(body_present, excluded.body_present),
+      body_complete = max(body_complete, excluded.body_complete)`);
+  const contentTime = db.prepare(`update gateway_sources set last_primary_content_at = ?, updated_at = ?
+    where source_id = ? and (last_primary_content_at is null or julianday(last_primary_content_at) < julianday(?))`);
+  const publicationTime = db.prepare(`update gateway_sources set latest_published_at = ?
+    where source_id = ? and (latest_published_at is null or julianday(latest_published_at) < julianday(?))`);
   const paidResult = db.prepare(`update gateway_sources set
     last_paid_check_at = ?,
     last_paid_ok_at = case when ? = 'ok' then ? else last_paid_ok_at end,
@@ -349,9 +375,31 @@ function createStore(db) {
       : { calls: 0, amount: 0 };
   }
 
+  function recordContentEvidence(sourceId, item, existing, now) {
+    // Publication is observed across both providers, independent of primary progress.
+    publicationTime.run(item.published_at, sourceId, item.published_at);
+    if (item.provider !== "primary") return;
+    // Retained historical primary rows prove identity/body, never their last content-change time.
+    const previous = getEvidence.get(sourceId, item.canonical_id)
+      ?? (existing && JSON.parse(providersSeen(existing, "")).includes("primary")
+        ? { body_present: Number(Boolean(existing.body_text.trim())), body_complete: existing.body_complete }
+        : null);
+    const present = Number(Boolean(item.body_text.trim()));
+    const complete = Number(Boolean(present && item.body_complete));
+    if (!previous || (!previous.body_present && present) || (!previous.body_complete && complete)) {
+      contentTime.run(now, now, sourceId, now);
+    }
+    putEvidence.run(sourceId, item.canonical_id,
+      Math.max(previous?.body_present ?? 0, present), Math.max(previous?.body_complete ?? 0, complete));
+  }
+
   return {
     upsertSource(source, now = new Date().toISOString()) {
       now = iso(now, "now");
+      const expectedHours = source.expected_update_hours ?? null;
+      if (expectedHours !== null && !(nonNegativeNumber(expectedHours, "expected_update_hours") > 0)) {
+        throw new TypeError("expected_update_hours must be positive");
+      }
       db.exec("begin immediate");
       try {
         const existing = get.get(source.id);
@@ -359,7 +407,8 @@ function createStore(db) {
           throw new Error("account_id cannot change");
         }
         upsert.run(source.id, source.account_id, source.name, source.priority, source.sample_url,
-          source.primary_feed_url, now, now);
+          source.primary_feed_url, source.expected_update_hours === undefined
+            ? existing?.expected_update_hours ?? null : expectedHours, now, now);
         if (existing?.last_paid_result === "mapping_error"
           && existing.sample_url !== source.sample_url) resetMapping.run(now, source.id);
         const saved = get.get(source.id);
@@ -375,8 +424,9 @@ function createStore(db) {
     recordPrimarySuccess(sourceId, now = new Date().toISOString()) {
       success.run(now, now, sourceId);
     },
-    recordPrimaryFailure(sourceId, now = new Date().toISOString()) {
-      failure.run(now, sourceId);
+    recordPrimaryFailure(sourceId, now = new Date().toISOString(), errorType = "primary_feed_failed") {
+      if (!["primary_feed_failed", "risk_control"].includes(errorType)) throw new TypeError("errorType is invalid");
+      failure.run(errorType, now, sourceId);
     },
     recordPaidResult(sourceId, result, nextRetryAt, alertState, now = new Date().toISOString(), successAt = now,
       enqueueOutbox = false) {
@@ -574,6 +624,7 @@ function createStore(db) {
         for (const item of validItems) {
           const existing = getItem.get(sourceId, item.canonical_id);
           const body = mergedBody(existing, item);
+          recordContentEvidence(sourceId, item, existing, now);
           upsertItem.run(sourceId, item.canonical_id, item.account_id, item.account_name, item.title,
             item.published_at, item.original_url, body.text, body.complete,
             preferNonEmpty(item.cover_url, existing?.cover_url), item.provider,
@@ -632,6 +683,7 @@ function createStore(db) {
         }
         const existing = getItem.get(sourceId, canonicalId);
         const body = mergedBody(existing, valid);
+        recordContentEvidence(sourceId, valid, existing, now);
         upsertItem.run(sourceId, canonicalId, valid.account_id, valid.account_name, valid.title,
           valid.published_at, valid.original_url, body.text, body.complete,
           preferNonEmpty(valid.cover_url, existing?.cover_url), valid.provider,

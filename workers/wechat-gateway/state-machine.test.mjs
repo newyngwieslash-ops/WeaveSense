@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   alertState,
+  freshnessState,
   nextPaidRetry,
   paidDecision,
   PAID_RETRY_MINUTES,
@@ -12,6 +13,22 @@ import {
 } from "./state-machine.mjs";
 
 const now = new Date("2026-08-28T15:35:00Z"); // Shanghai 23:35
+
+test("freshness requires content evidence and an explicit expected interval", () => {
+  const date = new Date("2026-10-02T01:00:00Z");
+  const source = { last_primary_ok_at: "2026-10-02T00:00:00Z",
+    last_primary_content_at: "2026-09-01T00:00:00Z", expected_update_hours: 24 };
+  assert.equal(freshnessState(source, date), "suspected_stale");
+  assert.equal(freshnessState({ ...source, expected_update_hours: null }, date), "unknown");
+  for (const value of [null, "invalid", "2026-10-03T00:00:00Z"]) {
+    assert.equal(freshnessState({ ...source, last_primary_content_at: value }, date), "unknown");
+  }
+  assert.equal(freshnessState(source, new Date("2026-09-04T00:00:00Z")), "fresh");
+  assert.equal(freshnessState(source, new Date("2026-09-04T00:00:00.001Z")), "suspected_stale");
+  assert.equal(paidDecision(source, date).allowed, false);
+  assert.equal(alertState(source, date), "normal");
+  assert.throws(() => freshnessState(source, new Date("invalid")), /valid Date/);
+});
 
 test("uses Shanghai calendar time", () => {
   assert.equal(shanghaiDay(now), "2026-08-28");

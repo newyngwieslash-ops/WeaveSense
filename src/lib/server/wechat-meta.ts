@@ -2,6 +2,16 @@ import type { NormalizedItem } from "./collectors/types.ts";
 
 export type WechatProvider = "" | "primary" | "dajiala" | "mixed";
 
+export type WechatFreshnessMetadata = {
+  last_primary_content_at: string | null;
+  // Newest publication observed from either provider; not primary progress evidence.
+  latest_published_at: string | null;
+  expected_update_hours: number | null;
+  content_age_hours: number | null;
+  freshness_state: "unknown" | "fresh" | "suspected_stale";
+  diagnostic_code: "" | "primary_content_stale";
+};
+
 function providers(value: unknown): Array<"primary" | "dajiala"> {
   const values = value === "mixed" ? ["primary", "dajiala"]
     : Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];

@@ -93,12 +93,12 @@ export type WechatHealthRow = {
   source_id: string;
   last_primary_ok_at: string | null;
   consecutive_primary_failures: number;
-  recent_error_type: "" | "primary_feed_failed" | "technical_error" | "mapping_error";
+  recent_error_type: "" | "primary_feed_failed" | "technical_error" | "mapping_error" | "risk_control";
   last_paid_check_at: string | null;
   last_paid_result: "" | "ok" | "technical_error" | "mapping_error";
   alert_state: "normal" | "degraded" | "paid_fallback" | "alert";
   next_retry_at: string | null;
-};
+} & Partial<import("./server/wechat-meta.ts").WechatFreshnessMetadata>;
 
 export type WechatHealthUsage = {
   today: string;

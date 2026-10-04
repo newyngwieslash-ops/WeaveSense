@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { XMLParser } from "fast-xml-parser";
+import { offlineChildProcess } from "../../scripts/readiness-offline.mjs";
 import { toAtom } from "./atom.mjs";
 import { createFixtureServer } from "./fixture-server.mjs";
 import { canonicalWechatId, fetchPrimary } from "./primary.mjs";
@@ -172,7 +173,16 @@ test("migrates an existing source database with paid-success history", async (t)
   assert.match(columns.prepare("select sql from sqlite_master where name = 'provider_reservations'")
     .get().sql, /overrun/);
   assert.equal(store.getSource("legacy").last_paid_ok_at, "2026-08-28T02:00:00.000Z");
+  assert.equal(store.getSource("legacy").last_primary_content_at, null);
+  assert.equal(store.getSource("legacy").latest_published_at, null);
+  assert.equal(store.getSource("legacy").expected_update_hours, null);
   assert.equal(store.getGatewayItem("legacy", "wx:legacy:1:1").body_complete, 0);
+  store.upsertGatewayItems("legacy", [{ canonical_id: "wx:legacy:1:1", account_id: "gh_legacy",
+    account_name: "旧公众号", title: "旧缓存", published_at: "2026-08-28T01:00:00.000Z",
+    original_url: "https://mp.weixin.qq.com/s?__biz=legacy&mid=1&idx=1", body_text: "旧摘要",
+    body_complete: false, provider: "primary", discovered_at: "2026-08-28T03:00:00Z" }], "2026-08-28T03:00:00Z");
+  store.recordPrimarySuccess("legacy", "2026-08-28T03:00:00Z");
+  assert.equal(store.getSource("legacy").last_primary_content_at, null);
 });
 
 test("rolls back a failed store migration and closes its database", async (t) => {
@@ -641,6 +651,10 @@ test("an empty feed succeeds while an upstream failure is counted with a fixed e
   assert.equal((await fetch(`${base}/v1/feeds/wx-empty.atom`, { headers })).status, 200);
   assert.equal(store.getSource("wx-empty").consecutive_primary_failures, 0);
   assert.ok(store.getSource("wx-empty").last_primary_ok_at);
+  const emptyHealth = await (await fetch(`${base}/v1/sources/wx-empty/health`, { headers })).json();
+  assert.equal(emptyHealth.last_primary_content_at, null);
+  assert.equal(emptyHealth.freshness_state, "unknown");
+  assert.equal(emptyHealth.diagnostic_code, "");
   body = "<broken";
   const failed = await fetch(`${base}/v1/feeds/wx-empty.atom`, { headers });
   assert.equal(failed.status, 503);
@@ -660,6 +674,169 @@ const primaryItem = {
   body_text: "自建正文", body_complete: true, cover_url: "https://mmbiz.qpic.cn/primary.jpg",
   provider: "primary", discovered_at: "2026-08-28T10:01:00.000Z",
 };
+
+test("seven days of an identical expired feed update availability, not primary freshness or paid spend", async (t) => {
+  const store = openStore(":memory:");
+  t.after(() => store.close());
+  const source = { ...integrationSource, expected_update_hours: 24 };
+  store.upsertSource(source, "2026-09-25T00:00:00.000Z");
+  let date = new Date("2026-09-25T00:00:00.000Z");
+  const item = { ...primaryItem, published_at: "2026-09-01T00:00:00.000Z" };
+  let paidCalls = 0;
+  const gateway = createGateway({ store, token: "gateway-test", now: () => date,
+    primary: async () => [item], paid: { estimatedListCost: 0.08,
+      listToday: async () => { paidCalls++; throw new Error("diagnosis must not spend"); } } });
+  const call = (path) => gateway(new Request(`http://gateway.local${path}`,
+    { headers: { authorization: "Bearer gateway-test" } }));
+  for (let day = 0; day < 8; day++) {
+    date = new Date(Date.parse("2026-09-25T00:00:00Z") + day * 86_400_000);
+    assert.equal((await call(`/v1/feeds/${source.id}.atom`)).status, 200);
+    const health = await (await call(`/v1/sources/${source.id}/health`)).json();
+    assert.equal(health.last_primary_ok_at, date.toISOString());
+    assert.equal(health.last_primary_content_at, "2026-09-25T00:00:00.000Z");
+    assert.equal(health.latest_published_at, item.published_at);
+    assert.equal(health.freshness_state, day > 3 ? "suspected_stale" : "fresh");
+    assert.equal(health.diagnostic_code, day > 3 ? "primary_content_stale" : "");
+    assert.equal(health.alert_state, "normal");
+    assert.equal(health.recent_error_type, "");
+  }
+  assert.equal(paidCalls, 0);
+  assert.deepEqual(store.getProviderUsage("2026-10-02", "dajiala"), { calls: 0, amount: 0 });
+  // Restored primary content clears the diagnostic. A summary is not a complete body.
+  date = new Date("2026-10-02T01:00:00Z");
+  store.upsertGatewayItems(source.id, [{ ...item, body_text: "", body_complete: false,
+    canonical_id: "wx:restored:1:1", published_at: date.toISOString() }], date.toISOString());
+  assert.equal(store.getSource(source.id).last_primary_content_at, date.toISOString());
+  assert.equal((await (await call(`/v1/sources/${source.id}/health`)).json()).freshness_state, "fresh");
+});
+
+test("SQLite restart preserves content evidence, conservative reservations, outbox and body replay", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "wechat-freshness-"));
+  const path = join(directory, "gateway.sqlite");
+  let store = openStore(path);
+  t.after(async () => { store.close(); await rm(directory, { recursive: true, force: true }); });
+  store.upsertSource({ ...integrationSource, expected_update_hours: 24 }, "2026-08-28T00:00:00Z");
+  const summary = { ...primaryItem, body_text: "summary", body_complete: false };
+  store.upsertGatewayItems(integrationSource.id, [summary], "2026-08-28T10:00:00Z");
+  store.recordPrimarySuccess(integrationSource.id, "2026-08-28T10:00:00Z");
+  const reservation = store.tryReserveSpend("2026-08-28", "dajiala", 0.08, 0.08, 1);
+  store.close();
+  store = openStore(path);
+  store.upsertGatewayItems(integrationSource.id, [{ ...summary, body_text: "", body_complete: true }], "2026-08-28T10:15:00Z");
+  assert.equal(store.getSource(integrationSource.id).last_primary_content_at, "2026-08-28T10:00:00Z");
+  store.deleteGatewayItemsBefore("2026-08-29T00:00:00Z");
+  assert.equal(store.getGatewayItem(integrationSource.id, summary.canonical_id), undefined);
+  store.upsertGatewayItems(integrationSource.id, [summary], "2026-08-28T10:30:00Z");
+  assert.equal(store.getSource(integrationSource.id).last_primary_content_at, "2026-08-28T10:00:00Z");
+  assert.equal(store.tryReserveSpend("2026-08-28", "dajiala", 0.08, 0.08, 1), false);
+  assert.deepEqual(store.getProviderUsage("2026-08-28", "dajiala"), { calls: 1, amount: 0.08 });
+  store.settleUnknown(reservation);
+  store.completeDetail(integrationSource.id, primaryItem.canonical_id,
+    { ...primaryItem, provider: "dajiala" }, "2026-08-28T11:00:00Z");
+  assert.equal(store.getSource(integrationSource.id).last_primary_content_at, "2026-08-28T10:00:00Z");
+  store.close();
+  store = openStore(path);
+  assert.deepEqual(store.listReconciliationOutbox(), [integrationSource.id]);
+  store.completeDetail(integrationSource.id, primaryItem.canonical_id,
+    { ...primaryItem, provider: "dajiala" }, "2026-08-28T12:00:00Z");
+  assert.equal(store.getSource(integrationSource.id).last_primary_content_at, "2026-08-28T10:00:00Z");
+  store.upsertGatewayItems(integrationSource.id, [primaryItem], "2026-08-28T13:00:00Z");
+  assert.equal(store.getSource(integrationSource.id).last_primary_content_at, "2026-08-28T13:00:00Z");
+  store.close();
+  store = openStore(path);
+  store.upsertGatewayItems(integrationSource.id, [primaryItem], "2026-08-28T14:00:00Z");
+  assert.equal(store.getSource(integrationSource.id).last_primary_content_at, "2026-08-28T13:00:00Z");
+  assert.equal(store.getSource(integrationSource.id).expected_update_hours, 24);
+  assert.equal(store.ackReconciliationOutbox([integrationSource.id]), 1);
+  assert.deepEqual(store.listReconciliationOutbox(), []);
+  const paidFirst = { ...summary, canonical_id: "wx:paid-first:1:1", provider: "dajiala",
+    published_at: "2026-08-28T15:00:00Z" };
+  store.upsertGatewayItems(integrationSource.id, [paidFirst], "2026-08-28T15:00:00Z");
+  assert.equal(store.getSource(integrationSource.id).last_primary_content_at, "2026-08-28T13:00:00Z");
+  assert.equal(store.getSource(integrationSource.id).latest_published_at, "2026-08-28T15:00:00Z");
+  store.upsertGatewayItems(integrationSource.id, [{ ...paidFirst, provider: "primary" }], "2026-08-28T16:00:00Z");
+  assert.equal(store.getSource(integrationSource.id).last_primary_content_at, "2026-08-28T16:00:00Z");
+});
+
+test("process exit without closing SQLite retains reserved spend and completed body before ACK", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "wechat-exit-"));
+  const path = join(directory, "gateway.sqlite");
+  const source = { ...integrationSource, expected_update_hours: 24 };
+  const summary = { ...primaryItem, body_complete: false };
+  const detail = { ...primaryItem, provider: "dajiala" };
+  const child = offlineChildProcess(process.execPath, ["--input-type=module", "--eval", `
+    const { openStore } = await import(${JSON.stringify(new URL("./store.mjs", import.meta.url).href)});
+    const store = openStore(${JSON.stringify(path)});
+    store.upsertSource(${JSON.stringify(source)}, "2026-08-28T00:00:00Z");
+    store.upsertGatewayItems(${JSON.stringify(source.id)}, [${JSON.stringify(summary)}], "2026-08-28T10:00:00Z");
+    store.tryReserveSpend("2026-08-28", "dajiala", 0.08, 0.08, 1);
+    store.completeDetail(${JSON.stringify(source.id)}, ${JSON.stringify(summary.canonical_id)},
+      ${JSON.stringify(detail)}, "2026-08-28T11:00:00Z");
+    process.exit(17);
+  `], process.env);
+  assert.equal(child.status, 17, child.stderr);
+  const store = openStore(path);
+  t.after(async () => { store.close(); await rm(directory, { recursive: true, force: true }); });
+  assert.equal(store.getSource(source.id).last_primary_content_at, "2026-08-28T10:00:00Z");
+  assert.equal(store.getSource(source.id).expected_update_hours, 24);
+  assert.equal(store.tryReserveSpend("2026-08-28", "dajiala", 0.08, 0.08, 1), false);
+  assert.equal(store.getGatewayItem(source.id, summary.canonical_id).body_complete, 1);
+  assert.deepEqual(store.listReconciliationOutbox(), [source.id]);
+  store.completeDetail(source.id, summary.canonical_id, detail, "2026-08-28T12:00:00Z");
+  assert.equal(store.getSource(source.id).last_primary_content_at, "2026-08-28T10:00:00Z");
+  assert.equal(store.ackReconciliationOutbox([source.id]), 1);
+});
+
+test("period configuration is validated, persisted and can be explicitly unset on the existing PUT route", async (t) => {
+  const store = openStore(":memory:");
+  t.after(() => store.close());
+  const gateway = createGateway({ store, token: "gateway-test", now: () => new Date("2026-10-02T00:00:00Z") });
+  const configure = (expected_update_hours) => gateway(new Request(`http://gateway.local/v1/sources/${integrationSource.id}`,
+    { method: "PUT", headers: { authorization: "Bearer gateway-test" },
+      body: JSON.stringify({ ...integrationSource, expected_update_hours }) }));
+  for (const hours of [0, -1, "24", "NaN"]) assert.equal((await configure(hours)).status, 422);
+  for (const hours of [NaN, Infinity]) assert.throws(() => store.upsertSource({ ...integrationSource,
+    expected_update_hours: hours }), /expected_update_hours/);
+  assert.equal((await configure(24)).status, 200);
+  assert.equal((await configure(undefined)).status, 200);
+  assert.equal(store.getSource(integrationSource.id).expected_update_hours, 24);
+  store.upsertGatewayItems(integrationSource.id, [primaryItem], "2026-09-01T00:00:00Z");
+  assert.equal((await configure(null)).status, 200);
+  const response = await gateway(new Request(`http://gateway.local/v1/sources/${integrationSource.id}/health`,
+    { headers: { authorization: "Bearer gateway-test" } }));
+  const health = await response.json();
+  assert.equal(health.expected_update_hours, null);
+  assert.equal(health.freshness_state, "unknown");
+  assert.equal(health.content_age_hours, 31 * 24);
+  assert.equal(health.diagnostic_code, "");
+  assert.equal(health.recent_error_type, "");
+});
+
+test("only an explicit upstream risk_control code marks the primary restricted", async (t) => {
+  const store = openStore(":memory:");
+  t.after(() => store.close());
+  store.upsertSource(integrationSource);
+  let failure = Object.assign(new Error("upstream restricted"), { code: "risk_control" });
+  const gateway = createGateway({ store, token: "gateway-test", primary: async () => {
+    if (failure) throw failure;
+    return [];
+  } });
+  const call = (path) => gateway(new Request(`http://gateway.local${path}`,
+    { headers: { authorization: "Bearer gateway-test" } }));
+  await call(`/v1/feeds/${integrationSource.id}.atom`);
+  assert.equal((await (await call(`/v1/sources/${integrationSource.id}/health`)).json()).recent_error_type, "risk_control");
+  store.recordPaidResult(integrationSource.id, "ok", null, "paid_fallback");
+  assert.equal((await (await call(`/v1/sources/${integrationSource.id}/health`)).json()).recent_error_type, "risk_control");
+  failure = new Error("primary feed HTTP 403");
+  await call(`/v1/feeds/${integrationSource.id}.atom`);
+  assert.equal((await (await call(`/v1/sources/${integrationSource.id}/health`)).json()).recent_error_type, "primary_feed_failed");
+  failure = null;
+  await call(`/v1/feeds/${integrationSource.id}.atom`);
+  const health = await (await call(`/v1/sources/${integrationSource.id}/health`)).json();
+  assert.equal(health.recent_error_type, "");
+  assert.equal(health.freshness_state, "unknown");
+  assert.deepEqual(store.getProviderUsage(health.last_primary_ok_at.slice(0, 10), "dajiala"), { calls: 0, amount: 0 });
+});
 const paidListItem = {
   account_id: "gh_integrated", account_name: "集成测试号", title: "付费文章",
   published_at: "2026-08-28T11:00:00.000Z",
@@ -856,6 +1033,8 @@ test("gateway health exposes paid configuration and capped daily usage", async (
   const response = await request(`/v1/sources/${integrationSource.id}/health`);
   assert.deepEqual(await response.json(), {
     source_id: integrationSource.id, alert_state: "normal", last_primary_ok_at: null,
+    last_primary_content_at: null, latest_published_at: null, expected_update_hours: null,
+    content_age_hours: null, freshness_state: "unknown", diagnostic_code: "",
     consecutive_primary_failures: 0, last_paid_check_at: null, last_paid_result: "",
     recent_error_type: "", next_retry_at: null, paid_configured: true, paid_day_amount: 0.06,
     paid_daily_budget: 20, paid_day_calls: 1, paid_daily_call_limit: 250,
@@ -878,6 +1057,12 @@ test("aggregate health is bearer-protected and returns source, usage, and limit 
       source_id: integrationSource.id,
       alert_state: "degraded",
       last_primary_ok_at: null,
+      last_primary_content_at: null,
+      latest_published_at: null,
+      expected_update_hours: null,
+      content_age_hours: null,
+      freshness_state: "unknown",
+      diagnostic_code: "",
       consecutive_primary_failures: 1,
       last_paid_check_at: null,
       last_paid_result: "",
