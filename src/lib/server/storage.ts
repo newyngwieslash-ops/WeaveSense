@@ -1,6 +1,6 @@
 import { createHash, createHmac } from "node:crypto";
 import { minioConfigured, prod } from "./config";
-import { collectionFetch, readCapped, parseRetryAfter, MEDIA_MAX_BYTES, TEXT_MAX_BYTES } from "./outbound-policy.ts";
+import { collectionFetch, readCapped, parseRetryAfter, CollectionHttpError, collectionHttpError, MEDIA_MAX_BYTES, TEXT_MAX_BYTES } from "./outbound-policy.ts";
 
 let healthCache: { at: number; value: { ok: boolean; error?: string } } | null = null;
 
@@ -89,9 +89,17 @@ async function s3(
     body: body && method !== "GET" && method !== "HEAD" ? new Uint8Array(body) : undefined,
     signal,
   });
-  const bytes = Buffer.from(await readCapped(res.body, method === 'GET' ? MEDIA_MAX_BYTES : TEXT_MAX_BYTES, signal));
-  return { ok: res.ok, status: res.status, bytes,
-    retryAt: parseRetryAfter(res.headers.get('retry-after'), Date.now()) ?? undefined };
+  const retryAt = parseRetryAfter(res.headers.get('retry-after'), Date.now()) ?? undefined;
+  const receivedFailure = res.ok ? undefined : new CollectionHttpError("storage_http_error", "storage_http_error", {
+    status: res.status, retryAt,
+  });
+  try {
+    const bytes = Buffer.from(await readCapped(res.body, method === 'GET' ? MEDIA_MAX_BYTES : TEXT_MAX_BYTES, signal));
+    return { ok: res.ok, status: res.status, bytes, retryAt };
+  } catch (error) {
+    // Do not let body/abort normalization erase a received upstream cooldown; 2xx failures stay transport errors.
+    throw receivedFailure ?? collectionHttpError(error, signal);
+  }
 }
 
 export function objectPublicUrl(key: string): string {

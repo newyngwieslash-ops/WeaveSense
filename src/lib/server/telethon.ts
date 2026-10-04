@@ -195,16 +195,19 @@ export async function fetchTelethonMedia(url: string, callerSignal?: AbortSignal
   const slot = new Promise<void>(resolve => { release = resolve; });
   // A cancelled waiter releases only its own link; the tail still waits for its predecessor.
   mediaTail = previous.then(() => slot);
+  let receivedFailure: CollectionHttpError | undefined;
   try {
     await abortable(previous, signal);
     const res = await abortable(collectionFetch(`${prod.telegramWorkerUrl}/v1/media`, {
       method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${prod.telegramMediaToken}` },
       body: JSON.stringify({ channel: locator.channel, message_id: locator.message_id }), signal, redirect: "error",
     }), signal);
-    const text = new TextDecoder().decode(await readCapped(res.body, TEXT_MAX_BYTES, signal));
-    if (!res.ok) throw new CollectionHttpError("telegram_media_http_error", "telegram_media_http_error", {
+    // Received failure headers remain authoritative if reading its body later resets or times out.
+    if (!res.ok) receivedFailure = new CollectionHttpError("telegram_media_http_error", "telegram_media_http_error", {
       status: res.status, retryAt: parseRetryAfter(res.headers.get("retry-after"), Date.now()) ?? undefined,
     });
+    const text = new TextDecoder().decode(await readCapped(res.body, TEXT_MAX_BYTES, signal));
+    if (receivedFailure) throw receivedFailure;
     let json: unknown;
     try { json = JSON.parse(text); }
     catch { throw new CollectionHttpError("invalid_response"); }
@@ -214,7 +217,7 @@ export async function fetchTelethonMedia(url: string, callerSignal?: AbortSignal
     }).safeParse(json);
     if (!parsed.success) throw new CollectionHttpError("invalid_response");
     return parsed.data;
-  } catch (error) { throw collectionHttpError(error, signal); }
+  } catch (error) { throw receivedFailure ?? collectionHttpError(error, signal); }
   finally { release(); }
 }
 

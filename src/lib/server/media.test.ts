@@ -389,6 +389,85 @@ test("media queue: actual ingest, SQL leases/retries and fixed storage boundary"
       }
     });
 
+    for (const upstream of ["worker", "GET", "PUT"]) await t.test(
+      `received ${upstream} cooldown survives body reset/cap/timeout, exhaustion and replay`,
+      { timeout: 5000 }, async () => {
+        const fixtureFetch = globalThis.fetch, originalTimeout = AbortSignal.timeout;
+        const controllers = new WeakMap<AbortSignal, AbortController>();
+        const bytes = Buffer.from("synthetic telegram bytes");
+        let fault = "reset", responseStatus = 429, failing = true, calls = 0, cancelled = 0;
+        AbortSignal.timeout = () => {
+          const controller = new AbortController();
+          controllers.set(controller.signal, controller);
+          return controller.signal;
+        };
+        globalThis.fetch = async (url, init) => {
+          const worker = String(url).endsWith("/v1/media");
+          calls++;
+          if (failing && (upstream === "worker" ? worker : !worker && init?.method === upstream)) {
+            const body = new ReadableStream<Uint8Array>({
+              pull(controller) {
+                if (fault === "reset") controller.error(new Error("synthetic response reset; do not expose upstream detail"));
+                else if (fault === "cap") controller.enqueue(new Uint8Array((upstream === "GET" ? 25 : 4) * 1024 * 1024 + 1));
+                else {
+                  queueMicrotask(() => controllers.get(init!.signal!)!.abort(new DOMException("synthetic deadline", "TimeoutError")));
+                  return new Promise<void>(() => {});
+                }
+              },
+              cancel() { cancelled++; },
+            }, { highWaterMark: 0 });
+            return new Response(body, { status: responseStatus, headers: { "Retry-After": "172800" } });
+          }
+          if (worker) {
+            objects.set("/fixture/telegram/channel/101", bytes);
+            return Response.json({ object_key: "telegram/channel/101", content_type: "image/jpeg", bytes: bytes.length,
+              sha256: createHash("sha256").update(bytes).digest("hex") });
+          }
+          return fixtureFetch(url, init);
+        };
+        Object.assign(prod, { telegramWorkerUrl: "http://telethon.fixture", telegramMediaToken: "synthetic" });
+        try {
+          for (fault of ["reset", "cap", "timeout"]) for (const attempts of [0, 3]) {
+            await reset(["telegram://channel/101"]);
+            now = Date.now(); failing = true; responseStatus = 429;
+            await sql.query("update media_objects set attempts=$1,object_key=$2 where id='m'", [attempts, upstream === "PUT" ? "legacy/final" : ""]);
+            const cancellationsBefore = cancelled;
+            assert.deepEqual(await ingest(), { stored: 0, errors: 1 });
+            const failed = await row();
+            assert.equal(failed.status, attempts === 3 ? "dead" : "error");
+            assert.equal(failed.attempts, attempts + 1);
+            assert.match(failed.error, /:429$/);
+            assert.ok(new Date(failed.next_attempt_at).getTime() >= now + 172800000, `${upstream}/${fault}: retain received 48h cooldown`);
+            if (fault !== "reset") assert.ok(cancelled > cancellationsBefore, "cancel unread body and release its host permit");
+            const callsBefore = calls;
+            assert.equal(await media.replayMedia(sql, "m", now), true);
+            assert.deepEqual(await ingest(), { stored: 0, errors: 0 });
+            assert.equal(calls, callsBefore);
+            assert.equal(new Date((await row()).next_attempt_at).getTime(), new Date(failed.next_attempt_at).getTime());
+            now = new Date(failed.next_attempt_at).getTime() + 1;
+            failing = false;
+            assert.deepEqual(await ingest(), { stored: 1, errors: 0 });
+            assert.equal((await row()).object_key, failed.object_key);
+          }
+          for (fault of ["reset", "timeout"]) {
+            await reset(["telegram://channel/101"]);
+            now = Date.now(); failing = true; responseStatus = 200;
+            if (upstream === "PUT") await sql.query("update media_objects set object_key='legacy/final' where id='m'");
+            assert.deepEqual(await ingest(), { stored: 0, errors: 1 });
+            const failed = await row();
+            assert.equal(failed.status, "error", "successful headers cannot make a body transport failure permanent");
+            assert.equal(failed.error, fault === "reset" ? "network_error" : "timeout");
+            assert.equal(new Date(failed.next_attempt_at).getTime(), now + 60000);
+            now += 60000; failing = false;
+            assert.deepEqual(await ingest(), { stored: 1, errors: 0 });
+          }
+        } finally {
+          globalThis.fetch = fixtureFetch; AbortSignal.timeout = originalTimeout;
+          prod.telegramWorkerUrl = ""; prod.telegramMediaToken = "";
+        }
+      },
+    );
+
     await t.test(
       "single atomic winner, expiry replaces token and consumes an attempt",
       async () => {
