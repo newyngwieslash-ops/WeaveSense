@@ -71,6 +71,7 @@ export function validateSourceInput(input: unknown):
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(handle)) return fail("invalid_wechat_id");
     if (feed_url) return fail("wechat_feed_requires_gateway_import");
   }
+  if (feed_url) feed_url = new URL(feed_url).href;
   let scan_state: SourceRecord["scan_state"];
   try { scan_state = initialScanState(data.scan_state); } catch { return fail("invalid_scan_state"); }
   if (scan_state.bootstrap === "backfill" && data.platform !== "telegram") return fail("backfill_requires_telegram");

@@ -126,7 +126,7 @@ test("gateway byte caps and cancellation retain collector errors without replayi
     const controller = new AbortController();
     /** @type {string[]} */
     const fallbackUrls = [];
-    const io = { signal: controller.signal, transport: async (/** @type {URL} */ url) => {
+    const io = { signal: controller.signal, transport: async (url) => {
       fallbackUrls.push(url.href);
       return { status: 200, headers: {}, body: new Response("").body };
     } };
@@ -203,7 +203,7 @@ test("adapters using an explicit RSS URL do not replay its failed request", asyn
       await assert.rejects(() => collectSource({ id: "source", platform: "rss", name: "source", handle: "", url: "",
         feed_url: "https://feed.example/", adapter }, {
         resolver: { async lookup() { return [{ address: "1.1.1.1", family: 4 }]; } },
-        transport: async (/** @type {URL} */ url) => { urls.push(url.href); return { status: 503, headers: {}, body: new Response("failed").body }; },
+        transport: async (url) => { urls.push(url.href); return { status: 503, headers: {}, body: new Response("failed").body }; },
       }), { code: "http_error", status: 503 });
       assert.deepEqual(urls, ["https://feed.example/"], adapter);
     }
@@ -253,4 +253,45 @@ test('gateway cooldown cannot be hidden by RSS fallback success', async () => {
     }),/** @param {unknown} error */ error=>{const failure=httpFailure(error);assert.equal(failure.code,'rate_limited');assert.ok(Number(failure.retryAt)>Date.now()+47*3600000);return true;});
     assert.equal(fallback,0);
   } finally {await vite.close();globalThis.fetch=original;delete process.env.WECHAT_GATEWAY_URL;delete process.env.WECHAT_GATEWAY_TOKEN;}
+});
+
+test("validated Feed normalization selects only the configured public feed", async (t) => {
+  const vite = await createServer({ configFile: false, logLevel: "silent",
+    resolve: { alias: { "@": path.resolve("src") } }, server: { middlewareMode: true, watch: null } });
+  const originalFetch = globalThis.fetch;
+  let directCalls = 0;
+  globalThis.fetch = async () => { directCalls++; throw new Error("unexpected_native_gateway_or_worker_fetch"); };
+  try {
+    const { validateSourceInput } = await vite.ssrLoadModule("/src/lib/server/source-validation.ts");
+    const { collectSource } = await vite.ssrLoadModule("/src/lib/server/collectors/index.ts");
+    /** @type {Array<{ label: string, platform: string, handle?: string, url?: string, feed_url?: string }>} */
+    const cases = [];
+    for (const protocol of ["HTTPS", "hTtPs"]) {
+      for (const platform of ["rss", "telegram", "bilibili", "youtube", "xhs", "douyin", "xigua"]) {
+        cases.push({ label: `${platform} ${protocol} explicit Feed`, platform,
+          handle: platform === "telegram" ? "offline_channel" : platform === "bilibili" ? "12345" : "",
+          feed_url: `${protocol}://FEED.example:443/Configured.xml?source=${platform}` });
+      }
+      for (const field of ["handle", "url"]) cases.push({ label: `RSS ${protocol} ${field} fallback`,
+        platform: "rss", [field]: `${protocol}://FEED.example:443/Configured.xml?legacy=${field}` });
+      cases.push({ label: `YouTube ${protocol} Feed in handle`, platform: "youtube",
+        handle: `${protocol}://WWW.YouTube.com:443/feeds/videos.xml?channel_id=UCabcdefghijklmnopqrstuv` });
+    }
+    for (const { label, ...input } of cases) await t.test(label, async () => {
+      const validated = validateSourceInput({ name: "offline Feed normalization", interval_minutes: 30, ...input });
+      assert.ok(validated.ok);
+      const expected = new URL(input.feed_url || input.handle || input.url || "").href;
+      const requests = /** @type {string[]} */ ([]), hosts = /** @type {string[]} */ ([]);
+      const result = await collectSource(validated.value, {
+        resolver: { async lookup(/** @type {string} */ host) { hosts.push(host); assert.equal(host, new URL(expected).hostname);
+          return [{ address: "1.1.1.1", family: 4 }]; } },
+        transport: async (/** @type {URL} */ url) => { requests.push(url.href); assert.equal(url.href, expected);
+          return { status: 200, headers: {}, body: new Response('<rss><channel><item><guid>offline</guid><title>offline Feed</title></item></channel></rss>').body }; },
+      });
+      assert.equal(validated.value.feed_url, expected);
+      assert.deepEqual(requests, [expected]); assert.deepEqual(hosts, [new URL(expected).hostname]);
+      assert.equal(result.items.length, 1); assert.equal(directCalls, 0);
+    });
+    assert.equal(directCalls, 0);
+  } finally { globalThis.fetch = originalFetch; await vite.close(); }
 });

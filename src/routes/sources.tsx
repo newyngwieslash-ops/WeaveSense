@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Fragment, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { toast } from "sonner";
 import { Plus, RefreshCw } from "lucide-react";
@@ -29,6 +29,7 @@ export const Route = createFileRoute("/sources")({ component: SourcesPage });
 function SourcesPage() {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
+  const opener = useRef<HTMLButtonElement | null>(null);
   const sources = useQuery({ queryKey: ["sources"], queryFn: () => listSourcesFn() });
   const hasWechatSources = Boolean(sources.data?.some((source) =>
     source.platform === "wechat" && source.id !== RADAR_SOURCE_ID));
@@ -59,7 +60,7 @@ function SourcesPage() {
       title="信源"
       kicker="Channels · last_message_id"
       action={
-        <Button size="sm" onClick={() => setOpen(true)}>
+        <Button size="sm" onClick={(event) => { opener.current = event.currentTarget; setOpen(true); }}>
           <Plus className="size-4" />
           接入
         </Button>
@@ -163,12 +164,12 @@ function SourcesPage() {
           </section>
         ))}
       </div>
-      {open ? <AddSourceDialog onClose={() => setOpen(false)} /> : null}
+      {open ? <AddSourceDialog onClose={() => setOpen(false)} restoreFocus={() => opener.current?.focus()} /> : null}
     </AppShell>
   );
 }
 
-function AddSourceDialog({ onClose }: { onClose: () => void }) {
+function AddSourceDialog({ onClose, restoreFocus }: { onClose: () => void; restoreFocus: () => void }) {
   const qc = useQueryClient();
   const [platform, setPlatform] = useState<PlatformId>("rss");
   const [wechatMode, setWechatMode] = useState<"single" | "csv">("single");
@@ -278,7 +279,7 @@ function AddSourceDialog({ onClose }: { onClose: () => void }) {
       <Dialog.Portal>
       <Dialog.Overlay className="fixed inset-0 z-50 bg-bg/75" />
       <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center pointer-events-none">
-      <Dialog.Content asChild aria-describedby="source-description">
+      <Dialog.Content asChild aria-describedby="source-description" onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus(); }}>
       <form
         aria-busy={csvBusy}
         className={cn(
@@ -494,7 +495,7 @@ function AddSourceDialog({ onClose }: { onClose: () => void }) {
                     value={bulk}
                     onChange={(e) => setBulk(e.target.value)}
                     rows={6}
-                    placeholder={"durov\ntelegram\nhttps://t.me/s/bbc"}
+                    placeholder={"offline_channel\nhttps://t.me/s/offline_example"}
                     className="min-h-28 font-mono"
                   />
                 </label>
