@@ -74,6 +74,40 @@ test(`real scheduler pagination and identity repair (${process.env.T06_CHECKPOIN
     assert.equal((await sql.query(`select external_id from items where id='single-tg'`))[0].external_id,'901');
     assert.equal((await sql.query(`select count(*)::int n from collection_identity_merges`))[0].n,1);
     assert.equal((await reconcileTelegramIdentities(sql,'merge-tg',true,{workersStopped:true})).changes.length,0);
+    const {rangePredicate} = await vite.ssrLoadModule('/src/lib/server/agent-context.ts');
+    const january = rangePredicate({from:'2020-01-01T00:00:00Z',to:'2020-02-01T00:00:00Z'},2);
+    for (const knownPublication of [true,false]) {
+      const sourceId=`date-${knownPublication}`, from=`${sourceId}-old`, to=`${sourceId}-kept`;
+      await sql.query(`insert into sources(id,platform,name,handle,enabled) values($1,'telegram','date','channel',false)`,[sourceId]);
+      await sql.query(`insert into items(id,source_id,platform,external_id,title,published_at,collected_at) values
+        ($1,$3,'telegram','channel/700','same',$4::timestamptz,'2020-01-16T00:00:00Z'),
+        ($2,$3,'telegram','700','same',null,'2026-10-04T00:00:00Z')`,[from,to,sourceId,knownPublication?'2020-01-15T00:00:00Z':null]);
+      const historical=()=>sql.query(`select i.id from items i where i.source_id=$1${january.sql}`,[sourceId,...january.params]);
+      assert.deepEqual(await historical(),[{id:from}]);
+      const result=await reconcileTelegramIdentities(sql,sourceId,true,{workersStopped:true});
+      assert.equal(result.applied,true);
+      assert.deepEqual(result.conflicts,[]);
+      const [survivor]=await sql.query(`select id,published_at,collected_at from items where source_id=$1`,[sourceId]);
+      assert.equal(survivor.id,to);
+      assert.equal(survivor.published_at ? new Date(survivor.published_at).toISOString() : null,knownPublication?'2020-01-15T00:00:00.000Z':null);
+      assert.equal(new Date(survivor.collected_at).toISOString(),'2020-01-16T00:00:00.000Z');
+      assert.deepEqual(await historical(),[{id:to}]);
+      assert.equal((await reconcileTelegramIdentities(sql,sourceId,true,{workersStopped:true})).changes.length,0);
+      assert.deepEqual(await historical(),[{id:to}]);
+    }
+    // Conflicting known dates must be compared across all aliases, even with a null keeper.
+    await sql.query(`insert into sources(id,platform,name,handle,enabled) values('date-ambiguous','telegram','date','channel',false)`);
+    await sql.query(`insert into items(id,source_id,platform,external_id,title,published_at) values
+      ('date-a','date-ambiguous','telegram','channel/701','same','2020-01-15T00:00:00Z'),
+      ('date-b','date-ambiguous','telegram','0701','same','2020-02-15T00:00:00Z'),
+      ('date-c','date-ambiguous','telegram','701','same',null)`);
+    const ambiguousBefore=await sql.query(`select * from items where source_id='date-ambiguous' order by id`);
+    const ambiguous=await reconcileTelegramIdentities(sql,'date-ambiguous',true,{workersStopped:true});
+    assert.equal(ambiguous.applied,false);
+    assert.equal(ambiguous.conflicts[0].reason,'different_message_content');
+    assert.deepEqual(await sql.query(`select * from items where source_id='date-ambiguous' order by id`),ambiguousBefore);
+    assert.equal((await sql.query(`select count(*)::int n from collection_identity_merges where source_id='date-ambiguous'`))[0].n,0);
+
     const fixture = JSON.parse(readFileSync(new URL('./fixtures/checkpoint-rebind-native.json',import.meta.url),'utf8'));
     const old = fixture.from_item_id, kept = fixture.to_item_id;
     const rewriteCheckpoint = process.env.T06_CHECKPOINT_REBINDER

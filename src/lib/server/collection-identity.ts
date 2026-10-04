@@ -76,6 +76,9 @@ export async function reconcileTelegramIdentities(sql: Pick<Sql,'transaction'>, 
     for (const [externalId,group] of groups) {
       const keeper = group.find(row=>row.external_id===externalId) ?? group[0];
       const groupIds = group.map(row=>row.id);
+      // Compare native timestamps across the whole group, retaining database precision.
+      const publicationConflict = group.length > 1 && (await tx.query<{ conflict: boolean }>(
+        'select count(distinct published_at)>1 as conflict from items where id=any($1::text[])',[groupIds]))[0].conflict;
       for (const row of group) {
         if (row.id===keeper.id && row.external_id===externalId) continue;
         changes.push({from:row.id,to:keeper.id,external_id:externalId,old_external_id:row.external_id});
@@ -111,7 +114,7 @@ export async function reconcileTelegramIdentities(sql: Pick<Sql,'transaction'>, 
         const activeExtracts = await tx.query(`select id from extract_jobs where item_id=any($1::text[]) and status='running'`,[groupIds]);
         const activeRuns = await tx.query(`select id from ai_runs where id=any($1::text[]) and status='running'
           and not exists(select 1 from ai_jobs j where j.run_id=ai_runs.id and j.lease_until<=clock_timestamp())`,[runs.map(run=>run.id)]);
-        const contentConflict = ['title','body','author','media_type','published_at'].some(key=>row[key] && keeper[key] && String(row[key])!==String(keeper[key]));
+        const contentConflict = publicationConflict || ['title','body','author','media_type'].some(key=>row[key] && keeper[key] && String(row[key])!==String(keeper[key]));
         let reason = contentConflict ? 'different_message_content' : targetCollisions.length ? 'extract_target_collision'
           : jobCollisions.length ? 'ai_job_collision' : activeJobs.length || activeExtracts.length || activeRuns.length ? 'active_writer' : '';
         if (!reason) {
@@ -181,9 +184,13 @@ export async function reconcileTelegramIdentities(sql: Pick<Sql,'transaction'>, 
         if (!Buffer.from(saved.payload).equals(payload)) throw new Error('identity_checkpoint_write_mismatch');
       }
       for (const field of ['title','body','author','url','thumbnail_url']) await tx.query(`update items set ${field}=coalesce(nullif(${field},''),$2) where id=$1`,[change.to,loser[field]]);
-      await tx.query(`update items set media_urls=(select coalesce(jsonb_agg(distinct value),'[]'::jsonb) from jsonb_array_elements(media_urls || $2::jsonb)),
-        matched_keywords=(select coalesce(jsonb_agg(distinct value),'[]'::jsonb) from jsonb_array_elements(matched_keywords || $3::jsonb)),
-        extra=$4::jsonb || extra where id=$1`,[change.to,JSON.stringify(loser.media_urls),JSON.stringify(loser.matched_keywords),JSON.stringify(loser.extra)]);
+      await tx.query(`update items as survivor set media_urls=(select coalesce(jsonb_agg(distinct value),'[]'::jsonb) from jsonb_array_elements(survivor.media_urls || $2::jsonb)),
+        matched_keywords=(select coalesce(jsonb_agg(distinct value),'[]'::jsonb) from jsonb_array_elements(survivor.matched_keywords || $3::jsonb)),
+        extra=$4::jsonb || survivor.extra,
+        published_at=coalesce(survivor.published_at,loser.published_at),
+        collected_at=least(survivor.collected_at,loser.collected_at)
+        from items as loser where survivor.id=$1 and loser.id=$5`,
+        [change.to,JSON.stringify(loser.media_urls),JSON.stringify(loser.matched_keywords),JSON.stringify(loser.extra),change.from]);
       for (const table of ['media_objects','extract_jobs','analyses','ai_jobs']) {
         if ((await tx.query(`select id from ${table} where item_id=$1 limit 1`,[change.from])).length) throw new Error('identity_reference_remains');
       }
