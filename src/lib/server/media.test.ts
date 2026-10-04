@@ -234,6 +234,83 @@ test("media queue: actual ingest, SQL leases/retries and fixed storage boundary"
       },
     );
 
+    await t.test("actual extractItem defers uploaded/uncommitted MIME then extracts each target once after recovery", async () => {
+      await reset(["https://cdn.example/cover", "https://cdn.example/ready-cover"]);
+      await sql.query("update items set body='original body' where id='i'");
+      const previousKey = process.env.XAI_API_KEY;
+      process.env.XAI_API_KEY = "synthetic-fixture-key";
+      const { extractItem } = await vite.ssrLoadModule("/src/lib/server/extract.ts");
+      const fixtureFetch = globalThis.fetch;
+      let modelCalls = 0, storedReads = 0;
+      globalThis.fetch = async (url, init) => {
+        const target = new URL(String(url));
+        if (target.origin === "https://api.x.ai") {
+          assert.equal(target.pathname, "/v1/chat/completions", "cover must never reach ASR");
+          const request = JSON.parse(String(init?.body));
+          assert.equal(request.model, "grok-4.5");
+          assert.match(request.messages[0].content[1].image_url.url, /^data:image\/jpeg;base64,/);
+          modelCalls++;
+          return Response.json({ choices: [{ message: { content: "synthetic cover text" } }] });
+        }
+        if (init?.method === "GET") storedReads++;
+        return fixtureFetch(url, init);
+      };
+      const transaction = sql.transaction.bind(sql);
+      let fail = true;
+      sql.transaction = fn => transaction(tx => fn({ query: async <T>(text: string, params?: unknown[]) => {
+        if (fail && /update items/i.test(text)) { fail = false; throw new Error("synthetic_item_commit_failure"); }
+        return tx.query<T>(text, params);
+      } }));
+      try {
+        try { assert.deepEqual(await ingest(), { stored: 0, errors: 1 }); }
+        finally { sql.transaction = transaction; }
+        assert.equal((await row()).status, "error");
+        assert.equal((await row()).content_type, "");
+        assert.equal((await row()).object_key, "i/m");
+        assert.ok(objects.has("/fixture/i/m"), "failed metadata commit still has the uploaded object");
+        assert.deepEqual(await ingest(), { stored: 1, errors: 0 }, "independent target stores while the first is cooling");
+
+        const beforeRecovery = await extractItem("i");
+        assert.equal(beforeRecovery.ok, false);
+        assert.equal(beforeRecovery.ran, 1, "ready target can extract without spending on uncommitted target");
+        assert.equal(modelCalls, 1); assert.equal(storedReads, 1);
+        assert.deepEqual(await sql.query("select media_id,status,attempts from extract_jobs order by media_id"),
+          [{ media_id: "m1", status: "ok", attempts: 1 }]);
+        for (let n = 0; n < 3; n++) {
+          const deferred = await extractItem("i");
+          assert.equal(deferred.ok, false); assert.equal(deferred.ran, 0);
+        }
+        assert.equal(modelCalls, 1); assert.equal(storedReads, 1);
+        assert.equal((await sql.query<any>("select pipeline_status from items where id='i'"))[0].pipeline_status,
+          "ingested", "one already-ok job cannot complete an item with a deferred target");
+        assert.equal((await sql.query<any>("select count(*)::int n from extract_jobs where media_id='m'"))[0].n, 0);
+
+        now += 60_000;
+        assert.deepEqual(await ingest(), { stored: 1, errors: 0 });
+        assert.equal((await row()).content_type, "image/jpeg");
+        assert.deepEqual(await extractItem("i"), { ok: true, ran: 1 });
+        assert.deepEqual(await extractItem("i"), { ok: true, ran: 0 });
+        assert.equal(modelCalls, 2); assert.equal(storedReads, 2);
+        assert.deepEqual(await sql.query("select media_id,status,attempts from extract_jobs order by media_id"),
+          [{ media_id: "m", status: "ok", attempts: 1 }, { media_id: "m1", status: "ok", attempts: 1 }]);
+        const [item] = await sql.query<any>("select body,pipeline_status from items where id='i'");
+        assert.equal(item.pipeline_status, "extracted");
+        assert.ok(item.body.startsWith("original body"));
+        assert.equal((item.body.match(/synthetic cover text/g) ?? []).length, 2);
+
+        await reset();
+        await sql.query("update media_objects set status='stored',object_key='historical-missing-mime' where id='m'");
+        assert.equal((await extractItem("i")).ok, false, "historical missing MIME is deferred, never guessed");
+        assert.equal((await sql.query<any>("select count(*)::int n from extract_jobs"))[0].n, 0);
+        assert.equal(modelCalls, 2); assert.equal(storedReads, 2);
+      } finally {
+        sql.transaction = transaction;
+        globalThis.fetch = fixtureFetch;
+        if (previousKey === undefined) delete process.env.XAI_API_KEY;
+        else process.env.XAI_API_KEY = previousKey;
+      }
+    });
+
     await t.test(
       "expired completion and stale owner cannot change media or display URLs",
       async () => {

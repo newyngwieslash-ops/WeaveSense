@@ -113,6 +113,7 @@ export async function extractItem(itemId: string): Promise<{
     public_url: string;
     content_type: string;
     kind: string;
+    status: string;
   }>("select * from media_objects where item_id = $1 order by created_at", [itemId]);
 
   let targets: ExtractTarget[] = media;

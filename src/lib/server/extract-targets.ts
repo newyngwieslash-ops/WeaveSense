@@ -9,6 +9,7 @@ export type ExtractTarget = {
   public_url: string;
   content_type: string;
   kind: string;
+  status?: string;
 };
 
 type Extracted = { text: string; model: string };
@@ -109,7 +110,13 @@ export async function runExtractTargets({ sql, itemId, targets, load, ocr, asr }
   let ran = 0;
   let lastError = "";
   let classified = 0;
+  let deferred = false;
   for (const { target, key } of eligible) {
+    // Ingest reserves a key before upload/MIME commit. Wait without spending an extraction attempt.
+    if (target.object_key && (!target.content_type || (target.status !== undefined && target.status !== "stored"))) {
+      deferred = true;
+      continue;
+    }
     // The declared kind decides the *job* row, so a reload still short-circuits on
     // the existing row; the served type is re-checked before any model call.
     const jobKind = target.kind === "audio" || target.kind === "video" ? "asr" : "ocr";
@@ -155,10 +162,10 @@ export async function runExtractTargets({ sql, itemId, targets, load, ocr, asr }
     "select status, attempts from extract_jobs where item_id=$1 and target_key=any($2::text[])",
     [itemId, eligible.map(({ key }) => key)],
   );
-  const terminal = states.length === eligible.length
+  const terminal = !deferred && states.length === eligible.length
     && states.every(({ status, attempts }) => status === "ok" || Number(attempts) >= 3);
   await sql.query("update items set pipeline_status=$2 where id=$1", [itemId, terminal ? "extracted" : "ingested"]);
-  if (!terminal) return { ok: false, ran, error: lastError || "提取尚未完成" };
+  if (!terminal) return { ok: false, ran, error: lastError || (deferred ? "媒体落盘尚未完成" : "提取尚未完成") };
   // Terminal. Distinguish "nothing here was ever extractable" from "already done":
   // a target that succeeded on a previous run is a clean no-op, not a failure —
   // otherwise every page refresh would report an error.
