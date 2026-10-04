@@ -57,11 +57,10 @@ function youtubeFeedUrl(source: SourceRecord): string {
   if (source.feed_url) return source.feed_url;
   const handle = source.handle.trim();
   if (handle.startsWith("http") && handle.includes("feeds/videos.xml")) return handle;
-  const idMatch = handle.match(/UCU[A-Za-z0-9_-]{22}|UC[A-Za-z0-9_-]{22}/);
-  const fromUrl = source.url.match(/channel\/(UC[A-Za-z0-9_-]{22})/);
-  const id = idMatch?.[0] ?? fromUrl?.[1] ?? handle;
-  if (id.startsWith("UC")) return `https://www.youtube.com/feeds/videos.xml?channel_id=${id}`;
-  return `https://www.youtube.com/feeds/videos.xml?user=${encodeURIComponent(id)}`;
+  const fromUrl = source.url.match(/^https:\/\/(?:www\.)?youtube\.com\/channel\/(UC[A-Za-z0-9_-]{22})\/?$/);
+  const id = /^UC[A-Za-z0-9_-]{22}$/.test(handle) ? handle : fromUrl?.[1];
+  if (!id) throw new CollectionHttpError("config_error", "invalid_youtube_id");
+  return `https://www.youtube.com/feeds/videos.xml?channel_id=${id}`;
 }
 
 const rssAdapter: CollectorAdapter = {
@@ -343,29 +342,13 @@ const ADAPTERS: Record<string, CollectorAdapter> = {
  * consume it — the WeChat gateway keeps its own internal transport.
  */
 export async function collectSource(source: SourceRecord, io: FetchIo = {}): Promise<CollectorBatch> {
-  const adapter = ADAPTERS[source.adapter] ?? rssAdapter;
+  const adapter = Object.hasOwn(ADAPTERS, source.adapter) ? ADAPTERS[source.adapter] : undefined;
+  if (!adapter) throw new CollectionHttpError("config_error", "unsupported_adapter");
   try {
     return await adapter.fetch(source, io);
   } catch (err) {
     const failed = collectorMeta(err);
     const attempted = failed.attempts.length ? failed.attempts : [adapter.id];
-    // Other adapters already fetched feed_url via RSS; replaying it here resets its deadline.
-    if (source.feed_url.startsWith("http") && adapter.id === "wechat_gateway" && !io.signal?.aborted &&
-      !(err as { retryAt?: number })?.retryAt &&
-      ![401, 403, 429].includes((err as { status?: number })?.status ?? 0) &&
-      !["aborted", "timeout"].includes((err as { code?: string })?.code ?? "")) {
-      const attempts = [...new Set([...attempted, "rss"])];
-      try {
-        const fallback = await rssAdapter.fetch({ ...source, adapter: "rss" }, io);
-        return { ...fallback, meta: { ...fallback.meta,
-          attempts,
-          paid_call: failed.paid_call || fallback.meta.paid_call } };
-      } catch (fallbackError) {
-        throw new CollectorBatchError("collector_fallback_failed", {
-          provider: failed.provider, attempts, paid_call: failed.paid_call,
-        }, fallbackError);
-      }
-    }
     throw err instanceof CollectorBatchError ? err
       : new CollectorBatchError(err instanceof Error ? err.message : "collector_failed", {
         provider: failed.provider, attempts: attempted, paid_call: failed.paid_call,

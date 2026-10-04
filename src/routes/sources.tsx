@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
 import { toast } from "sonner";
 import { Plus, RefreshCw } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
@@ -19,7 +20,7 @@ import {
 } from "@/lib/server/fns";
 import type { WechatImportPreview } from "@/lib/server/wechat-import";
 import { RADAR_SOURCE_ID } from "@/lib/keyword";
-import { INTERVALS, PLATFORMS, PLATFORM_LIST, type PlatformId } from "@/lib/platforms";
+import { INTERVALS, PLATFORMS, PLATFORM_LIST, PLATFORM_CAPABILITIES, type PlatformId } from "@/lib/platforms";
 import { formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -65,15 +66,16 @@ function SourcesPage() {
       }
     >
       <p className="max-w-2xl text-sm leading-relaxed text-muted">
-        每个频道一条信源。Telegram 可一次粘贴最多 1000 个用户名；Telethon 节点在线时走 GetHistory 增量，未连接则回退 t.me/s。行业词请到「关键词」页设定。
+        每个频道一条信源。能力说明是静态支持范围，接入后仍需实际扫描验证。Telegram 默认从最近 80 条开始；历史回填需已授权节点。暂停后启用会继续保存的进度。
       </p>
+      {sources.isPending ? <p className="mt-4 text-sm text-muted">正在读取信源…</p> : null}
+      {sources.error ? <p role="alert" className="mt-4 text-sm text-danger">信源读取失败：{sources.error.message}</p> : null}
       <div className="mt-6 space-y-8">
         {grouped.map(({ platform, rows }) => (
           <section key={platform.id}>
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <platform.icon className="size-4 text-muted" />
               <h2 className="font-display text-xl tracking-tight">{platform.name}</h2>
-              <span className="font-mono text-[11px] text-faint">{platform.foundation}</span>
               {platform.id === "wechat" && rows.length ? (
                 <span className="text-xs text-muted sm:ml-auto">
                   {wechatHealth.data?.available && wechatHealth.data.usage
@@ -83,8 +85,15 @@ function SourcesPage() {
                 </span>
               ) : null}
             </div>
+            <p className="mb-2 text-xs leading-relaxed text-muted">{PLATFORM_CAPABILITIES[platform.id].required}</p>
+            <p className="mb-3 text-xs text-muted">
+              历史：{PLATFORM_CAPABILITIES[platform.id].history === "paged" ? "条件分页，Feed / 网页仅窗口" : "当前 Feed 窗口"}
+              {" · "}关键词：{PLATFORM_CAPABILITIES[platform.id].search === "native" ? "原生检索，待上游验证"
+                : PLATFORM_CAPABILITIES[platform.id].search === "index" ? "新闻索引" : "无原生检索，仅库内匹配"}
+              {" · "}媒体：{PLATFORM_CAPABILITIES[platform.id].media === "download" ? "已授权节点可下载" : "提供引用，下载需另行验证"}
+            </p>
             {rows.length === 0 ? (
-              <p className="text-sm text-muted">尚未接入</p>
+              <p className="text-sm text-muted">待配置 · 未验证</p>
             ) : (
               <div className="divide-y divide-border rounded-lg bg-surface shadow-[var(--shadow-border)]">
                 {rows.map((s) => {
@@ -102,10 +111,12 @@ function SourcesPage() {
                           {healthLabel[health.alert_state]}
                         </Badge> : null}
                       </div>
-                      <p className="mt-1 font-mono text-[11px] text-faint">
+                      <p className="mt-1 break-all font-mono text-[11px] text-faint">
                         {s.handle || s.feed_url || s.url} · 每 {s.interval_minutes} 分钟 · {s.item_count ?? 0} 条 ·{" "}
                         {formatRelative(s.last_scanned_at)}
                       </p>
+                      <p className="mt-1 text-xs text-muted">最近成功验证：{s.last_success_at ? formatRelative(s.last_success_at) : "未验证"} · 最近扫描：{formatRelative(s.last_scanned_at)}</p>
+                      {!s.collection_coverage ? <p className="mt-1 text-xs text-muted">覆盖范围未知，等待首次验证</p> : null}
                       {s.collection_coverage?.window_only ? <p className="mt-1 text-xs text-muted">仅覆盖当前窗口，不包含完整历史</p> : null}
                       {s.has_more ? <p className="mt-1 text-xs text-muted">还有内容待采集，将从已保存进度继续</p> : null}
                       {s.last_error ? (
@@ -115,7 +126,12 @@ function SourcesPage() {
                       )}
                       {health ? (
                         <div className="mt-1 space-y-0.5 text-xs text-muted">
-                          <p>Primary 最近成功 {formatRelative(health.last_primary_ok_at)} · 连续失败 {health.consecutive_primary_failures}</p>
+                          <p>主源请求最近成功 {formatRelative(health.last_primary_ok_at)} · 连续失败 {health.consecutive_primary_failures}</p>
+                          <p>主源内容进展 / 完整正文确认 {formatRelative(health.last_primary_content_at ?? null)} · 观察距今 {health.content_age_hours == null ? "未知" : `${health.content_age_hours.toFixed(1)} 小时`}</p>
+                          <p>跨提供方观察到的最新发布时间 {formatRelative(health.latest_published_at ?? null)}</p>
+                          <p>预期更新周期 {health.expected_update_hours == null ? "未知" : `${health.expected_update_hours} 小时`} · 新鲜度 {health.freshness_state === "fresh" ? "有新鲜内容证据" : health.freshness_state === "suspected_stale" ? "疑似滞后" : "未知"}</p>
+                          {health.diagnostic_code ? <p>诊断：{health.diagnostic_code}（内容疑似滞后）</p> : null}
+                          {health.recent_error_type === "risk_control" ? <p className="text-danger">主源明确返回限制信号</p> : null}
                           <p>付费最近检查 {formatRelative(health.last_paid_check_at)} · {health.last_paid_result || "未调用"}</p>
                         </div>
                       ) : platform.id === "wechat" && wechatHealth.data?.available ? (
@@ -160,6 +176,8 @@ function AddSourceDialog({ onClose }: { onClose: () => void }) {
   const [handle, setHandle] = useState("");
   const [feed, setFeed] = useState("");
   const [bulk, setBulk] = useState("");
+  const [bootstrap, setBootstrap] = useState<"latest" | "backfill">("latest");
+  const [boundary, setBoundary] = useState("");
   const [interval, setInterval] = useState(30);
   const [csv, setCsv] = useState("");
   const [previewedCsv, setPreviewedCsv] = useState("");
@@ -187,13 +205,14 @@ function AddSourceDialog({ onClose }: { onClose: () => void }) {
         data: {
           platform,
           name,
-          handle,
-          feed_url: feed,
+          handle: platform === "rss" ? "" : handle,
+          feed_url: platform === "wechat" || (platform === "telegram" && bootstrap === "backfill") ? "" : feed,
           interval_minutes: interval,
+          scan_state: platform === "telegram" ? bootstrap === "backfill" ? { bootstrap, boundary: boundary.trim() || "0" } : { bootstrap } : undefined,
         },
       }),
     onSuccess: () => {
-      toast.success("已接入信源");
+      toast.success("已保存信源配置，待首次扫描验证");
       void qc.invalidateQueries();
       onClose();
     },
@@ -202,7 +221,8 @@ function AddSourceDialog({ onClose }: { onClose: () => void }) {
   const bulkAdd = useMutation({
     mutationFn: () =>
       addTelegramChannelsFn({
-        data: { handles: bulk, interval_minutes: interval },
+        data: { handles: bulk, interval_minutes: interval,
+          scan_state: bootstrap === "backfill" ? { bootstrap, boundary: boundary.trim() || "0" } : { bootstrap } },
       }),
     onSuccess: (r) => {
       toast.success(`接入 ${r.created} 个频道${r.skipped ? ` · 跳过 ${r.skipped} 个已存在` : ""}`);
@@ -254,18 +274,15 @@ function AddSourceDialog({ onClose }: { onClose: () => void }) {
   const csvBusy = previewCsv.isPending || importCsv.isPending;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
-      <button
-        type="button"
-        className="absolute inset-0 bg-bg/75"
-        onClick={onClose}
-        disabled={csvBusy}
-        aria-label={csvBusy ? "正在处理，暂时无法关闭" : "关闭"}
-      />
+    <Dialog.Root open onOpenChange={(open) => { if (!open && !csvBusy) onClose(); }}>
+      <Dialog.Portal>
+      <Dialog.Overlay className="fixed inset-0 z-50 bg-bg/75" />
+      <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center pointer-events-none">
+      <Dialog.Content asChild aria-describedby="source-description">
       <form
         aria-busy={csvBusy}
         className={cn(
-          "relative max-h-dvh min-w-0 w-full overflow-y-auto rounded-t-xl bg-surface p-5 shadow-[var(--shadow-border)] sm:rounded-xl",
+          "relative pointer-events-auto max-h-dvh min-w-0 w-full overflow-y-auto rounded-t-xl bg-surface p-5 shadow-[var(--shadow-border)] sm:rounded-xl",
           csvMode ? "max-w-4xl" : "max-w-lg",
         )}
         onSubmit={(e) => {
@@ -276,8 +293,9 @@ function AddSourceDialog({ onClose }: { onClose: () => void }) {
           else add.mutate();
         }}
       >
-        <h2 className="font-display text-2xl tracking-tight">接入信源</h2>
-        <p className="mt-1 text-sm text-muted">{def.blurb}</p>
+        <Dialog.Title asChild><h2 className="font-display text-2xl tracking-tight">接入信源</h2></Dialog.Title>
+        <p id="source-description" className="mt-1 text-sm text-muted">{def.blurb}</p>
+        <p className="mt-2 text-xs leading-relaxed text-muted">{PLATFORM_CAPABILITIES[platform].required}</p>
         <div className="mt-5 grid gap-3">
           <label className="grid gap-1.5 text-xs text-muted">
             平台
@@ -286,7 +304,8 @@ function AddSourceDialog({ onClose }: { onClose: () => void }) {
               disabled={csvBusy}
               onChange={(e) => {
                 setPlatform(e.target.value as PlatformId);
-                setWechatMode("single");
+                setWechatMode(e.target.value === "wechat" ? "csv" : "single");
+                setHandle(""); setFeed(""); setBulk(""); setBootstrap("latest"); setBoundary("");
                 setCsv("");
                 resetCsvResult();
               }}
@@ -310,7 +329,7 @@ function AddSourceDialog({ onClose }: { onClose: () => void }) {
                   setWechatMode("single");
                 }}
               >
-                单个
+                关联已有网关
               </Button>
               <Button
                 type="button"
@@ -362,9 +381,10 @@ function AddSourceDialog({ onClose }: { onClose: () => void }) {
                   rows={7}
                   className="font-mono"
                   disabled={csvBusy}
-                  placeholder={"name,wechat_id,sample_url,primary_feed_url,interval_minutes,priority\n示例科技,gh_example,https://mp.weixin.qq.com/s/example,https://feeds.example.com/example.atom,60,normal"}
+                  placeholder={"name,wechat_id,sample_url,primary_feed_url,interval_minutes,priority,expected_update_hours\n示例科技,gh_example,https://mp.weixin.qq.com/s/example,https://feeds.example.com/example.atom,60,normal,24"}
                 />
               </label>
+              <p className="text-xs leading-relaxed text-muted">支持原六列表头。可在最后加 expected_update_hours：填正数小时（可小数），留空表示未知。扫描间隔固定 60 分钟；更新周期用于新鲜度判断。预览只校验格式，不证明上游可用。</p>
               <div className="flex flex-wrap items-center gap-3">
                 <Button
                   type="button"
@@ -396,6 +416,7 @@ function AddSourceDialog({ onClose }: { onClose: () => void }) {
                         <th className="px-3 py-2 font-medium">名称</th>
                         <th className="px-3 py-2 font-medium">微信 ID</th>
                         <th className="px-3 py-2 font-medium">优先级</th>
+                        <th className="px-3 py-2 font-medium">更新周期</th>
                         <th className="px-3 py-2 font-medium">校验结果</th>
                       </tr>
                     </thead>
@@ -427,6 +448,7 @@ function AddSourceDialog({ onClose }: { onClose: () => void }) {
                             <td className="px-3 py-2 text-fg">{row.value?.name || row.input?.name || "—"}</td>
                             <td className="px-3 py-2 font-mono text-faint">{row.value?.wechat_id || row.input?.wechat_id || "—"}</td>
                             <td className="px-3 py-2 text-muted">{row.value?.priority || row.input?.priority || "—"}</td>
+                            <td className="px-3 py-2 text-muted">{row.value?.expected_update_hours == null ? "未知" : `${row.value.expected_update_hours} 小时`}</td>
                             <td className={cn("px-3 py-2", row.errors.length ? "text-danger" : "text-muted")}>
                               {row.errors.length ? row.errors.join("；") : "可导入"}
                             </td>
@@ -454,17 +476,17 @@ function AddSourceDialog({ onClose }: { onClose: () => void }) {
             <>
               <label className="grid gap-1.5 text-xs text-muted">
                 名称
-                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="例如 量子位" required />
+                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="信源显示名称" required={platform !== "telegram" || !bulk.trim()} maxLength={80} />
               </label>
-              <label className="grid gap-1.5 text-xs text-muted">
+              {platform !== "rss" ? <label className="grid gap-1.5 text-xs text-muted">
                 {def.handleLabel}
                 <Input
                   value={handle}
                   onChange={(e) => setHandle(e.target.value)}
                   placeholder={def.handlePlaceholder}
-                  required={platform !== "telegram" || !bulk.trim()}
+                  required={platform === "wechat" || (platform === "telegram" && !bulk.trim()) || (["youtube", "bilibili"].includes(platform) && !feed.trim())}
                 />
-              </label>
+              </label> : null}
               {platform === "telegram" ? (
                 <label className="grid gap-1.5 text-xs text-muted">
                   批量频道（每行一个，最多 1000）
@@ -477,10 +499,22 @@ function AddSourceDialog({ onClose }: { onClose: () => void }) {
                   />
                 </label>
               ) : null}
-              <label className="grid gap-1.5 text-xs text-muted">
-                RSS / WeWe / RSSHub（可选）
-                <Input value={feed} onChange={(e) => setFeed(e.target.value)} placeholder="https://" />
-              </label>
+              {platform === "telegram" ? <>
+                <label className="grid gap-1.5 text-xs text-muted">首次采集范围
+                  <NativeSelect value={bootstrap} onChange={(e) => setBootstrap(e.target.value as "latest" | "backfill")}>
+                    <option value="latest">最近 80 条，随后增量</option><option value="backfill">从消息 ID 回填历史（需已授权节点）</option>
+                  </NativeSelect>
+                </label>
+                {bootstrap === "backfill" ? <label className="grid gap-1.5 text-xs text-muted">起始消息 ID（可选，留空从 0 开始）
+                  <Input value={boundary} onChange={(e) => setBoundary(e.target.value)} inputMode="numeric" pattern="[0-9]+" maxLength={320} placeholder="0" />
+                </label> : null}
+                <p className="text-xs text-muted">网页和 Feed 仅有限窗口；回填不会自动退回网页。暂停 / 启用保留进度。</p>
+              </> : null}
+              {platform !== "wechat" && !(platform === "telegram" && bootstrap === "backfill") ? <label className="grid gap-1.5 text-xs text-muted">
+                RSS / Atom Feed {(["rss", "douyin", "xhs", "xigua"].includes(platform)) ? "（必填）" : "（可选；填写后使用 Feed 窗口）"}
+                <Input type="url" value={feed} onChange={(e) => setFeed(e.target.value)} placeholder="https://" required={["rss", "douyin", "xhs", "xigua"].includes(platform)} />
+              </label> : null}
+              {platform === "wechat" ? <p className="text-xs leading-relaxed text-muted">这里只关联网关中已经配置的微信 ID，不会建立主源或更新周期。首次接入请使用 CSV 批量；已有配置不会被覆盖。</p> : null}
               <label className="grid gap-1.5 text-xs text-muted">
                 扫描间隔
                 <NativeSelect value={interval} onChange={(e) => setInterval(Number(e.target.value))}>
@@ -511,6 +545,9 @@ function AddSourceDialog({ onClose }: { onClose: () => void }) {
           </Button>
         </div>
       </form>
-    </div>
+      </Dialog.Content>
+      </div>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }

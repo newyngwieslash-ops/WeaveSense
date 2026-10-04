@@ -34,8 +34,8 @@ function KeywordsPage() {
     mutationFn: (id: string) => scanKeywordFn({ data: { id } }),
     onSuccess: (r) => {
       void qc.invalidateQueries();
-      if (r.items_new > 0) toast.success(`「${r.phrase}」新入库 ${r.items_new} 条`);
-      else if (r.error) toast(r.error);
+      if (r.error) toast(r.error);
+      else if (r.items_new > 0) toast.success(`「${r.phrase}」新入库 ${r.items_new} 条`);
       else toast(`「${r.phrase}」已扫描，暂无新条目`);
     },
     onError: (e: Error) => toast.error(e.message),
@@ -60,6 +60,7 @@ function KeywordsPage() {
         设定行业词，按 5 / 10 / 30 分钟增量收集。标「检索」的范围会发起外部查询：新闻 RSS（Google News 中英文 + Hacker News）、B 站搜索、YouTube
         新闻索引（经 Google News 的 site:youtube.com，不是全站视频搜索）；标「信源」的范围不发起外部请求，只在已采集到的内容里匹配并打标签。词可以是「固态电池」，也可以一次粘贴多个。
       </p>
+      {keywords.error ? <p role="alert" className="mt-4 text-sm text-danger">关键词读取失败：{keywords.error.message}</p> : null}
 
       <AddKeywordForm />
 
@@ -187,7 +188,7 @@ function AddKeywordForm() {
         data: { phrases: raw, interval_minutes: interval, platforms },
       }),
     onSuccess: async (r) => {
-      toast.success(`已加入 ${r.count} 个关键词，开始首次收集`);
+      toast.success(`已加入 ${r.count} 个关键词，开始首次检索 / 库内匹配`);
       setRaw("");
       void qc.invalidateQueries({ queryKey: ["keywords"] });
       for (const id of r.ids.slice(0, 3)) {
@@ -240,9 +241,10 @@ function AddKeywordForm() {
                 <button
                   key={p.id}
                   type="button"
+                  aria-pressed={on}
                   onClick={() => togglePlatform(p.id)}
                   className={cn(
-                    "h-9 rounded-full px-3 text-xs transition-colors",
+                    "h-11 rounded-full px-3 text-xs transition-colors",
                     on ? "bg-accent text-accent-fg" : "bg-raised text-muted hover:text-fg",
                   )}
                 >
@@ -252,6 +254,7 @@ function AddKeywordForm() {
               );
             })}
           </div>
+          <p className="mt-2 text-xs leading-relaxed text-muted">Telegram、公众号、抖音、小红书、西瓜没有原生关键词检索，只匹配已采集内容。YouTube 仅新闻索引；B 站 412 / 429 应等待退避，不使用换身份或高频重试。</p>
         </div>
         <label className="grid gap-1.5 text-xs text-muted">
           扫描间隔
@@ -265,7 +268,7 @@ function AddKeywordForm() {
         </label>
       </div>
       <div className="mt-4 flex justify-end">
-        <Button type="submit" disabled={add.isPending || preview.length === 0}>
+        <Button type="submit" disabled={add.isPending || preview.length === 0 || platforms.length === 0}>
           <Plus className="size-4" />
           {add.isPending ? "写入并收集中" : "加入定时收集"}
         </Button>

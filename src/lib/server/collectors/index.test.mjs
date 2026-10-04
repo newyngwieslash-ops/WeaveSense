@@ -35,17 +35,8 @@ function httpFailure(error) {
   return /** @type {import("../outbound-policy.ts").CollectionHttpError & {meta: import("./types.ts").CollectorMeta}} */ (error);
 }
 
-/**
- * The RSS fallback must preserve the paid-gateway attempt metadata.
- *
- * The gateway leg is still stubbed on `globalThis.fetch` (it is an internal
- * service with its own transport). The RSS fallback leg goes through the real
- * outbound policy, so it is driven by the `io` seam: a stub transport supplies
- * the feed and a stub resolver keeps the suite offline. Stubbing only `fetch`
- * would leave the fallback unable to resolve — that is the policy working, not
- * the product failing.
- */
-test("RSS fallback preserves paid gateway attempts in batch metadata", async () => {
+/** A naked Feed must never bypass the gateway's provider/budget boundary. */
+test("gateway failure retains paid attempts and never bypasses the gateway via naked feed", async () => {
   process.env.WECHAT_GATEWAY_URL = "https://gateway.example";
   process.env.WECHAT_GATEWAY_TOKEN = "test-token";
   const originalFetch = globalThis.fetch;
@@ -61,27 +52,22 @@ test("RSS fallback preserves paid gateway attempts in batch metadata", async () 
   try {
     const { collectSource } = await vite.ssrLoadModule("/src/lib/server/collectors/index.ts");
 
-    // Offline seam for the RSS fallback: a stub resolver plus the feed body.
-    const feed = `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">
-        <title>Fallback</title><entry><id>article-1</id><title>Fallback article</title>
-        <link href="https://mp.weixin.qq.com/s/a"/><updated>2026-08-31T00:00:00Z</updated>
-        <content type="html">body</content></entry></feed>`;
+    let publicCalls = 0;
     const io = {
       resolver: { async lookup() { return [{ address: "93.184.216.34", family: 4 }]; } },
-      transport: async () => ({
-        status: 200,
-        headers: { "content-type": "application/atom+xml" },
-        body: new Response(feed).body,
-      }),
+      transport: async () => { publicCalls++; throw new Error("unexpected_naked_feed"); },
     };
-
-    const result = await collectSource({ id: "wx-source", platform: "wechat", name: "公众号",
+    await assert.rejects(() => collectSource({ id: "wx-source", platform: "wechat", name: "公众号",
       handle: "gh_example", url: "https://mp.weixin.qq.com/s/example",
       feed_url: "https://fallback.example/feed.atom", adapter: "wechat_gateway",
-      last_external_id: "" }, io);
-    assert.equal(result.items.length, 1);
-    assert.deepEqual(result.meta, { provider: "", attempts: ["primary", "dajiala", "rss"],
-      paid_call: true });
+      last_external_id: "" }, io), (caught) => {
+      const error = httpFailure(caught);
+      assert.equal(error.status, 503);
+      assert.equal(error.code, "http_error");
+      assert.deepEqual(error.meta, { provider: "", attempts: ["primary", "dajiala"], paid_call: true });
+      return true;
+    });
+    assert.equal(publicCalls, 0);
   } finally {
     await vite.close();
     globalThis.fetch = originalFetch;
@@ -160,7 +146,7 @@ test("gateway byte caps and cancellation retain collector errors without replayi
   }
 });
 
-test("public and failed RSS fallback wrappers preserve HTTP status, retry time and paid metadata", async () => {
+test("public and gateway failures retain their own classification and paid metadata", async () => {
   process.env.WECHAT_GATEWAY_URL = "https://gateway.example";
   process.env.WECHAT_GATEWAY_TOKEN = "test-token";
   const originalFetch = globalThis.fetch;
@@ -178,10 +164,10 @@ test("public and failed RSS fallback wrappers preserve HTTP status, retry time a
       await assert.rejects(() => collectSource({ id: "source", platform: gateway ? "wechat" : "rss", name: "source",
         handle: "", url: "", feed_url: "https://fallback.example/?token=secret", adapter: gateway ? "wechat_gateway" : "rss" }, io), (caught) => {
         const error = httpFailure(caught);
-        assert.equal(error.code, "rate_limited");
-        assert.equal(error.status, 429);
-        assert.ok((error.retryAt ?? 0) >= before + 120000);
-        assert.deepEqual(error.meta.attempts, gateway ? ["primary", "dajiala", "rss"] : ["rss"]);
+        assert.equal(error.code, gateway ? "http_error" : "rate_limited");
+        assert.equal(error.status, gateway ? 503 : 429);
+        if (!gateway) assert.ok((error.retryAt ?? 0) >= before + 120000);
+        assert.deepEqual(error.meta.attempts, gateway ? ["primary", "dajiala"] : ["rss"]);
         assert.equal(error.meta.paid_call, gateway);
         assert.ok(!error.message.includes("secret"));
         return true;
@@ -193,6 +179,17 @@ test("public and failed RSS fallback wrappers preserve HTTP status, retry time a
     delete process.env.WECHAT_GATEWAY_URL;
     delete process.env.WECHAT_GATEWAY_TOKEN;
   }
+});
+
+test("unknown adapters fail before any request, including prototype names", async () => {
+  const vite = await createServer({ configFile: false, logLevel: "silent",
+    resolve: { alias: { "@": path.resolve("src") } }, server: { middlewareMode: true, watch: null } });
+  try {
+    const { collectSource } = await vite.ssrLoadModule("/src/lib/server/collectors/index.ts");
+    for (const adapter of ["unknown", "constructor", "toString"]) await assert.rejects(() => collectSource({
+      id: "legacy", platform: "rss", name: "legacy", handle: "", url: "", feed_url: "https://feed.example/", adapter,
+    }, { transport: async () => { throw new Error("unexpected request"); } }), { message: "unsupported_adapter", code: "config_error" });
+  } finally { await vite.close(); }
 });
 
 test("adapters using an explicit RSS URL do not replay its failed request", async () => {

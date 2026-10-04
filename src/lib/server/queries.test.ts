@@ -2,8 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 Object.defineProperty(globalThis, "window", { configurable: true, value: {} });
-const { mapJob, mapItem } = await import("./queries.ts");
+const { mapJob, mapItem, mapSource } = await import("./queries.ts");
 delete (globalThis as unknown as { window?: unknown }).window;
+
+test("legacy sources remain readable even when new creation would reject their configuration", () => {
+  const row = { id: "legacy", platform: "youtube", name: "old", handle: "old-user-name", adapter: "old-adapter", feed_url: "" };
+  const source = mapSource(row);
+  assert.equal(source.id, "legacy"); assert.equal(source.handle, "old-user-name"); assert.equal(source.adapter, "old-adapter");
+  assert.equal(source.last_success_at, null); assert.equal(source.feed_url, "");
+  assert.deepEqual(row, { id: "legacy", platform: "youtube", name: "old", handle: "old-user-name", adapter: "old-adapter", feed_url: "" });
+});
 
 test("old imported entities display decoded without changing stored evidence", () => {
   const row = { id: 'old', title: '&#036;222', body: '正文&#33;', author: 'A &amp; B' };

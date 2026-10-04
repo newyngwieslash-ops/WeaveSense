@@ -22,6 +22,8 @@ export function keywordRunOutcome(
   const codes = [...new Set(failed.map((a) => a.error_code ?? "network_error"))].join("/");
   const local = counts.localTagged > 0 ? `，本地命中 ${counts.localTagged} 条` : "";
 
+  if (!attempts.length) return { status: "ok", note: `仅匹配已采集内容，本地命中 ${counts.localTagged} 条；未执行原生关键词检索` };
+
   if (allFailed) {
     return { status: "error", note: `外部检索全部失败（${failedSources}：${codes}）${local}` };
   }

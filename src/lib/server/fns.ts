@@ -1,10 +1,10 @@
 import { clearConfigurationFailure } from "./scheduler-atomic.ts";
 import { initialScanState } from "./cursor.ts";
+import { validateSourceInput } from "./source-validation.ts";
 import { createServerFn } from "@tanstack/react-start";
 import type { AskResult } from "../types";
 import { getSql } from "@/lib/db";
 import { parseKeywordList, parsePlatformList } from "@/lib/keyword";
-import { defaultAdapter } from "./collectors";
 import { prod, wechatGatewayConfigured, agentAsyncAvailable } from "./config";
 import { parseTelegramHandles, telethonHealth } from "./telethon";
 import { analyzeInput, askInput, briefingInput } from "../agent-contract.ts";
@@ -16,7 +16,7 @@ import { getNodesStatus, runProductionTick } from "./nodes";
 import { getOverview, listKeywords, listSources, mapAnalysis, mapExtractJob, mapItem, mapJob, mapMediaObject, mapNote } from "./queries";
 import { ensureSeeded } from "./seed";
 import { runKeywordJob, runSourceJob, tickDueSources } from "./scheduler";
-import { isPlatform, type PlatformId } from "@/lib/platforms";
+import { isPlatform } from "@/lib/platforms";
 import { shortId } from "@/lib/utils";
 import { importWechatSources, previewWechatImport } from "./wechat-import";
 import { createProductionWechatGatewayClient } from "./wechat-gateway-client";
@@ -156,36 +156,18 @@ export const toggleSourceFn = createServerFn({ method: "POST" })
   });
 
 export const addSourceFn = createServerFn({ method: "POST" })
-  .validator(
-    (input: {
-      platform: string;
-      name: string;
-      handle: string;
-      url?: string;
-      feed_url?: string;
-      interval_minutes: number;
-      scan_state?: unknown;
-    }) => input,
-  )
-  .handler(async ({ data }) => {
-    if (!isPlatform(data.platform)) throw new Error("未知平台");
-    const scanState = initialScanState(data.scan_state);
-    if (scanState.bootstrap === "backfill" && data.platform !== "telegram") throw new Error("backfill_requires_telegram");
-    const name = data.name.trim().slice(0, 80);
-    if (!name) throw new Error("请填写信源名称");
-    const feed = (data.feed_url ?? "").trim();
-    const url = (data.url ?? "").trim();
-    let handle = data.handle.trim().slice(0, 400);
-    let storedUrl = url;
-    if (data.platform === "telegram") {
-      const parsed = parseTelegramHandles([handle, url, feed].filter(Boolean).join("\n"))[0] ?? "";
-      if (!parsed) throw new Error("请填写频道用户名，或 t.me/用户名 链接");
-      handle = parsed;
-      storedUrl = `https://t.me/s/${parsed}`;
-    }
-    if (!handle && !feed && !url) throw new Error("请填写账号、链接或 RSS 地址");
+  .validator((input: { platform: string; name: string; handle: string; url?: string;
+    feed_url?: string; interval_minutes: number; scan_state?: unknown }) => input)
+  .handler(async ({ data: input }) => {
+    const result = validateSourceInput(input);
+    if (!result.ok) throw new Error(result.code);
+    const data = result.value;
     const sql = await getSql();
-    const id = shortId();
+    const { id } = data;
+    if (data.platform === "wechat" && (await sql.query(
+      "select id from sources where id = $1 or (platform = 'wechat' and lower(handle) = lower($2)) limit 1",
+      [id, data.handle],
+    )).length) throw new Error("source_already_exists");
     await sql.query(
       `insert into sources (
          id, platform, name, handle, url, feed_url, interval_minutes, enabled, adapter, notes, status, scan_state
@@ -193,13 +175,13 @@ export const addSourceFn = createServerFn({ method: "POST" })
       [
         id,
         data.platform,
-        name,
-        handle,
-        storedUrl,
-        feed,
-        data.interval_minutes || 30,
-        defaultAdapter(data.platform as PlatformId),
-        JSON.stringify(scanState),
+        data.name,
+        data.handle,
+        data.url,
+        data.feed_url,
+        data.interval_minutes,
+        data.adapter,
+        JSON.stringify(data.scan_state),
       ],
     );
     return { id };
@@ -208,6 +190,12 @@ export const addSourceFn = createServerFn({ method: "POST" })
 export const addTelegramChannelsFn = createServerFn({ method: "POST" })
   .validator((input: { handles: string; interval_minutes: number; scan_state?: unknown }) => input)
   .handler(async ({ data }) => {
+    if (!data || typeof data.handles !== "string") throw new Error("invalid_source_input");
+    for (const handle of data.handles.split(/[\n,;]+/).map(value => value.trim()).filter(Boolean)) {
+      const result = validateSourceInput({ platform: "telegram", name: "频道", handle,
+        interval_minutes: data.interval_minutes, scan_state: data.scan_state });
+      if (!result.ok) throw new Error(result.code);
+    }
     const scanState = initialScanState(data.scan_state);
     const handles = parseTelegramHandles(data.handles);
     if (!handles.length) throw new Error("请粘贴频道用户名，每行一个");
