@@ -1,5 +1,5 @@
 import type { PlatformId } from "@/lib/platforms";
-import { fetchRss } from "../rss";
+import { fetchRssBatch } from "../rss";
 import { fetchTelegramChannel } from "../telegram";
 import { fetchTelethonHistory, parseTelegramHandle, telethonHealth } from "../telethon";
 import { prod, wechatGatewayConfigured } from "../config";
@@ -17,9 +17,8 @@ const batch = (items: NormalizedItem[], adapter: string): CollectorBatch => ({
 });
 
 async function feedBatch(url: string, source: SourceRecord, adapter: string, io: FetchIo): Promise<CollectorBatch> {
-  const stats = { rejected_entries: 0 };
-  const items = await fetchRss(url, source.id, source.platform, io, stats);
-  return { ...batch(items, adapter), ...stats,
+  const feed = await fetchRssBatch(url, source, io);
+  return { ...batch(feed.items, adapter), ...feed,
     coverage: { complete: false, window_only: true, note: "feed_window" } };
 }
 

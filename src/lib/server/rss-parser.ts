@@ -4,6 +4,8 @@ import { stripHtml } from "../format.ts";
 import type { NormalizedItem } from "./collectors/types.ts";
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
+// Bump when normalized content/identity semantics change; old validators must not skip reprocessing.
+export const RSS_PARSER_VERSION = 'raw-v1-body-v2';
 
 const parser = new XMLParser({
   ignoreAttributes: false,

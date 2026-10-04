@@ -539,6 +539,7 @@ export async function publicFetch(
     transport = pinnedTransport(),
     as = "text",
     signal,
+    allowNotModified = false,
   }: {
     headers?: Record<string, string>;
     timeoutMs?: number;
@@ -549,6 +550,7 @@ export async function publicFetch(
     transport?: OutboundTransport;
     as?: "text" | "bytes";
     signal?: AbortSignal;
+    allowNotModified?: boolean;
   } = {},
 ): Promise<{ text?: string; bytes?: Uint8Array; url: string; contentType: string; status: number; headers: Record<string, string> }> {
   const deadline = new AbortController();
@@ -590,10 +592,19 @@ export async function publicFetch(
         if (redirects >= maxRedirects) throw new Error("too_many_redirects");
         redirects += 1;
         const next = assertPublicUrl(new URL(location, url).href);
+        // Validators belong to this representation, not the next redirect target.
+        // ponytail: redirected feeds refetch 200; cache the final URL explicitly if that cost matters.
+        requestHeaders = Object.fromEntries(Object.entries(requestHeaders)
+          .filter(([key]) => !/^(if-none-match|if-modified-since)$/i.test(key)));
         if (next.origin !== url.origin) requestHeaders = Object.fromEntries(Object.entries(requestHeaders)
           .filter(([key]) => !/^(host|referer)$|auth|cookie|token|key|secret|credential|session|password/i.test(key)));
         url = next;
         continue;
+      }
+      if (status === 304 && allowNotModified && redirects === 0) {
+        cancelBody(response.body);
+        response = undefined;
+        return { url: url.href, contentType: responseHeaders['content-type'] ?? '', status, headers: responseHeaders };
       }
       if (status < 200 || status >= 300) throw new CollectionHttpError(status === 429 ? "rate_limited" : "http_error", `HTTP ${status}`,
         { status, retryAt: parseRetryAfter(responseHeaders["retry-after"] ?? null, Date.now()) ?? undefined });

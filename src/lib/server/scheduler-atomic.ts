@@ -75,7 +75,8 @@ export async function completeSourceClaim(
   claimToken: string,
   lastExternalId: string,
   lastPublishedAt: string | null,
-  progress?: { scan_state?: unknown; has_more?: boolean; coverage?: unknown; rejected_entries?: number },
+  progress?: { scan_state?: unknown; has_more?: boolean; coverage?: unknown; rejected_entries?: number;
+    feed_validators?: { etag: string; last_modified: string }; feed_validator_identity?: string },
 ): Promise<boolean> {
   const rows = await sql.query<{ id: unknown }>(
     `update sources set
@@ -86,12 +87,15 @@ export async function completeSourceClaim(
        last_published_at = coalesce($3::timestamptz, last_published_at),
        claim_token = '',
        claimed_at = null${progress ? `, scan_state = $5::jsonb, has_more = $6,
-       collection_coverage = $7::jsonb, rejected_entries = $8` : ''}
+       collection_coverage = $7::jsonb, rejected_entries = $8${progress.feed_validators ? `,
+       feed_etag = $9, feed_last_modified = $10, feed_validator_identity = $11` : ''}` : ''}
      where id = $1 and claim_token = $4
      returning id`,
     [sourceId, lastExternalId, lastPublishedAt, claimToken, ...(progress ? [
       JSON.stringify(progress.scan_state ?? { bootstrap: "latest" }), progress.has_more ?? false,
-      JSON.stringify(progress.coverage ?? null), progress.rejected_entries ?? 0] : [])],
+      JSON.stringify(progress.coverage ?? null), progress.rejected_entries ?? 0,
+      ...(progress.feed_validators ? [progress.feed_validators.etag, progress.feed_validators.last_modified,
+        progress.feed_validator_identity ?? ''] : [])] : [])],
   );
   return rows.length === 1;
 }

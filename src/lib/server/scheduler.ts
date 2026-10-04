@@ -188,6 +188,9 @@ export async function persistCollectedBatch(database: Sql, source: SourceRecord,
   return database.transaction(async sql => {
     await lockSourceClaim(sql, source.id, claimToken);
     const fetched = collected.items;
+    if (collected.not_modified && (fetched.length || !collected.feed_validators ||
+      !source.feed_validator_identity || collected.feed_validator_identity !== source.feed_validator_identity ||
+      !(source.feed_etag || source.feed_last_modified))) throw new Error('invalid_not_modified_batch');
     const meta = collected.meta;
     const externalIds = [...new Set(fetched.flatMap(item => [item.external_id.slice(0,320),
       ...(typeof item.extra.rss_legacy_id === "string" ? [item.extra.rss_legacy_id] : [])]))];
@@ -342,6 +345,13 @@ export async function persistCollectedBatch(database: Sql, source: SourceRecord,
     }
     if (collected.next_cursor) nextCursor = collected.next_cursor;
     const cursorItem = fetched.find((it) => it.external_id === nextCursor);
+    // A feed window can be fully consumed without proving historical coverage.
+    // Quarantined entries/body failures and incomplete pages must fetch a fresh 200 next time.
+    const feedComplete = !collected.rejected_entries && !collected.has_more &&
+      fetched.every(item => item.external_id && item.extra.body_complete !== false) &&
+      (!coverage || coverage.complete || (coverage.window_only && coverage.note === 'feed_window'));
+    const validators = collected.feed_validators && (feedComplete
+      ? collected.feed_validators : { etag: '', last_modified: '' });
     const completed = await completeSourceClaim(
       sql,
       source.id,
@@ -349,7 +359,8 @@ export async function persistCollectedBatch(database: Sql, source: SourceRecord,
       nextCursor,
       cursorItem?.published_at ?? (nextCursor === previousCursor ? null : latestPublished(fetched, nextCursor)),
       { scan_state: collected.next_scan_state ?? source.scan_state, has_more: collected.has_more,
-        coverage: collected.coverage, rejected_entries: collected.rejected_entries },
+        coverage: collected.coverage, rejected_entries: collected.rejected_entries,
+        feed_validators: validators, feed_validator_identity: feedComplete ? collected.feed_validator_identity : '' },
     );
     if (!completed) throw new Error(SCHEDULER_LEASE_LOST);
     await finishSourceJob(sql, claimToken, "ok", "", fetched.length, itemsNew, meta);
@@ -390,6 +401,11 @@ export async function runSourceJob(
       handle: source.handle,
       url: source.url,
       feed_url: source.feed_url,
+      // Read persisted internal cache fields from the claim, never from client input.
+      // Reconciliation repairs item/media state even when the upstream body is unchanged.
+      feed_etag: kind === 'reconcile' ? '' : String(raw.feed_etag ?? ''),
+      feed_last_modified: kind === 'reconcile' ? '' : String(raw.feed_last_modified ?? ''),
+      feed_validator_identity: String(raw.feed_validator_identity ?? ''),
       adapter: source.adapter,
       last_external_id: source.last_external_id,
       scan_state: asJson<SourceRecord["scan_state"]>(raw.scan_state, { bootstrap: "latest" }),
