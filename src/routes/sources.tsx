@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { toast } from "sonner";
 import { Plus, RefreshCw } from "lucide-react";
@@ -346,7 +346,7 @@ function AddSourceDialog({ onClose }: { onClose: () => void }) {
             </div>
           ) : null}
           {csvMode ? (
-            <>
+            <Fragment key="csv">
               <label className="grid gap-1.5 text-xs text-muted">
                 CSV 文件
                 <Input
@@ -471,9 +471,9 @@ function AddSourceDialog({ onClose }: { onClose: () => void }) {
                   </ul>
                 </div>
               ) : null}
-            </>
+            </Fragment>
           ) : (
-            <>
+            <Fragment key="single">
               <label className="grid gap-1.5 text-xs text-muted">
                 名称
                 <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="信源显示名称" required={platform !== "telegram" || !bulk.trim()} maxLength={80} />
@@ -525,7 +525,7 @@ function AddSourceDialog({ onClose }: { onClose: () => void }) {
                   ))}
                 </NativeSelect>
               </label>
-            </>
+            </Fragment>
           )}
         </div>
         <div className="mt-5 flex justify-end gap-2">
