@@ -50,6 +50,7 @@ export async function completeSourceClaim(
   claimToken: string,
   lastExternalId: string,
   lastPublishedAt: string | null,
+  progress?: { scan_state?: unknown; has_more?: boolean; coverage?: unknown; rejected_entries?: number },
 ): Promise<boolean> {
   const rows = await sql.query<{ id: unknown }>(
     `update sources set
@@ -59,10 +60,13 @@ export async function completeSourceClaim(
        last_external_id = coalesce(nullif($2, ''), last_external_id),
        last_published_at = coalesce($3::timestamptz, last_published_at),
        claim_token = '',
-       claimed_at = null
+       claimed_at = null${progress ? `, scan_state = $5::jsonb, has_more = $6,
+       collection_coverage = $7::jsonb, rejected_entries = $8` : ''}
      where id = $1 and claim_token = $4
      returning id`,
-    [sourceId, lastExternalId, lastPublishedAt, claimToken],
+    [sourceId, lastExternalId, lastPublishedAt, claimToken, ...(progress ? [
+      JSON.stringify(progress.scan_state ?? { bootstrap: "latest" }), progress.has_more ?? false,
+      JSON.stringify(progress.coverage ?? null), progress.rejected_entries ?? 0] : [])],
   );
   return rows.length === 1;
 }

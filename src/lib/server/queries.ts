@@ -56,6 +56,10 @@ export function mapSource(row: Record<string, unknown>): SourceRow {
     notes: String(row.notes ?? ""),
     created_at: iso(row.created_at) ?? new Date().toISOString(),
     item_count: asInt(row.item_count) ?? undefined,
+    scan_state: asJson<SourceRow["scan_state"]>(row.scan_state, undefined),
+    has_more: asBool(row.has_more),
+    collection_coverage: asJson<SourceRow["collection_coverage"]>(row.collection_coverage, undefined),
+    rejected_entries: asInt(row.rejected_entries) ?? 0,
   };
 }
 

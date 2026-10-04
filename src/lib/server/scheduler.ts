@@ -3,8 +3,9 @@ import { itemMatchesPhrase, RADAR_SOURCE_ID } from "@/lib/keyword";
 import { isPlatform, type PlatformId } from "@/lib/platforms";
 import { shortId } from "@/lib/utils";
 import { normalizeWechatUrl } from "@/lib/wechat-canonical";
-import { canAdvanceCursor, compareNumericIds, isNumericId } from "./cursor.ts";
+import { canAdvanceCursor, compareNumericIds, isNumericId, telegramMessageId } from "./cursor.ts";
 import type { TickResult } from "@/lib/types";
+import { parseTelegramHandle } from "../telegram-handle.ts";
 import { collectSource } from "./collectors";
 import type { FetchIo } from "./http.ts";
 import { collectKeyword } from "./collectors/keyword.ts";
@@ -220,6 +221,7 @@ export async function runSourceJob(
       feed_url: source.feed_url,
       adapter: source.adapter,
       last_external_id: source.last_external_id,
+      scan_state: asJson<SourceRecord["scan_state"]>(raw.scan_state, { bootstrap: "latest" }),
     };
     const collected = await collectSource(record, io);
     const fetched = collected.items;
@@ -229,6 +231,43 @@ export async function runSourceJob(
       [source.id],
     );
     const existingByExternalId = new Map(existing.map((row) => [row.external_id, row]));
+    if (source.platform === "telegram" && !source.feed_url) {
+      const handle = parseTelegramHandle(source.handle) || parseTelegramHandle(source.url);
+      // Numeric and exact channel/ID aliases refer to one message of this source.
+      // Check every group before changing any row, retaining internal IDs.
+      const aliases = new Map<string, (typeof existing)[number]>();
+      for (const row of existing) {
+        const canonical = telegramMessageId(row.external_id, handle);
+        if (!canonical) continue;
+        if (aliases.has(canonical)) {
+          await sql.query(`insert into collection_identity_conflicts(source_id,kind,evidence)
+            values($1,'telegram_duplicate',$2::jsonb)`, [source.id,
+            JSON.stringify({ item_ids: [aliases.get(canonical)!.id, row.id], external_id: canonical })]);
+          throw new Error("identity_conflict:telegram_duplicate");
+        }
+        aliases.set(canonical, row);
+      }
+      for (const [canonical, row] of aliases) {
+        if (row.external_id !== canonical) {
+          await sql.query("update items set external_id=$2 where id=$1", [row.id, canonical]);
+          existingByExternalId.delete(row.external_id);
+          row.external_id = canonical;
+        }
+        existingByExternalId.set(canonical, row);
+      }
+    }
+    // Check the whole page before changing any item: legacy XML coercion can
+    // map distinct opaque GUIDs onto the same previously stored key.
+    for (const item of fetched) {
+      const alias = item.extra.rss_legacy_id;
+      const legacy = typeof alias === "string" ? existingByExternalId.get(alias) : undefined;
+      if (legacy && asJson<Record<string, unknown>>(legacy.extra, {}).rss_identity !== "raw-v1") {
+        await sql.query(`insert into collection_identity_conflicts(source_id,kind,evidence)
+          values($1,'rss_legacy_alias',$2::jsonb)`, [source.id,
+          JSON.stringify({ item_id: legacy.id, legacy_external_id: alias, incoming_external_id: item.external_id })]);
+        throw new Error("identity_conflict:rss_legacy_alias");
+      }
+    }
     const normalizedUrl = (url: string) => {
       if (source.platform !== "wechat" || !url) return "";
       try { return normalizeWechatUrl(url); } catch { return ""; }
@@ -258,6 +297,9 @@ export async function runSourceJob(
           : it.extra, it.extra.provider ?? meta.provider)
         : it.extra;
       if (existingItem) {
+        // An existing coerced identity is not proven raw merely by an exact-ID
+        // refresh; retain legacy provenance until an operator verifies it.
+        if (it.extra.rss_identity && existingExtra.rss_identity !== "raw-v1") delete itemExtra.rss_identity;
         await mergeExistingItem(sql, existingItem.id,
           { ...it, extra: itemExtra, published_at: publishedIso }, matched);
         continue;
@@ -314,6 +356,7 @@ export async function runSourceJob(
         nextCursor = latest.external_id;
       }
     }
+    if (collected.next_cursor) nextCursor = collected.next_cursor;
     const cursorItem = fetched.find((it) => it.external_id === nextCursor);
     const completed = await completeSourceClaim(
       sql,
@@ -321,6 +364,8 @@ export async function runSourceJob(
       jobId,
       nextCursor,
       cursorItem?.published_at ?? (nextCursor === previousCursor ? null : latestPublished(fetched, nextCursor)),
+      { scan_state: collected.next_scan_state ?? record.scan_state, has_more: collected.has_more,
+        coverage: collected.coverage, rejected_entries: collected.rejected_entries },
     );
     if (!completed) {
       await finishSourceJob(sql, jobId, "error", SCHEDULER_LEASE_LOST, 0, 0, meta);

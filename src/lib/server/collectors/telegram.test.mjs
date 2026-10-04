@@ -339,3 +339,17 @@ test("worker health preserves all explicit states, rejects malformed states, and
     } finally { await vite.close(); }
   } finally { globalThis.fetch = originalFetch; delete process.env.TELEGRAM_WORKER_URL; }
 });
+
+
+test("explicit backfill never substitutes a finite public or RSS window", async () => {
+  delete process.env.TELEGRAM_WORKER_URL;
+  const {vite,collectSource}=await loadCollector();
+  try {
+    let calls=0;
+    const io={transport:async()=>{calls++;throw new Error('unexpected public fetch');}};
+    const backfill={...source,scan_state:{bootstrap:'backfill',boundary:'100'}};
+    await assert.rejects(()=>collectSource(backfill,io),/backfill_requires_authorized_worker/);
+    await assert.rejects(()=>collectSource({...backfill,feed_url:'https://example.invalid/feed'},io),/backfill_requires_authorized_worker/);
+    assert.equal(calls,0);
+  } finally {await vite.close();}
+});

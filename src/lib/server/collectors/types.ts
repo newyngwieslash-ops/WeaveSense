@@ -11,6 +11,7 @@ export type SourceRecord = {
   feed_url: string;
   adapter: string;
   last_external_id?: string;
+  scan_state?: { bootstrap: "latest" | "backfill"; page?: number; boundary?: string };
 };
 
 export type NormalizedItem = {
@@ -56,6 +57,9 @@ export type CollectorBatch = {
   items: NormalizedItem[];
   meta: CollectorMeta;
   coverage?: CollectorCoverage;
+  next_scan_state?: SourceRecord["scan_state"];
+  has_more?: boolean;
+  next_cursor?: string;
   /** Entries rejected by feed normalization; never counted as collected items. */
   rejected_entries?: number;
 };

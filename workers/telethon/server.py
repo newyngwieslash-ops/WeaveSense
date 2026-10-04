@@ -170,12 +170,12 @@ def cooldown_seconds() -> int:
     return max(0, math.ceil(paused_until - time.monotonic()))
 
 
-async def history(channel: str, min_id: int, limit: int) -> dict[str, Any]:
+async def history(channel: str, min_id: int, limit: int, bootstrap: str = "latest") -> dict[str, Any]:
     global paused_until, connection_state
     deadline = asyncio.get_running_loop().time() + HISTORY_TIMEOUT_SECONDS
     try:
         async with asyncio.timeout_at(deadline):
-            return await history_page(channel, min_id, limit)
+            return await history_page(channel, min_id, limit, bootstrap)
     except TimeoutError:
         return {"error": "timeout", "items": []}
     except FloodWaitError as exc:
@@ -192,7 +192,7 @@ async def history(channel: str, min_id: int, limit: int) -> dict[str, Any]:
         return {"error": "channel_invalid", "items": []}
 
 
-async def history_page(channel: str, min_id: int, limit: int) -> dict[str, Any]:
+async def history_page(channel: str, min_id: int, limit: int, bootstrap: str = "latest") -> dict[str, Any]:
     """Fetch one bounded page of channel history, ascending from the cursor.
 
     T10: the page must start at the *oldest* message after the cursor, not the
@@ -212,19 +212,23 @@ async def history_page(channel: str, min_id: int, limit: int) -> dict[str, Any]:
         if client is None or not client.is_connected() or connection_state != "ready":
             return {"error": connection_state if connection_state in {"unconfigured", "unauthorized"} else "unavailable", "items": []}
         entity = await resolve_channel(channel)
-        messages = await client.get_messages(entity, min_id=min_id, limit=limit, reverse=True)
+        ascending = min_id > 0 or bootstrap == "backfill"
+        messages = await client.get_messages(entity, min_id=min_id, limit=limit, reverse=ascending)
         items = []
         last_id = min_id
         for msg in messages:
-            if not isinstance(msg, Message):
+            # Telegram service messages are consumed too, although they have no
+            # normalized content. Otherwise a full service page repeats forever.
+            message_id = getattr(msg, "id", None)
+            if not isinstance(message_id, int) or isinstance(message_id, bool) or message_id <= min_id:
                 continue
-            if msg.id <= min_id:
-                continue
-            items.append(await normalize(msg, channel))
-            last_id = max(last_id, msg.id)
+            last_id = max(last_id, message_id)
+            if isinstance(msg, Message):
+                items.append(await normalize(msg, channel))
         # `last_id` is a plain integer here and is serialized as a decimal
         # string: message ids can exceed 2^53, where JSON numbers lose precision.
-        return {"items": items, "last_id": str(last_id) if last_id else "0"}
+        return {"items": items, "last_id": str(last_id) if last_id else "0",
+                "has_more": ascending and len(messages) >= limit}
 
 
 async def handle_health(_: web.Request) -> web.Response:
@@ -252,15 +256,22 @@ async def handle_history(request: web.Request) -> web.Response:
         body = await request.json()
     except Exception:
         return web.json_response({"error": "请求不是 JSON"}, status=400)
+    if not isinstance(body, dict):
+        return web.json_response({"error": "invalid_request"}, status=400)
     channel = str(body.get("channel") or "").lstrip("@").strip()
     if not channel:
         return web.json_response({"error": "缺少 channel"}, status=400)
     raw_min = str(body.get("min_id") or "0")
-    digits = "".join(ch for ch in raw_min if ch.isdigit())
-    min_id = int(digits or 0)
-    limit = min(100, max(1, int(body.get("limit") or 80)))
+    bootstrap = body.get("bootstrap", "latest")
+    if len(raw_min) > 320 or not raw_min.isascii() or not raw_min.isdecimal() or bootstrap not in ("latest", "backfill"):
+        return web.json_response({"error": "invalid_cursor"}, status=400)
+    min_id = int(raw_min)
     try:
-        result = await history(channel, min_id, limit)
+        limit = min(100, max(1, int(body.get("limit") or 80)))
+    except (TypeError, ValueError):
+        return web.json_response({"error": "invalid_limit"}, status=400)
+    try:
+        result = await history(channel, min_id, limit, bootstrap)
     except Exception as exc:
         return web.json_response({"error": str(exc)[:180], "items": []}, status=400)
     status = 429 if result.get("flood_wait") else 200

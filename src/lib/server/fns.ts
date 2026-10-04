@@ -1,3 +1,4 @@
+import { initialScanState } from "./cursor.ts";
 import { createServerFn } from "@tanstack/react-start";
 import type { AskResult } from "../types";
 import { getSql } from "@/lib/db";
@@ -162,10 +163,13 @@ export const addSourceFn = createServerFn({ method: "POST" })
       url?: string;
       feed_url?: string;
       interval_minutes: number;
+      scan_state?: unknown;
     }) => input,
   )
   .handler(async ({ data }) => {
     if (!isPlatform(data.platform)) throw new Error("未知平台");
+    const scanState = initialScanState(data.scan_state);
+    if (scanState.bootstrap === "backfill" && data.platform !== "telegram") throw new Error("backfill_requires_telegram");
     const name = data.name.trim().slice(0, 80);
     if (!name) throw new Error("请填写信源名称");
     const feed = (data.feed_url ?? "").trim();
@@ -183,8 +187,8 @@ export const addSourceFn = createServerFn({ method: "POST" })
     const id = shortId();
     await sql.query(
       `insert into sources (
-         id, platform, name, handle, url, feed_url, interval_minutes, enabled, adapter, notes, status
-       ) values ($1,$2,$3,$4,$5,$6,$7,true,$8,'', 'idle')`,
+         id, platform, name, handle, url, feed_url, interval_minutes, enabled, adapter, notes, status, scan_state
+       ) values ($1,$2,$3,$4,$5,$6,$7,true,$8,'', 'idle',$9::jsonb)`,
       [
         id,
         data.platform,
@@ -194,14 +198,16 @@ export const addSourceFn = createServerFn({ method: "POST" })
         feed,
         data.interval_minutes || 30,
         defaultAdapter(data.platform as PlatformId),
+        JSON.stringify(scanState),
       ],
     );
     return { id };
   });
 
 export const addTelegramChannelsFn = createServerFn({ method: "POST" })
-  .validator((input: { handles: string; interval_minutes: number }) => input)
+  .validator((input: { handles: string; interval_minutes: number; scan_state?: unknown }) => input)
   .handler(async ({ data }) => {
+    const scanState = initialScanState(data.scan_state);
     const handles = parseTelegramHandles(data.handles);
     if (!handles.length) throw new Error("请粘贴频道用户名，每行一个");
     const interval = data.interval_minutes || 10;
@@ -220,9 +226,9 @@ export const addTelegramChannelsFn = createServerFn({ method: "POST" })
       const id = shortId();
       await sql.query(
         `insert into sources (
-           id, platform, name, handle, url, feed_url, interval_minutes, enabled, adapter, notes, status
-         ) values ($1,'telegram',$2,$3,$4,'',$5,true,'telegram_web','Telethon 增量',$6)`,
-        [id, handle, handle, `https://t.me/s/${handle}`, interval, "idle"],
+           id, platform, name, handle, url, feed_url, interval_minutes, enabled, adapter, notes, status, scan_state
+         ) values ($1,'telegram',$2,$3,$4,'',$5,true,'telegram_web','Telethon 增量',$6,$7::jsonb)`,
+        [id, handle, handle, `https://t.me/s/${handle}`, interval, "idle", JSON.stringify(scanState)],
       );
       created.push(handle);
     }

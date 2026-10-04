@@ -62,3 +62,25 @@ export function canAdvanceCursor(current: unknown, candidate: unknown): boolean 
   if (!isNumericId(current)) return true; // no cursor yet
   return compareNumericIds(candidate, current) > 0;
 }
+
+/** Accept only a numeric ID or the exact legacy channel/ID shape. Never guess. */
+export function telegramMessageId(value: string, channel: string): string | undefined {
+  if (value.length > 320) return undefined;
+  if (/^\d+$/.test(value)) return normalizeId(value);
+  const parts = value.split("/");
+  return parts.length === 2 && parts[0].toLowerCase() === channel.toLowerCase() && isNumericId(parts[1])
+    ? normalizeId(parts[1]) : undefined;
+}
+
+/** Public source creation accepts an explicit start ID; continuation pages are internal. */
+export function initialScanState(value: unknown): { bootstrap: "latest" | "backfill"; boundary?: string } {
+  if (value === undefined) return { bootstrap: "latest" };
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid_scan_state");
+  const state = value as Record<string, unknown>;
+  if (Object.keys(state).some(key => key !== "bootstrap" && key !== "boundary")) throw new Error("invalid_scan_state");
+  if (state.bootstrap === "latest" && state.boundary === undefined) return { bootstrap: "latest" };
+  if (state.bootstrap === "backfill" && isNumericId(state.boundary) && state.boundary.length <= 320) {
+    return { bootstrap: "backfill", boundary: normalizeId(state.boundary) };
+  }
+  throw new Error("invalid_scan_state");
+}

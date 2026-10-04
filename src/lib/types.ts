@@ -18,6 +18,10 @@ export type SourceRow = {
   notes: string;
   created_at: string;
   item_count?: number;
+  scan_state?: { bootstrap: "latest" | "backfill"; page?: number; boundary?: string };
+  has_more?: boolean;
+  collection_coverage?: { complete: boolean; window_only?: boolean; note?: string };
+  rejected_entries?: number;
 };
 
 export type KeywordRow = {

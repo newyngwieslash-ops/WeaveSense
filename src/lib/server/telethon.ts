@@ -1,3 +1,5 @@
+import { telegramMessageId, maxNumericId, compareNumericIds } from "./cursor.ts";
+import type { SourceRecord } from "./collectors/types";
 import { prod, telethonConfigured } from "./config";
 import type { NormalizedItem } from "./collectors/types";
 import { parseTelegramHandle, parseTelegramHandles } from "../telegram-handle";
@@ -31,7 +33,7 @@ const historySchema = z.object({
     thumbnail_url: z.string(), views: z.number().finite().nullable(), likes: z.number().finite().nullable(),
     published_at: z.string().nullable(), extra: z.record(z.string(), z.unknown()),
   })),
-  last_id: z.string().optional(), flood_wait: z.number().finite().nonnegative().optional(), error: z.string().optional(),
+  has_more: z.boolean().optional(), last_id: z.string().max(320).regex(/^\d+$/).optional(), flood_wait: z.number().finite().nonnegative().optional(), error: z.string().optional(),
 });
 
 let healthCache: { at: number; value: TelethonHealth } | null = null;
@@ -96,8 +98,12 @@ export async function fetchTelethonHistory(
   minId: string,
   limit = 80,
   signal?: AbortSignal,
-): Promise<NormalizedItem[]> {
+  scanState?: SourceRecord["scan_state"],
+): Promise<NormalizedItem[] & { has_more?: boolean; next_cursor?: string }> {
   if (!telethonConfigured()) throw new Error("Telethon 节点未配置");
+  const handle = parseTelegramHandle(channel) || channel.replace(/^@/, "");
+  const cursor = telegramMessageId(minId || "0", handle);
+  if (!cursor) throw new CollectionHttpError("invalid_response", "invalid_telegram_cursor");
   const deadline = AbortSignal.timeout(60000);
   const combined = signal ? AbortSignal.any([signal, deadline]) : deadline;
   try {
@@ -106,7 +112,8 @@ export async function fetchTelethonHistory(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         channel: parseTelegramHandle(channel) || channel.replace(/^@/, ""),
-        min_id: (minId.match(/(\d+)$/)?.[1] ?? minId.replace(/\D/g, "")) || "0",
+        min_id: cursor,
+        bootstrap: scanState?.bootstrap ?? "latest",
         limit,
       }),
       signal: combined,
@@ -129,11 +136,20 @@ export async function fetchTelethonHistory(
       failure.data.error === "timeout" ? "timeout" : failure.data.error === "membership_required" ? "Telethon membership_required" : `Telethon HTTP ${res.status}`, details);
     const parsed = historySchema.safeParse(json);
     if (!parsed.success) throw new CollectionHttpError("invalid_response");
-    return parsed.data.items.map((it) => ({
+    const items = parsed.data.items.map((it) => ({
       ...it,
       media_type: it.media_type === "audio" ? "file" : it.media_type,
       extra: { ...(it.extra ?? {}), ...(it.media_type === "audio" ? { telethon_media_type: "audio" } : {}), collector: "telethon" },
     }));
+    if (items.some(it => telegramMessageId(it.external_id, handle) !== it.external_id)) throw new CollectionHttpError("invalid_response");
+    const maximum = maxNumericId(items.map(it => it.external_id)) ?? cursor;
+    const boundary = parsed.data.last_id ?? maximum;
+    if (compareNumericIds(boundary, cursor) < 0 || compareNumericIds(boundary, maximum) < 0 ||
+      (parsed.data.has_more && compareNumericIds(boundary, cursor) <= 0)) throw new CollectionHttpError("invalid_response");
+    // The worker boundary includes traversed service messages, even on an empty
+    // content page. Persistence commits it only after saving this entire page.
+    return Object.assign(items, { has_more: parsed.data.has_more ?? items.length >= limit,
+      next_cursor: boundary });
   } catch (error) {
     throw collectionHttpError(error, combined);
   }

@@ -1,3 +1,4 @@
+import { telegramMessageId } from "./cursor.ts";
 import { parseViews, stripHtml } from "../format.ts";
 import { fetchText, type FetchIo } from "./http.ts";
 import type { NormalizedItem } from "./collectors/types";
@@ -20,7 +21,8 @@ export function parseTelegramHtml(html: string, username: string): NormalizedIte
       username;
     const body = stripHtml(textMatch?.[1] ?? "");
     const title = body.split("\n")[0]?.slice(0, 120) || (video ? "视频消息" : photo ? "图片消息" : "频道消息");
-    const id = post || `${username}:${datetime ?? items.length}`;
+    const id = telegramMessageId(post, username);
+    if (!id) continue;
     const url = post ? `https://t.me/${post}` : `https://t.me/s/${username}`;
     items.push({
       external_id: id,

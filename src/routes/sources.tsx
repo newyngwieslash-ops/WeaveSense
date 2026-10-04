@@ -106,6 +106,8 @@ function SourcesPage() {
                         {s.handle || s.feed_url || s.url} · 每 {s.interval_minutes} 分钟 · {s.item_count ?? 0} 条 ·{" "}
                         {formatRelative(s.last_scanned_at)}
                       </p>
+                      {s.collection_coverage?.window_only ? <p className="mt-1 text-xs text-muted">仅覆盖当前窗口，不包含完整历史</p> : null}
+                      {s.has_more ? <p className="mt-1 text-xs text-muted">还有内容待采集，将从已保存进度继续</p> : null}
                       {s.last_error ? (
                         <p className="mt-1 text-xs text-danger">{s.last_error}</p>
                       ) : (

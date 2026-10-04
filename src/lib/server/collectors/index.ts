@@ -129,6 +129,7 @@ const telegramAdapter: CollectorAdapter = {
   id: "telegram_web",
   async fetch(source, io = {}) {
     if (source.feed_url.startsWith("http")) {
+      if (source.scan_state?.bootstrap === "backfill") throw new Error("telegram_backfill_requires_authorized_worker");
       return feedBatch(source.feed_url, source, "rss", io);
     }
     const handle = parseTelegramHandle(source.handle) || parseTelegramHandle(source.url);
@@ -150,7 +151,12 @@ const telegramAdapter: CollectorAdapter = {
         }, new CollectionHttpError("rate_limited", "rate_limited", { retryAt: Date.now() + wait * 1000 }));
       }
       try {
-        return batch(await fetchTelethonHistory(handle, minId, 80, io.signal), "telethon");
+        const page = await fetchTelethonHistory(handle, source.scan_state?.boundary ?? minId, 80, io.signal, source.scan_state);
+        const latestWindow = (!minId || /^0+$/.test(minId)) && source.scan_state?.bootstrap !== "backfill";
+        return { ...batch(page, "telethon"), next_cursor: page.next_cursor, has_more: page.has_more,
+          next_scan_state: { bootstrap: source.scan_state?.bootstrap ?? "latest" },
+          coverage: latestWindow ? { complete: false, window_only: true, note: "latest_80" }
+            : { complete: !page.has_more, note: page.has_more ? "page_cap" : "incremental" } };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         throw new CollectorBatchError(msg, {
@@ -158,6 +164,7 @@ const telegramAdapter: CollectorAdapter = {
         }, err);
       }
     }
+    if (source.scan_state?.bootstrap === "backfill") throw new Error("telegram_backfill_requires_authorized_worker");
     try {
       return { ...batch(await fetchTelegramChannel(handle, io), "t.me/s"),
         coverage: { complete: false, window_only: true, note: "web_window" } };
@@ -232,7 +239,14 @@ const biliAdapter: CollectorAdapter = {
     if (source.feed_url.startsWith("http")) {
       return feedBatch(source.feed_url, source, "bilibili", io);
     }
-    const mid = (source.handle || source.url).replace(/\D/g, "");
+    const candidate = (source.handle || source.url).trim();
+    let mid = /^\d+$/.test(candidate) ? candidate : "";
+    if (!mid) {
+      try {
+        const url = new URL(candidate);
+        if (url.hostname === "space.bilibili.com" && !url.username && !url.password) mid = url.pathname.match(/^\/(\d+)\/?$/)?.[1] ?? "";
+      } catch { /* Not an exact channel ID or channel URL. */ }
+    }
     if (!mid) throw new Error("需要 B 站 mid");
 
     // Walk pages until a known item is reached (or the page cap). Previously only
@@ -245,14 +259,19 @@ const biliAdapter: CollectorAdapter = {
     let complete = false;
     let note = "";
 
-    for (let page = 1; page <= BILI_MAX_PAGES; page += 1) {
+    const startPage = source.scan_state?.page ?? 1;
+    if (!Number.isSafeInteger(startPage) || startPage < 1) throw new Error("invalid_scan_page");
+    let nextPage = startPage;
+    for (let page = startPage; page < startPage + BILI_MAX_PAGES; page += 1) {
+      nextPage = page;
       const json = await fetchJson<BiliList>(
         `https://api.bilibili.com/x/space/arc/search?mid=${mid}&ps=${BILI_PAGE_SIZE}&pn=${page}`,
         10000,
         io,
       );
       if (json.code && json.code !== 0) throw biliError(json.code, json.message ?? "");
-      const list = json.data?.list?.vlist ?? [];
+      const list = json.data?.list?.vlist;
+      if (!Array.isArray(list)) throw new CollectionHttpError("invalid_response");
       if (!list.length) {
         // Ran out of items: the boundary is reached (or the channel is empty).
         complete = true;
@@ -273,7 +292,6 @@ const biliAdapter: CollectorAdapter = {
       }
     }
     if (!complete) note = "page_cap";
-    if (!rows.length) throw new Error("B站接口未返回视频（可能被风控）");
     const result = batch(rows.map((v) => ({
       external_id: v.bvid,
       title: v.title,
@@ -288,7 +306,13 @@ const biliAdapter: CollectorAdapter = {
       published_at: v.created ? new Date(v.created * 1000).toISOString() : null,
       extra: { bvid: v.bvid, mid: v.mid },
     })), "bilibili");
-    return { ...result, coverage: { complete, note } };
+    // ponytail: one page overlap absorbs up to 20 inserts/deletions between rounds;
+    // a stable upstream cursor is required for arbitrary concurrent feed reordering.
+    const boundary = source.scan_state?.boundary ?? rows[0]?.bvid;
+    return { ...result, coverage: { complete, note }, has_more: !complete,
+      next_cursor: complete ? boundary : undefined,
+      next_scan_state: complete ? { bootstrap: source.scan_state?.bootstrap ?? "latest" }
+        : { bootstrap: source.scan_state?.bootstrap ?? "latest", page: nextPage, boundary } };
   },
 };
 

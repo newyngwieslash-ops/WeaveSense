@@ -114,7 +114,7 @@ describe("parseFeedXml", () => {
     assert.equal(item.author, "公众号作者");
     assert.equal(item.thumbnail_url, "https://cdn.example.com/cover.jpg");
     assert.deepEqual(item.extra, {
-      platform: "wechat",
+      platform: "wechat", rss_identity: "raw-v1",
       provider: "primary",
       providers_seen: ["primary", "dajiala"],
       discovered_at: "2026-08-29T08:05:00.000Z",
@@ -134,7 +134,7 @@ describe("parseFeedXml", () => {
     assert.equal(item.thumbnail_url, "https://cdn.example.com/cover.jpg");
     assert.equal(item.body, "");
     assert.deepEqual(item.extra, {
-      platform: "wechat",
+      platform: "wechat", rss_identity: "raw-v1",
       provider: "primary",
       providers_seen: ["primary", "dajiala"],
       discovered_at: "2026-08-29T08:05:00.000Z",
@@ -181,4 +181,12 @@ describe("parseFeedXml", () => {
 
     assert.equal(item.author, "首位作者");
   });
+});
+
+
+it("raw numeric IDs retain exact text and legacy attribute/fallback conflict evidence", () => {
+  const items=parseFeedXml('<rss><channel><item><guid>00123</guid><title>a</title></item><item><guid>123</guid><title>b</title></item><item><guid isPermaLink="false">00456</guid><link>https://example.invalid/old</link><title>c</title></item></channel></rss>','s','rss');
+  assert.deepEqual(items.map(item=>item.external_id),['00123','123','00456']);
+  assert.equal(items[0].extra.rss_legacy_id,'123');
+  assert.equal(items[2].extra.rss_legacy_id,'https://example.invalid/old');
 });

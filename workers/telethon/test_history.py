@@ -147,6 +147,7 @@ class HistoryPaginationTests(unittest.TestCase):
         self.assertEqual(ids[0], 101, f"page must start at the cursor; got {ids[0]}")
         self.assertEqual(ids[-1], 180, f"page must be a bounded ascending window; got {ids[-1]}")
         self.assertEqual(result["last_id"], "180", "the cursor must advance only to the page's max")
+        self.assertTrue(result["has_more"])
         self.assertTrue(seen.get("reverse"), "an ascending fetch is what avoids skipping the middle")
 
     def test_the_cursor_never_jumps_over_unfetched_messages(self):
@@ -184,7 +185,8 @@ class HistoryPaginationTests(unittest.TestCase):
         async def run():
             async def get_messages(min_id=0, limit=80, reverse=False):
                 # Pretend the channel has 1000 messages.
-                ids = [i for i in range(min_id + 1, 1001)][:limit]
+                ids = list(range(min_id + 1, 1001))
+                ids = (ids if reverse else list(reversed(ids)))[:limit]
                 return page_of(ids)
 
             mod.client = fake_client(get_messages)
@@ -196,7 +198,46 @@ class HistoryPaginationTests(unittest.TestCase):
 
         result = asyncio.run(run())
         self.assertLessEqual(len(result["items"]), 80, "a cold start must stay bounded")
-        self.assertNotEqual(result["last_id"], "1000", "a cold start must not claim to have covered the history")
+        self.assertEqual(result["last_id"], "1000")
+        self.assertEqual([i["external_id"] for i in result["items"]], [str(i) for i in range(1000, 920, -1)])
+        self.assertFalse(result["has_more"])
+
+    def test_service_pages_advance_traversal_and_deleted_ids_are_not_gaps(self):
+        mod = self.mod
+        async def run():
+            class Service:
+                def __init__(self, ident): self.id = ident
+            calls = []
+            async def get_messages(min_id=0, limit=80, reverse=False):
+                calls.append((min_id, reverse))
+                if min_id == 100: return [Service(i) for i in range(101, 181)]
+                if min_id == 180: return page_of([190, 250])
+                return []
+            mod.client = fake_client(get_messages)
+            first = await mod.history("channel", 100, 80)
+            second = await mod.history("channel", int(first["last_id"]), 80)
+            end = await mod.history("channel", int(second["last_id"]), 80)
+            return first, second, end, calls
+        first, second, end, calls = asyncio.run(run())
+        self.assertEqual(first["items"], [])
+        self.assertEqual(first["last_id"], "180")
+        self.assertTrue(first["has_more"])
+        self.assertEqual([x["external_id"] for x in second["items"]], ["190", "250"])
+        self.assertEqual(end["last_id"], "250")
+        self.assertFalse(end["has_more"])
+        self.assertEqual(calls, [(100, True), (180, True), (250, True)])
+
+    def test_explicit_backfill_from_zero_is_ascending(self):
+        mod = self.mod
+        async def run():
+            async def get_messages(min_id=0, limit=80, reverse=False):
+                self.assertTrue(reverse)
+                return page_of(range(1, 81))
+            mod.client = fake_client(get_messages)
+            return await mod.history("channel", 0, 80, "backfill")
+        result = asyncio.run(run())
+        self.assertEqual(result["last_id"], "80")
+        self.assertTrue(result["has_more"])
 
     def test_flood_wait_is_reported_without_advancing(self):
         mod = self.mod
@@ -542,6 +583,19 @@ class HistoryPaginationTests(unittest.TestCase):
             finally:
                 await mod.on_stop(None)
             self.assertEqual(len(asyncio.all_tasks()), 1)
+        asyncio.run(run())
+
+
+
+    def test_history_rejects_malformed_bootstrap_before_worker_access(self):
+        mod = self.mod
+        async def run():
+            for bootstrap in [[], {}, 1, None, "unknown"]:
+                class Request:
+                    async def json(self):
+                        return {"channel": "channel", "min_id": "0", "bootstrap": bootstrap}
+                response = await mod.handle_history(Request())
+                self.assertEqual(response.status, 400)
         asyncio.run(run())
 
 

@@ -11,6 +11,12 @@ const parser = new XMLParser({
   textNodeName: "#text",
   cdataPropName: "#cdata",
   trimValues: true,
+  parseTagValue: false,
+});
+
+const legacyIdentityParser = new XMLParser({
+  ignoreAttributes: false, attributeNamePrefix: "@_", textNodeName: "#text",
+  cdataPropName: "#cdata", trimValues: true,
 });
 
 function asArray<T>(value: T | T[] | undefined | null): T[] {
@@ -134,9 +140,13 @@ export function parseFeedXml(xml: string, sourceId: string, platform: PlatformId
   } else throw new Error("feed_unknown_root");
   if (items.length > 1000) throw new Error("feed_entry_limit");
 
+  // Reproduce legacy keys from the same XML, including numeric GUIDs wrapped
+  // with attributes and the old raw-link fallback. Never reconstruct from DB IDs.
+  const legacyDoc = legacyIdentityParser.parse(xml);
+  const legacyItems = asArray(legacyDoc.rss?.channel?.item ?? legacyDoc.feed?.entry ?? legacyDoc["rdf:RDF"]?.item);
   const result: NormalizedItem[] = [];
   let rejected = 0;
-  for (const raw of items) {
+  for (const [index, raw] of items.entries()) {
     try {
       if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("feed_invalid_entry");
       const rawLink = pickLink(raw.link);
@@ -167,7 +177,17 @@ export function parseFeedXml(xml: string, sourceId: string, platform: PlatformId
       const id = textOf(raw.guid ?? raw.id) || rawLink || url || `${sourceId}:${title}:${published ?? ""}`;
       // ponytail: IDs support at most 320 characters; accepting longer IDs requires a persisted-ID migration.
       if (id.length > 320) throw new Error("feed_entry_id_limit");
-      const extra = loomExtra(raw, platform);
+      const extra = { ...loomExtra(raw, platform), rss_identity: "raw-v1" } as Record<string, unknown>;
+      // Compatibility evidence only: reproduce the prior XML scalar coercion,
+      // never use this alias as the identity of new content.
+      const legacyRaw = legacyItems[index] as Record<string, unknown>;
+      const legacyGuid = legacyRaw.guid as Record<string, unknown> | undefined;
+      const legacyUrl = webUrl(pickLink(legacyRaw.link, true), options.feedUrl) ||
+        (legacyGuid?.["@_isPermaLink"] === "false" ? "" : webUrl(textOf(legacyRaw.guid))) || webUrl(textOf(legacyRaw.id));
+      const legacyPublished = textOf(legacyRaw.pubDate ?? legacyRaw.published ?? legacyRaw.updated ?? legacyRaw["dc:date"] ?? "");
+      const legacyId = textOf(legacyRaw.guid ?? legacyRaw.id) || pickLink(legacyRaw.link) || legacyUrl ||
+        `${sourceId}:${stripHtml(textOf(legacyRaw.title) || "未命名")}:${legacyPublished}`;
+      if (legacyId && legacyId !== id) extra.rss_legacy_id = legacyId;
       if (tooLarge) {
         extra.body_error = "body_too_large";
         extra.body_complete = false;
