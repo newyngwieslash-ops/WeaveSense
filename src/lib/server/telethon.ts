@@ -9,6 +9,9 @@ export { parseTelegramHandle, parseTelegramHandles };
 export type TelethonHealth = {
   ok: boolean;
   authorized: boolean;
+  state: "unconfigured" | "unauthorized" | "connecting" | "ready" | "cooldown" | "unavailable";
+  retry_after_seconds: number;
+  status?: number;
   me?: string;
   minio?: boolean;
   paused_until?: number;
@@ -17,6 +20,8 @@ export type TelethonHealth = {
 
 const healthSchema = z.object({
   ok: z.boolean(), authorized: z.boolean(), me: z.string().optional(), minio: z.boolean().optional(),
+  state: z.enum(["unconfigured", "unauthorized", "connecting", "ready", "cooldown", "unavailable"]).optional(),
+  retry_after_seconds: z.number().finite().nonnegative().optional(),
   paused_until: z.number().finite().nonnegative().optional(), error: z.string().nullable().optional(),
 });
 const historySchema = z.object({
@@ -33,7 +38,7 @@ let healthCache: { at: number; value: TelethonHealth } | null = null;
 
 export async function telethonHealth(signal?: AbortSignal): Promise<TelethonHealth> {
   if (signal?.aborted) throw collectionHttpError(null, signal);
-  if (!telethonConfigured()) return { ok: false, authorized: false, error: "未配置 TELEGRAM_WORKER_URL" };
+  if (!telethonConfigured()) return { ok: false, authorized: false, state: "unconfigured", retry_after_seconds: 0, error: "未配置 TELEGRAM_WORKER_URL" };
   if (healthCache && Date.now() - healthCache.at < 15_000) return healthCache.value;
   const deadline = AbortSignal.timeout(2500);
   const combined = signal ? AbortSignal.any([signal, deadline]) : deadline;
@@ -41,7 +46,9 @@ export async function telethonHealth(signal?: AbortSignal): Promise<TelethonHeal
     const res = await abortable(fetch(`${prod.telegramWorkerUrl}/health`, { signal: combined, redirect: "error" }), combined);
     if (!res.ok) {
       void res.body?.cancel().catch(() => {});
-      const value = { ok: false, authorized: false, error: `worker HTTP ${res.status}` };
+      const value: TelethonHealth = { ok: false, authorized: false, state: "unavailable", status: res.status,
+        retry_after_seconds: Math.max(0, Math.ceil(((parseRetryAfter(res.headers.get("retry-after"), Date.now()) ?? Date.now()) - Date.now()) / 1000)),
+        error: `worker HTTP ${res.status}` };
       healthCache = { at: Date.now(), value };
       return value;
     }
@@ -49,13 +56,18 @@ export async function telethonHealth(signal?: AbortSignal): Promise<TelethonHeal
     let body: z.infer<typeof healthSchema>;
     try { body = healthSchema.parse(JSON.parse(text)); }
     catch { throw new CollectionHttpError("invalid_response"); }
+    const state = body.state ?? (!body.ok ? "unavailable" : !body.authorized ? "unauthorized" : body.paused_until ? "cooldown" : "ready");
+    if ((["ready", "cooldown"].includes(state) && (!body.ok || !body.authorized)) ||
+        (["unconfigured", "unauthorized"].includes(state) && body.authorized)) throw new CollectionHttpError("invalid_response");
     const value: TelethonHealth = {
       ok: body.ok,
+      state,
+      retry_after_seconds: body.retry_after_seconds ?? body.paused_until ?? 0,
       authorized: body.authorized,
       me: body.me,
       minio: body.minio,
       paused_until: body.paused_until,
-      error: body.error ? "telethon_unauthorized" : undefined,
+      error: body.error ? `telethon_${state}` : undefined,
     };
     healthCache = { at: Date.now(), value };
     return value;
@@ -64,6 +76,8 @@ export async function telethonHealth(signal?: AbortSignal): Promise<TelethonHeal
     const value: TelethonHealth = {
       ok: false,
       authorized: false,
+      state: "unavailable",
+      retry_after_seconds: 0,
       error: collectionHttpError(err, combined).code,
     };
     healthCache = { at: Date.now(), value };
@@ -74,7 +88,7 @@ export async function telethonHealth(signal?: AbortSignal): Promise<TelethonHeal
 export async function telethonReady(): Promise<boolean> {
   const h = await telethonHealth();
   if (h.paused_until && h.paused_until > 0) return false;
-  return h.ok && h.authorized;
+  return h.state === "ready" && h.ok && h.authorized;
 }
 
 export async function fetchTelethonHistory(
@@ -112,7 +126,7 @@ export async function fetchTelethonHistory(
     if (failure.data.flood_wait) throw new CollectionHttpError("rate_limited", `Telethon FloodWait ${failure.data.flood_wait}s`,
       { ...details, retryAt: details.retryAt ?? Date.now() + failure.data.flood_wait * 1000 });
     if (!res.ok || failure.data.error) throw new CollectionHttpError(res.status === 429 ? "rate_limited" : failure.data.error === "timeout" ? "timeout" : "http_error",
-      failure.data.error === "timeout" ? "timeout" : `Telethon HTTP ${res.status}`, details);
+      failure.data.error === "timeout" ? "timeout" : failure.data.error === "membership_required" ? "Telethon membership_required" : `Telethon HTTP ${res.status}`, details);
     const parsed = historySchema.safeParse(json);
     if (!parsed.success) throw new CollectionHttpError("invalid_response");
     return parsed.data.items.map((it) => ({

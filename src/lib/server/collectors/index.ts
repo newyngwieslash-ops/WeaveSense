@@ -135,11 +135,19 @@ const telegramAdapter: CollectorAdapter = {
     if (!handle) throw new Error("请填写频道用户名，或 t.me/用户名 链接");
     const minId = source.last_external_id ?? "";
     const health = await telethonHealth(io.signal);
+    if (["connecting", "unavailable"].includes(health.state)) {
+      throw new CollectorBatchError("Telethon unavailable", {
+        provider: "", attempts: ["telethon"], paid_call: false,
+      }, new CollectionHttpError("http_error", "Telethon unavailable", {
+        status: health.status, retryAt: health.retry_after_seconds > 0 ? Date.now() + health.retry_after_seconds * 1000 : undefined,
+      }));
+    }
     if (health.authorized) {
-      if (health.paused_until && health.paused_until > 0) {
-        throw new CollectorBatchError(`Telethon FloodWait ${health.paused_until}s`, {
+      const wait = health.retry_after_seconds || health.paused_until || 0;
+      if (health.state === "cooldown" || wait > 0) {
+        throw new CollectorBatchError(`Telethon FloodWait ${wait}s`, {
           provider: "", attempts: ["telethon"], paid_call: false,
-        }, new CollectionHttpError("rate_limited", "rate_limited", { retryAt: Date.now() + health.paused_until * 1000 }));
+        }, new CollectionHttpError("rate_limited", "rate_limited", { retryAt: Date.now() + wait * 1000 }));
       }
       try {
         return batch(await fetchTelethonHistory(handle, minId, 80, io.signal), "telethon");

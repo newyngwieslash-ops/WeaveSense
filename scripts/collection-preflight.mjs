@@ -54,8 +54,14 @@ export async function probeWorkers(env, { fetchImpl = fetch, timeoutMs = 3000 } 
       const data = JSON.parse(new TextDecoder().decode(await readCapped(response.body, 16 * 1024)));
       if (service === "telegram_worker" && (typeof data.ok !== "boolean" || typeof data.authorized !== "boolean")) throw new Error("worker_invalid_health");
       if (service === "wechat_gateway" && (!Array.isArray(data.sources) || !data.limits)) throw new Error("worker_invalid_health");
+      if (service === "telegram_worker") {
+        const state = data.state ?? (!data.ok ? "unavailable" : data.authorized ? "ready" : "unauthorized");
+        if (!["unconfigured", "unauthorized", "connecting", "ready", "cooldown", "unavailable"].includes(state)) throw new Error("worker_invalid_health");
+        result.push({ code: `telegram_state_${state}`, ready: ["ready", "cooldown"].includes(state) });
+        result.push({ code: ["connecting", "unavailable", "unconfigured"].includes(state) ? "telegram_session_authorization_unchecked" : "telegram_session_authorized",
+          ready: ["ready", "cooldown"].includes(state) && data.ok && data.authorized });
+      }
       result.push({ code: `${service}_connectivity`, ready: true });
-      if (service === "telegram_worker") result.push({ code: "telegram_session_authorized", ready: data.ok && data.authorized });
     } catch {
       result.push({ code: `${service}_connectivity`, ready: false });
       if (service === "telegram_worker") result.push({ code: "telegram_session_authorization_unchecked", ready: false });

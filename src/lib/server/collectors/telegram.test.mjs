@@ -160,6 +160,8 @@ test("Telethon history is capped, shape validated, cancellable, and keeps safe H
         return true;
       });
     }
+    globalThis.fetch = async () => json({ error: "membership_required", items: [] }, 400);
+    await assert.rejects(() => fetchTelethonHistory("channel", "0"), /membership_required/);
     let cancelled = false;
     globalThis.fetch = async () => new Response(new ReadableStream({
       start(controller) { controller.enqueue(new Uint8Array(4 * 1024 * 1024 + 1)); },
@@ -262,4 +264,78 @@ test("Telethon health and history never wait for stalled cancellation cleanup", 
     globalThis.fetch = originalFetch;
     delete process.env.TELEGRAM_WORKER_URL;
   }
+});
+
+
+test("unavailable worker never falls back to t.me/s", async () => {
+  process.env.TELEGRAM_WORKER_URL = "http://telethon:8787";
+  const originalFetch = globalThis.fetch;
+  /** @type {string[]} */
+  const urls = [];
+  globalThis.fetch = async (input) => { urls.push(String(input)); return new Response('{}', { status: 503 }); };
+  let publicRequests = 0;
+  const { vite, collectSource } = await loadCollector();
+  try {
+    await assert.rejects(() => collectSource(source, {
+      resolver: { async lookup() { publicRequests++; throw new Error("unexpected public fallback"); } },
+    }), /unavailable/);
+    assert.deepEqual(urls, ["http://telethon:8787/health"]);
+    assert.equal(urls.some(url => url.includes("t.me/s")), false);
+    assert.equal(publicRequests, 0);
+  } finally {
+    await vite.close(); globalThis.fetch = originalFetch; delete process.env.TELEGRAM_WORKER_URL;
+  }
+});
+
+
+test("explicit connecting and unavailable states keep retry metadata and never use the public adapter", async () => {
+  process.env.TELEGRAM_WORKER_URL = "http://telethon:8787";
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const state of ["connecting", "unavailable"]) {
+      const urls = /** @type {string[]} */ ([]);
+      globalThis.fetch = async (input) => {
+        urls.push(String(input));
+        return json({ ok: false, authorized: false, state, retry_after_seconds: 15 });
+      };
+      const { vite, collectSource } = await loadCollector();
+      try {
+        const before = Date.now();
+        await assert.rejects(() => collectSource(source, { resolver: { async lookup() { throw new Error("unexpected public fallback"); } } }), (/** @type {any} */ err) => {
+          assert.match(err.message, /unavailable/);
+          assert.deepEqual(err.meta.attempts, ["telethon"]);
+          assert.ok(err.retryAt >= before + 15000);
+          return true;
+        });
+        assert.deepEqual(urls, ["http://telethon:8787/health"]);
+      } finally { await vite.close(); }
+    }
+  } finally { globalThis.fetch = originalFetch; delete process.env.TELEGRAM_WORKER_URL; }
+});
+
+test("worker health preserves all explicit states, rejects malformed states, and retains HTTP retry timing", async () => {
+  process.env.TELEGRAM_WORKER_URL = "http://telethon:8787";
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const state of ["ready", "cooldown", "unauthorized", "unconfigured", "connecting", "unavailable", "invalid"]) {
+      const authorized = ["ready", "cooldown"].includes(state);
+      globalThis.fetch = async () => json({ ok: !["connecting", "unavailable"].includes(state), authorized, state, retry_after_seconds: 12 });
+      const { vite } = await loadCollector();
+      try {
+        const { telethonHealth } = await vite.ssrLoadModule("/src/lib/server/telethon.ts");
+        const h = await telethonHealth();
+        assert.equal(h.state, state === "invalid" ? "unavailable" : state);
+        assert.equal(h.authorized, authorized);
+        if (state === "invalid") assert.equal(h.error, "invalid_response");
+        else assert.equal(h.retry_after_seconds, 12);
+      } finally { await vite.close(); }
+    }
+    globalThis.fetch = async () => new Response('{}', { status: 503, headers: { "Retry-After": "60" } });
+    const { vite } = await loadCollector();
+    try {
+      const { telethonHealth } = await vite.ssrLoadModule("/src/lib/server/telethon.ts");
+      const h = await telethonHealth();
+      assert.equal(h.state, "unavailable"); assert.equal(h.status, 503); assert.equal(h.retry_after_seconds, 60);
+    } finally { await vite.close(); }
+  } finally { globalThis.fetch = originalFetch; delete process.env.TELEGRAM_WORKER_URL; }
 });

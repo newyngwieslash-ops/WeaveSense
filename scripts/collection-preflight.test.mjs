@@ -175,3 +175,19 @@ test("synthetic Compose env_file values survive absent host credentials", (t) =>
     assert.ok(existsSync(file));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+
+test("worker recovery states do not report an unauthorized session", async () => {
+  for (const state of ["connecting", "unavailable", "unconfigured", "cooldown", "ready", "unauthorized"]) {
+    const authorized = ["ready", "cooldown"].includes(state);
+    const rows = await probeWorkers({ TELEGRAM_WORKER_URL: "http://telethon:8787" }, {
+      fetchImpl: async () => new Response(JSON.stringify({ ok: !["connecting", "unavailable"].includes(state), authorized, state, retry_after_seconds: 5 })),
+    });
+    assert.equal(ready(rows, "telegram_worker_connectivity"), true);
+    assert.equal(ready(rows, `telegram_state_${state}`), authorized);
+    if (["connecting", "unavailable", "unconfigured"].includes(state)) {
+      assert.equal(rows.some(row => row.code === "telegram_session_authorized"), false);
+      assert.equal(ready(rows, "telegram_session_authorization_unchecked"), false);
+    } else assert.equal(ready(rows, "telegram_session_authorized"), authorized);
+  }
+});

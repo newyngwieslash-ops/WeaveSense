@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import io
+import math
+import random
+from contextlib import suppress
 import os
 import time
 from typing import Any
@@ -18,8 +21,7 @@ from minio import Minio
 from telethon import TelegramClient
 from telethon.errors import ChannelPrivateError, FloodWaitError, UsernameNotOccupiedError
 from telethon.sessions import StringSession
-from telethon.tl.functions.channels import JoinChannelRequest
-from telethon.tl.types import Channel, Message, MessageMediaDocument, MessageMediaPhoto
+from telethon.tl.types import Message, MessageMediaDocument, MessageMediaPhoto
 
 API_ID = int(os.environ.get("TELEGRAM_API_ID") or "0")
 API_HASH = os.environ.get("TELEGRAM_API_HASH") or ""
@@ -39,6 +41,16 @@ paused_until = 0.0
 client: TelegramClient | None = None
 minio_client: Minio | None = None
 gate = asyncio.Semaphore(CONCURRENCY)
+connection_lock = asyncio.Lock()
+reconnect_requested = asyncio.Event()
+reconnect_task: asyncio.Task | None = None
+connection_state = "unconfigured"
+retry_at = 0.0
+account = ""
+HISTORY_TIMEOUT_SECONDS = 50
+CONNECTION_POLL_SECONDS = 5
+RETRY_DELAYS = (5, 15, 60, 300)
+retry_wait = asyncio.sleep
 
 
 def minio_ready() -> bool:
@@ -62,10 +74,12 @@ def build_minio() -> Minio | None:
 def build_client() -> TelegramClient | None:
     if not API_ID or not API_HASH:
         return None
-    if SESSION:
-        return TelegramClient(StringSession(SESSION), API_ID, API_HASH)
-    os.makedirs(os.path.dirname(SESSION_PATH) or ".", exist_ok=True)
-    return TelegramClient(SESSION_PATH, API_ID, API_HASH)
+    session = StringSession(SESSION) if SESSION else SESSION_PATH
+    if not SESSION:
+        os.makedirs(os.path.dirname(SESSION_PATH) or ".", exist_ok=True)
+    return TelegramClient(session, API_ID, API_HASH, connection_retries=1,
+                          request_retries=1, retry_delay=1, auto_reconnect=False,
+                          flood_sleep_threshold=0)
 
 
 def public_url(key: str) -> str:
@@ -124,6 +138,8 @@ async def normalize(message: Message, channel: str) -> dict[str, Any]:
     try:
         who = await message.get_sender()
         sender = getattr(who, "username", None) or getattr(who, "title", None) or getattr(who, "first_name", "") or ""
+    except (FloodWaitError, OSError):
+        raise
     except Exception:
         sender = channel
     media_urls, thumb = await save_media(message, channel)
@@ -147,16 +163,36 @@ async def normalize(message: Message, channel: str) -> dict[str, Any]:
 
 async def resolve_channel(channel: str):
     assert client is not None
-    entity = await client.get_entity(channel)
-    if isinstance(entity, Channel):
-        try:
-            await client(JoinChannelRequest(entity))
-        except Exception:
-            pass
-    return entity
+    return await client.get_entity(channel)
+
+
+def cooldown_seconds() -> int:
+    return max(0, math.ceil(paused_until - time.monotonic()))
 
 
 async def history(channel: str, min_id: int, limit: int) -> dict[str, Any]:
+    global paused_until, connection_state
+    deadline = asyncio.get_running_loop().time() + HISTORY_TIMEOUT_SECONDS
+    try:
+        async with asyncio.timeout_at(deadline):
+            return await history_page(channel, min_id, limit)
+    except TimeoutError:
+        return {"error": "timeout", "items": []}
+    except FloodWaitError as exc:
+        paused_until = max(paused_until, time.monotonic() + int(exc.seconds) + 1)
+        return {"error": "flood_wait", "flood_wait": cooldown_seconds(), "items": []}
+    except ChannelPrivateError:
+        return {"error": "membership_required", "items": []}
+    except OSError:
+        connection_state = "unavailable"
+        # The lifecycle owns disconnect/reconnect, outside the request deadline.
+        reconnect_requested.set()
+        return {"error": "unavailable", "items": []}
+    except (UsernameNotOccupiedError, ValueError):
+        return {"error": "channel_invalid", "items": []}
+
+
+async def history_page(channel: str, min_id: int, limit: int) -> dict[str, Any]:
     """Fetch one bounded page of channel history, ascending from the cursor.
 
     T10: the page must start at the *oldest* message after the cursor, not the
@@ -169,28 +205,14 @@ async def history(channel: str, min_id: int, limit: int) -> dict[str, Any]:
     maximum, so the next call continues from 181. The cursor only advances once
     the caller has persisted this page.
     """
-    global paused_until
-    if client is None or not client.is_connected():
-        return {"error": "Telethon 未登录"}
-    if time.time() < paused_until:
-        return {"error": "flood_wait", "flood_wait": int(paused_until - time.time()), "items": []}
     async with gate:
-        try:
-            entity = await resolve_channel(channel)
-            messages = await client.get_messages(entity, min_id=min_id, limit=limit, reverse=True)
-        except FloodWaitError as exc:
-            paused_until = time.time() + int(exc.seconds) + 1
-            return {"error": "flood_wait", "flood_wait": int(exc.seconds), "items": []}
-        except ChannelPrivateError:
-            try:
-                entity = await resolve_channel(channel)
-                messages = await client.get_messages(
-                    entity, min_id=min_id, limit=limit, reverse=True
-                )
-            except Exception as exc:
-                return {"error": str(exc), "items": []}
-        except (UsernameNotOccupiedError, ValueError) as exc:
-            return {"error": str(exc), "items": []}
+        wait = cooldown_seconds()
+        if wait:
+            return {"error": "flood_wait", "flood_wait": wait, "items": []}
+        if client is None or not client.is_connected() or connection_state != "ready":
+            return {"error": connection_state if connection_state in {"unconfigured", "unauthorized"} else "unavailable", "items": []}
+        entity = await resolve_channel(channel)
+        messages = await client.get_messages(entity, min_id=min_id, limit=limit, reverse=True)
         items = []
         last_id = min_id
         for msg in messages:
@@ -206,26 +228,23 @@ async def history(channel: str, min_id: int, limit: int) -> dict[str, Any]:
 
 
 async def handle_health(_: web.Request) -> web.Response:
-    me = ""
-    authorized = False
-    if client is not None and client.is_connected():
-        try:
-            user = await client.get_me()
-            me = getattr(user, "username", None) or str(getattr(user, "id", ""))
-            authorized = True
-        except Exception as exc:
-            return web.json_response({"ok": False, "authorized": False, "error": str(exc)})
-    wait = max(0, int(paused_until - time.time()))
-    return web.json_response(
-        {
-            "ok": True,
-            "authorized": authorized,
-            "me": me,
-            "minio": minio_client is not None,
-            "paused_until": wait,
-            "error": None if authorized else "需要登录会话（docker compose run --rm -it telethon python login.py）",
-        }
-    )
+    state = connection_state
+    if state == "ready" and (client is None or not client.is_connected()):
+        state = "unavailable"
+    wait = cooldown_seconds()
+    if state == "ready" and wait:
+        state = "cooldown"
+    authorized = state in {"ready", "cooldown"}
+    return web.json_response({
+        "ok": state not in {"connecting", "unavailable"},
+        "authorized": authorized,
+        "me": account if authorized else "",
+        "minio": minio_client is not None,
+        "paused_until": wait,
+        "state": state,
+        "retry_after_seconds": wait if state == "cooldown" else max(0, math.ceil(retry_at - time.monotonic())),
+        "error": None if authorized else state,
+    })
 
 
 async def handle_history(request: web.Request) -> web.Response:
@@ -247,7 +266,12 @@ async def handle_history(request: web.Request) -> web.Response:
     status = 429 if result.get("flood_wait") else 200
     if result.get("error") and result.get("error") not in {"flood_wait"} and not result.get("items"):
         status = 400
-    return web.json_response(result, status=status)
+    if result.get("error") == "unavailable":
+        status = 503
+    elif result.get("error") == "timeout":
+        status = 504
+    headers = {"Retry-After": str(result["flood_wait"])} if status == 429 else {}
+    return web.json_response(result, status=status, headers=headers)
 
 
 async def handle_search(request: web.Request) -> web.Response:
@@ -257,29 +281,88 @@ async def handle_search(request: web.Request) -> web.Response:
     )
 
 
+async def disconnect_client(candidate: TelegramClient) -> None:
+    # Telethon shields its own cleanup task; protect and await it even at shutdown.
+    pending = asyncio.ensure_future(candidate.disconnect())
+    try:
+        await asyncio.shield(pending)
+    except asyncio.CancelledError:
+        with suppress(Exception):
+            await pending
+        raise
+    except Exception:
+        pass  # A completed failed cleanup must not kill the recovery loop.
+
+
+async def reconnect() -> None:
+    global client, connection_state, retry_at, account, paused_until
+    failures = 0
+    while True:
+        try:
+            async with connection_lock:
+                connection_state = "connecting"
+                if client is None:
+                    client = build_client()
+                if client is None:
+                    connection_state = "unconfigured"
+                    return
+                await asyncio.wait_for(client.connect(), timeout=10)
+                authorized = await asyncio.wait_for(client.is_user_authorized(), timeout=5)
+                # Telethon caches False for *any* RPCError in is_user_authorized.
+                # get_me returns None only for UnauthorizedError; other errors retry.
+                user = await asyncio.wait_for(client.get_me(), timeout=5)
+                authorized = authorized or user is not None
+                if not authorized or user is None:
+                    connection_state = "unauthorized"
+                    retry_at = 0
+                    await disconnect_client(client)
+                    return  # Manual login/session replacement, never send codes here.
+                account = getattr(user, "username", None) or str(getattr(user, "id", ""))
+                connection_state = "ready"
+                failures = 0
+                retry_at = 0
+            # ponytail: idle disconnect detection is bounded to 5s; use an SDK
+            # disconnect event if a faster idle recovery target is required.
+            while connection_state == "ready" and client.is_connected():
+                try:
+                    await asyncio.wait_for(reconnect_requested.wait(), timeout=CONNECTION_POLL_SECONDS)
+                except TimeoutError:
+                    pass
+                reconnect_requested.clear()
+            connection_state = "unavailable"
+        except FloodWaitError as exc:
+            paused_until = max(paused_until, time.monotonic() + int(exc.seconds) + 1)
+            connection_state = "unavailable"
+        except Exception:
+            connection_state = "unavailable"
+        if client is not None:
+            await disconnect_client(client)
+        delay = RETRY_DELAYS[min(failures, len(RETRY_DELAYS) - 1)]
+        delay = max(delay + random.uniform(0, delay * 0.2), cooldown_seconds())
+        failures += 1
+        retry_at = time.monotonic() + delay
+        await retry_wait(delay)
+
+
 async def on_start(app: web.Application) -> None:
-    global client, minio_client
-    try:
-        minio_client = build_minio()
-    except Exception as exc:
-        print(f"minio init skipped: {exc}", flush=True)
-        minio_client = None
-    client = build_client()
-    if client is None:
-        return
-    try:
-        await client.connect()
-        if not await client.is_user_authorized():
-            await client.disconnect()
-            client = None
-    except Exception as exc:
-        print(f"telegram connect skipped: {exc}", flush=True)
-        client = None
+    global minio_client, reconnect_task, connection_state
+    minio_client = build_minio()
+    if reconnect_task is None:
+        connection_state = "connecting"
+        reconnect_task = asyncio.create_task(reconnect(), name="telethon-reconnect")
 
 
 async def on_stop(app: web.Application) -> None:
-    if client is not None and client.is_connected():
-        await client.disconnect()
+    global client, reconnect_task, connection_state
+    if reconnect_task is not None:
+        reconnect_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await reconnect_task
+        reconnect_task = None
+    if client is not None:
+        await disconnect_client(client)
+        client = None
+    connection_state = "unavailable"
 
 
 def main() -> None:

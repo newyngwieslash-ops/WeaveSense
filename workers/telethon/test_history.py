@@ -43,17 +43,56 @@ def page_of(ids):
     return [FakeMessage(i) for i in ids]
 
 
+async def until(predicate):
+    async with asyncio.timeout(1):
+        while not predicate():
+            await asyncio.sleep(0)
+
+
+class FakeClient:
+    def __init__(self, get_messages=None, *, connected=True, failures=0, authorized=True):
+        self.connected = connected
+        self.failures = failures
+        self.authorized = authorized
+        self.calls = 0
+        self.disconnects = 0
+        self.get_messages_impl = get_messages
+        self.connected_event = asyncio.Event()
+        self.disconnected = asyncio.get_running_loop().create_future()
+
+    def is_connected(self):
+        return self.connected
+
+    async def connect(self):
+        self.calls += 1
+        if self.calls <= self.failures:
+            raise OSError("synthetic offline")
+        self.connected = True
+        self.disconnected = asyncio.get_running_loop().create_future()
+
+    async def is_user_authorized(self):
+        self.connected_event.set()
+        return self.authorized
+
+    async def disconnect(self):
+        self.disconnects += 1
+        self.connected = False
+        if not self.disconnected.done():
+            self.disconnected.set_result(None)
+
+    async def get_me(self):
+        from types import SimpleNamespace
+        return SimpleNamespace(username="synthetic") if self.authorized else None
+
+    async def get_entity(self, channel):
+        return channel
+
+    async def get_messages(self, entity, min_id=0, limit=80, reverse=False):
+        return await self.get_messages_impl(min_id=min_id, limit=limit, reverse=reverse)
+
+
 def fake_client(get_messages):
-    """A minimal stand-in for telegram's client: only what history() touches."""
-
-    class FakeClient:
-        def is_connected(self):
-            return True
-
-        async def get_messages(self, entity, min_id=0, limit=80, reverse=False):
-            return await get_messages(min_id=min_id, limit=limit, reverse=reverse)
-
-    return FakeClient()
+    return FakeClient(get_messages)
 
 
 class HistoryPaginationTests(unittest.TestCase):
@@ -78,6 +117,7 @@ class HistoryPaginationTests(unittest.TestCase):
         # history() filters with `isinstance(msg, Message)`; point that name at the
         # fake so the offline fake is accepted (test-only, no production change).
         module.Message = FakeMessage
+        module.connection_state = "ready"
         self.mod = module
 
     def test_ascending_window_returns_the_oldest_not_yet_seen_page(self):
@@ -198,6 +238,311 @@ class HistoryPaginationTests(unittest.TestCase):
         result = asyncio.run(run())
         self.assertEqual(result["last_id"], str(huge + 1))
         self.assertEqual([int(i["external_id"]) for i in result["items"]], [huge, huge + 1])
+
+
+    def test_reconnect_recovers_and_cleanup_awaits_task(self):
+        mod = self.mod
+        async def run():
+            candidate = FakeClient(connected=False, failures=1)
+            mod.build_client = lambda: candidate
+            mod.build_minio = lambda: None
+            waits = []
+            retrying = asyncio.Event()
+            release = asyncio.Event()
+            async def retry_wait(seconds):
+                waits.append(seconds)
+                retrying.set()
+                await release.wait()
+            mod.retry_wait = retry_wait
+            await asyncio.wait_for(mod.on_start(None), 0.2)
+            try:
+                await asyncio.wait_for(retrying.wait(), 1)
+                self.assertEqual(mod.connection_state, "unavailable")
+                self.assertGreaterEqual(waits[0], 5)
+                self.assertLessEqual(waits[0], 6)
+                release.set()
+                await asyncio.wait_for(candidate.connected_event.wait(), 1)
+                await until(lambda: mod.connection_state == "ready")
+                self.assertEqual(mod.connection_state, "ready")
+                self.assertEqual(candidate.calls, 2)
+                task = mod.reconnect_task
+            finally:
+                await mod.on_stop(None)
+            self.assertTrue(task.done())
+            self.assertFalse(candidate.connected)
+            self.assertIsNone(mod.reconnect_task)
+            self.assertEqual(len(asyncio.all_tasks()), 1)
+        asyncio.run(run())
+
+    def test_concurrent_requests_do_not_create_connections(self):
+        mod = self.mod
+        async def run():
+            candidate = FakeClient(connected=False)
+            started, release = asyncio.Event(), asyncio.Event()
+            async def connect():
+                candidate.calls += 1
+                started.set()
+                await release.wait()
+                candidate.connected = True
+            candidate.connect = connect
+            mod.build_client = lambda: candidate
+            mod.build_minio = lambda: None
+            await asyncio.wait_for(mod.on_start(None), 0.2)
+            try:
+                await asyncio.wait_for(started.wait(), 1)
+                results = await asyncio.gather(*(mod.history("chan", 0, 10) for _ in range(8)))
+                self.assertTrue(all(r["error"] == "unavailable" for r in results))
+                self.assertEqual(candidate.calls, 1)
+                self.assertEqual(mod.connection_state, "connecting")
+            finally:
+                await mod.on_stop(None)
+            self.assertEqual(candidate.disconnects, 1)
+            self.assertEqual(len(asyncio.all_tasks()), 1)
+        asyncio.run(run())
+
+    def test_unauthorized_is_explicit_and_health_does_not_login(self):
+        import json
+        mod = self.mod
+        async def run():
+            candidate = FakeClient(connected=False, authorized=False)
+            mod.build_client = lambda: candidate
+            mod.build_minio = lambda: None
+            await asyncio.wait_for(mod.on_start(None), 0.2)
+            try:
+                await asyncio.wait_for(mod.reconnect_task, 1)
+                data = json.loads((await mod.handle_health(None)).text)
+                self.assertEqual(data["state"], "unauthorized")
+                self.assertFalse(data["authorized"])
+                self.assertEqual(data["retry_after_seconds"], 0)
+                self.assertEqual(candidate.calls, 1)
+                self.assertFalse(candidate.connected)
+            finally:
+                await mod.on_stop(None)
+        asyncio.run(run())
+
+    def test_queued_request_observes_shared_floodwait(self):
+        mod = self.mod
+        async def run():
+            mod.gate = asyncio.Semaphore(1)
+            entered, release = asyncio.Event(), asyncio.Event()
+            calls = []
+            async def messages(**kwargs):
+                calls.append(kwargs)
+                entered.set()
+                await release.wait()
+                raise mod.FloodWaitError(request=None, capture=12)
+            mod.client = FakeClient(messages)
+            first = asyncio.create_task(mod.history("chan", 0, 10))
+            await entered.wait()
+            second = asyncio.create_task(mod.history("chan", 0, 10))
+            await asyncio.sleep(0)
+            release.set()
+            results = await asyncio.gather(first, second)
+            self.assertEqual(len(calls), 1)
+            self.assertTrue(all(r["flood_wait"] >= 12 for r in results))
+            class Request:
+                async def json(self): return {"channel": "chan"}
+            response = await mod.handle_history(Request())
+            self.assertEqual(response.status, 429)
+            self.assertGreaterEqual(int(response.headers["Retry-After"]), 12)
+        asyncio.run(run())
+
+    def test_history_deadline_includes_semaphore_queue(self):
+        mod = self.mod
+        async def run():
+            mod.client = FakeClient()
+            mod.gate = asyncio.Semaphore(0)
+            mod.HISTORY_TIMEOUT_SECONDS = 0.01
+            result = await asyncio.wait_for(mod.history("chan", 7, 10), 1)
+            self.assertEqual(result, {"error": "timeout", "items": []})
+            self.assertEqual(len(asyncio.all_tasks()), 1)
+        asyncio.run(run())
+
+    def test_private_channel_is_not_joined_or_retried(self):
+        mod = self.mod
+        async def run():
+            calls = []
+            async def messages(**kwargs):
+                calls.append(kwargs)
+                raise mod.ChannelPrivateError(request=None)
+            mod.client = FakeClient(messages)
+            result = await mod.history("private", 0, 10)
+            self.assertEqual(result["error"], "membership_required")
+            self.assertEqual(len(calls), 1)
+        asyncio.run(run())
+
+
+    def test_ready_connection_drop_recovers_and_resets_retry_backoff(self):
+        mod = self.mod
+        async def run():
+            mod.CONNECTION_POLL_SECONDS = 0.001
+            candidate = FakeClient(connected=False, failures=4)
+            mod.build_client = lambda: candidate
+            mod.build_minio = lambda: None
+            waits = []
+            async def retry_wait(seconds):
+                waits.append(seconds)
+                await asyncio.sleep(0)
+            mod.retry_wait = retry_wait
+            await mod.on_start(None)
+            try:
+                await until(lambda: mod.connection_state == "ready")
+                self.assertEqual(len(waits), 4)
+                for actual, base in zip(waits, [5, 15, 60, 300]):
+                    self.assertGreaterEqual(actual, base)
+                    self.assertLessEqual(actual, base * 1.2)
+                self.assertEqual(mod.retry_at, 0)
+                await candidate.disconnect()
+                await until(lambda: candidate.calls == 6 and mod.connection_state == "ready")
+                self.assertGreaterEqual(waits[-1], 5)
+                self.assertLessEqual(waits[-1], 6)
+                self.assertEqual(mod.retry_at, 0)
+            finally:
+                await mod.on_stop(None)
+            self.assertEqual(len(asyncio.all_tasks()), 1)
+        asyncio.run(run())
+
+    def test_health_states_are_cached_and_never_trigger_account_calls(self):
+        import json
+        mod = self.mod
+        async def run():
+            candidate = FakeClient()
+            mod.client = candidate
+            async def forbidden():
+                self.fail("health must not contact Telegram")
+            candidate.get_me = forbidden
+            candidate.is_user_authorized = forbidden
+            for state in ["unconfigured", "unauthorized", "connecting", "ready", "unavailable"]:
+                mod.connection_state = state
+                h = json.loads((await mod.handle_health(None)).text)
+                self.assertEqual(h["state"], state)
+                self.assertEqual(h["authorized"], state == "ready")
+            mod.connection_state = "ready"
+            mod.paused_until = mod.time.monotonic() + 10
+            h = json.loads((await mod.handle_health(None)).text)
+            self.assertEqual(h["state"], "cooldown")
+            self.assertEqual(h["retry_after_seconds"], 10)
+            self.assertTrue(h["authorized"])
+            candidate.connected = False
+            h = json.loads((await mod.handle_health(None)).text)
+            self.assertEqual(h["state"], "unavailable")
+            self.assertFalse(h["authorized"])
+        asyncio.run(run())
+
+    def test_public_channel_never_joins_and_sdk_retries_are_bounded(self):
+        from unittest.mock import patch
+        mod = self.mod
+        async def run():
+            async def messages(**kwargs): return []
+            calls = []
+            class JoinDetectingClient(FakeClient):
+                async def __call__(self, request): calls.append(request)
+            candidate = JoinDetectingClient(messages)
+            from telethon.tl.types import Channel, ChatPhotoEmpty
+            channel = Channel(id=1, title="synthetic", photo=ChatPhotoEmpty(), date=None)
+            async def entity(_): return channel
+            candidate.get_entity = entity
+            mod.client = candidate
+            self.assertEqual((await mod.history("public", 0, 10))["items"], [])
+            self.assertEqual(calls, [])
+        asyncio.run(run())
+        with patch.object(mod, "API_ID", 1), patch.object(mod, "API_HASH", "synthetic"), patch.object(mod, "SESSION", "synthetic"), patch.object(mod, "StringSession", return_value="fake-session"), patch.object(mod, "TelegramClient") as sdk:
+            mod.build_client()
+            self.assertEqual(sdk.call_args.kwargs["flood_sleep_threshold"], 0)
+            self.assertEqual(sdk.call_args.kwargs["connection_retries"], 1)
+            self.assertEqual(sdk.call_args.kwargs["request_retries"], 1)
+            self.assertFalse(sdk.call_args.kwargs["auto_reconnect"])
+
+    def test_cancel_during_backoff_leaves_no_task(self):
+        mod = self.mod
+        async def run():
+            candidate = FakeClient(connected=False, failures=1)
+            mod.build_client = lambda: candidate
+            mod.build_minio = lambda: None
+            waiting = asyncio.Event()
+            async def retry_wait(seconds):
+                waiting.set()
+                await asyncio.Event().wait()
+            mod.retry_wait = retry_wait
+            await mod.on_start(None)
+            await asyncio.wait_for(waiting.wait(), 1)
+            task = mod.reconnect_task
+            await mod.on_stop(None)
+            self.assertTrue(task.done())
+            self.assertFalse(candidate.connected)
+            self.assertEqual(len(asyncio.all_tasks()), 1)
+        asyncio.run(run())
+
+
+    def test_transient_authorization_failure_is_not_reported_as_unauthorized(self):
+        mod = self.mod
+        async def run():
+            candidate = FakeClient(connected=False, authorized=False)
+            mod.build_client = lambda: candidate
+            mod.build_minio = lambda: None
+            async def get_me(): raise mod.FloodWaitError(request=None, capture=40)
+            candidate.get_me = get_me
+            waiting = asyncio.Event()
+            async def retry_wait(seconds):
+                self.assertGreaterEqual(seconds, 40)
+                waiting.set()
+                await asyncio.Event().wait()
+            mod.retry_wait = retry_wait
+            await mod.on_start(None)
+            try:
+                await asyncio.wait_for(waiting.wait(), 1)
+                self.assertEqual(mod.connection_state, "unavailable")
+            finally:
+                await mod.on_stop(None)
+            self.assertEqual(len(asyncio.all_tasks()), 1)
+        asyncio.run(run())
+
+    def test_shutdown_awaits_shielded_sdk_cleanup(self):
+        mod = self.mod
+        async def run():
+            candidate = FakeClient(connected=False, failures=1)
+            started, release, finished = asyncio.Event(), asyncio.Event(), asyncio.Event()
+            async def disconnect():
+                started.set()
+                await release.wait()
+                candidate.connected = False
+                finished.set()
+            candidate.disconnect = lambda: asyncio.shield(asyncio.create_task(disconnect()))
+            mod.build_client = lambda: candidate
+            mod.build_minio = lambda: None
+            await mod.on_start(None)
+            await asyncio.wait_for(started.wait(), 1)
+            stop = asyncio.create_task(mod.on_stop(None))
+            await asyncio.sleep(0)
+            self.assertFalse(stop.done())
+            release.set()
+            await asyncio.wait_for(stop, 1)
+            self.assertTrue(finished.is_set())
+            self.assertEqual(len(asyncio.all_tasks()), 1)
+        asyncio.run(run())
+
+
+    def test_history_network_failure_wakes_the_single_recovery_task(self):
+        mod = self.mod
+        async def run():
+            async def messages(**kwargs): raise OSError("synthetic disconnect")
+            candidate = FakeClient(messages, connected=False)
+            mod.build_client = lambda: candidate
+            mod.build_minio = lambda: None
+            async def retry_wait(seconds): await asyncio.sleep(0)
+            mod.retry_wait = retry_wait
+            await mod.on_start(None)
+            try:
+                await until(lambda: mod.connection_state == "ready")
+                original_task = mod.reconnect_task
+                result = await mod.history("chan", 10, 10)
+                self.assertEqual(result, {"error": "unavailable", "items": []})
+                await until(lambda: candidate.calls == 2 and mod.connection_state == "ready")
+                self.assertIs(mod.reconnect_task, original_task)
+            finally:
+                await mod.on_stop(None)
+            self.assertEqual(len(asyncio.all_tasks()), 1)
+        asyncio.run(run())
 
 
 if __name__ == "__main__":
