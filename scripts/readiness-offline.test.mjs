@@ -12,6 +12,30 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { test } from "node:test";
 import { offlineEnv, offlineChildProcess } from "./readiness-offline.mjs";
+import { assertEvidence, assertReferenceSets, unknownMetric } from "./collection-reliability-check.mjs";
+
+test("collection evidence rejects missing, invalid and falsely zero metrics", () => {
+  const report = { expected: 2, collected: 2, missing: 0, duplicates: 0,
+    delay_p50: 0, delay_p95: 0, retry_recovery_seconds: unknownMetric('not exercised'),
+    max_rss_bytes: 1, max_queue_age_seconds: 0, paid_calls: 0, evidence_scope: 'offline' };
+  assertEvidence(report);
+  for (const key of Object.keys(report)) {
+    const omitted = {...report}; delete omitted[key];
+    assert.throws(() => assertEvidence(omitted), undefined, `missing ${key}`);
+  }
+  for (const value of [NaN, Infinity, -1, null, '0', {}, {status:'unknown',reason:''}])
+    assert.throws(() => assertEvidence({...report, delay_p95:value}));
+  for (const change of [{missing:1}, {duplicates:1}, {collected:1}, {paid_calls:1}, {expected:0}, {delay_p50:2,delay_p95:1}])
+    assert.throws(() => assertEvidence({...report,...change}));
+});
+
+test("collection reference sets reject missing source, wrong identity and replay duplicates despite matching totals", () => {
+  const expected = {'s1':['001','2'], 's2':['3']};
+  const rows = [{source_id:'s1',external_id:'001'}, {source_id:'s1',external_id:'2'}, {source_id:'s2',external_id:'3'}];
+  assertReferenceSets(expected,rows);
+  for (const bad of [rows.slice(0,2),[...rows.slice(0,2),rows[0]],rows.map(r=>({...r,external_id:r.external_id==='001'?'1':r.external_id}))])
+    assert.throws(()=>assertReferenceSets(expected,bad));
+});
 
 const parent = {
   PATH: "/usr/bin",

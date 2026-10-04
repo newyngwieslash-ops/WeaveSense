@@ -112,6 +112,7 @@ function main(argv) {
     stdio: "inherit",
     windowsHide: true,
   });
+  if (result.error) console.error(`offline child failed to start: ${result.error.code ?? "unknown"}`);
   process.exit(result.status ?? 1);
 }
 

@@ -22,6 +22,10 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import net from "node:net";
 import pg from "pg";
+import { offlineEnv } from "./readiness-offline.mjs";
+import { PG_IMAGE, isolateEnvironment } from "./collection-reliability-check.mjs";
+
+isolateEnvironment();
 
 const PASSWORD = "review-only-local";
 const DB = "review";
@@ -112,18 +116,24 @@ function fixtures(longBody) {
 }
 
 async function main() {
+  let client;
+  let containerId;
+  const children = [];
+  const stop = (child) => {
+    if (!child || child.exitCode !== null) return;
+    spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
+  };
   try {
   const pgPort = await freePort();
   const appPort = await freePort();
   const builtPort = await freePort();
   assert.ok(![8182, 8080, 55192, 55191].includes(appPort), "reserved port");
 
-  docker(["run", "--detach", "--name", containerName, "--label", "loom.readiness.t19=isolated",
+  containerId = docker(["run", "--detach", "--name", containerName, "--label", `loom.readiness.owner=${containerName}`,
     "-e", `POSTGRES_PASSWORD=${PASSWORD}`, "-e", `POSTGRES_DB=${DB}`,
-    "-p", `127.0.0.1:${pgPort}:5432`, "postgres:16-alpine"]);
+    "--memory", "512m", "--cpus", "2", "-p", `127.0.0.1:${pgPort}:5432`, PG_IMAGE]);
   report.container = { name: containerName, port: pgPort };
 
-  let client;
   for (let attempt = 0; attempt < 60; attempt += 1) {
     try {
       client = new pg.Client({ host: "127.0.0.1", port: pgPort, user: "postgres", password: PASSWORD, database: DB });
@@ -154,8 +164,7 @@ async function main() {
   report.fixtures = "inserted";
 
   const databaseUrl = `postgresql://postgres:${PASSWORD}@127.0.0.1:${pgPort}/${DB}`;
-  const env = {
-    ...process.env,
+  const env = offlineEnv(process.env, {
     DATABASE_URL: databaseUrl,
     AI_ENGINE: "legacy",
     AUTO_ANALYZE: "false",
@@ -165,21 +174,17 @@ async function main() {
     LOOM_MODEL_CONFIG: resolve("artifacts/readiness-ui-unused.local.json"),
     XAI_API_KEY: "",
     VITE_AUTH_ENABLED: "false",
-  };
+  });
 
   const npm = (script, port) => {
     const child = spawn("cmd.exe", ["/d", "/s", "/c", `npm run ${script} -- --host 127.0.0.1 --port ${port} --strictPort`],
       { cwd: resolve("."), env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    children.push(child);
     const log = [];
     child.stdout.on("data", (c) => log.push(String(c)));
     child.stderr.on("data", (c) => log.push(String(c)));
     report.children.push({ script, port, pid: child.pid });
     return { child, log };
-  };
-
-  const stop = (child) => {
-    if (!child || child.exitCode !== null) return;
-    spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
   };
 
   const dev = npm("dev", appPort);
@@ -189,7 +194,7 @@ async function main() {
   // ---- dev checks
   const devRun = spawnSync(process.execPath,
     ["scripts/readiness-ui.mjs", `http://127.0.0.1:${appPort}`, "dev"],
-    { encoding: "utf8", windowsHide: true, timeout: 900_000, env: { ...process.env } });
+    { encoding: "utf8", windowsHide: true, timeout: 900_000, env });
   report.checks.push({ mode: "dev", exit: devRun.status, stdout: devRun.stdout?.slice(-1200), stderr: devRun.stderr?.slice(-1200) });
   stop(dev.child);
   assert.equal(devRun.status, 0, `dev UI checks failed: ${devRun.stderr?.slice(-800)}`);
@@ -205,7 +210,7 @@ async function main() {
   report.built = { port: builtPort };
   const builtRun = spawnSync(process.execPath,
     ["scripts/readiness-ui.mjs", `http://127.0.0.1:${builtPort}`, "built"],
-    { encoding: "utf8", windowsHide: true, timeout: 900_000, env: { ...process.env } });
+    { encoding: "utf8", windowsHide: true, timeout: 900_000, env });
   report.checks.push({ mode: "built", exit: builtRun.status, stdout: builtRun.stdout?.slice(-1200), stderr: builtRun.stderr?.slice(-1200) });
   stop(built.child);
   assert.equal(builtRun.status, 0, `built UI checks failed: ${builtRun.stderr?.slice(-800)}`);
@@ -213,15 +218,18 @@ async function main() {
   report.ok = true;
   writeFileSync(join(outDir, `run-${runId}.json`), JSON.stringify(report, null, 2));
   console.log(JSON.stringify({ ok: true, container: containerName, dev: appPort, built: builtPort, checks: report.checks.length }, null, 2));
-  await client.end();
   } catch (error) {
   report.error = String(error?.message ?? error);
   writeFileSync(join(outDir, `run-${runId}.json`), JSON.stringify(report, null, 2));
   console.error(JSON.stringify({ ok: false, error: report.error, out: outDir }, null, 2));
   process.exitCode = 1;
 } finally {
-  if (!KEEP) {
-    try { docker(["rm", "--force", "--volumes", containerName]); } catch { /* already gone */ }
+  children.forEach(stop);
+  await client?.end();
+  if (!KEEP && containerId) {
+    const owned = JSON.parse(docker(["inspect", containerId]))[0];
+    assert.equal(owned.Config.Labels["loom.readiness.owner"], containerName);
+    docker(["rm", "--force", "--volumes", containerId]);
   } else {
     console.error(`[t19] kept container ${containerName}`);
   }
