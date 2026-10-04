@@ -49,6 +49,10 @@ export function mapSource(row: Record<string, unknown>): SourceRow {
     last_published_at: iso(row.last_published_at),
     last_scanned_at: iso(row.last_scanned_at),
     last_error: String(row.last_error ?? ""),
+    next_attempt_at: iso(row.next_attempt_at),
+    consecutive_failures: asInt(row.consecutive_failures) ?? 0,
+    last_success_at: iso(row.last_success_at),
+    last_error_code: String(row.last_error_code ?? ""),
     status: (["idle", "running", "ok", "error"].includes(String(row.status))
       ? row.status
       : "idle") as SourceRow["status"],
@@ -72,6 +76,10 @@ export function mapKeyword(row: Record<string, unknown>): KeywordRow {
     enabled: asBool(row.enabled),
     last_scanned_at: iso(row.last_scanned_at),
     last_error: String(row.last_error ?? ""),
+    next_attempt_at: iso(row.next_attempt_at),
+    consecutive_failures: asInt(row.consecutive_failures) ?? 0,
+    last_success_at: iso(row.last_success_at),
+    last_error_code: String(row.last_error_code ?? ""),
     status: (["idle", "running", "ok", "error"].includes(String(row.status))
       ? row.status
       : "idle") as KeywordRow["status"],
@@ -240,10 +248,10 @@ export async function getOverview(): Promise<Overview> {
         (select count(*)::int from analyses) as analysis_count,
         (select count(*)::int from knowledge_notes) as note_count,
         (select count(*)::int from items where collected_at > now() - interval '24 hours') as new_24h,
-        (select count(*)::int from sources where enabled and (last_scanned_at is null or last_scanned_at < now() - (interval_minutes * interval '1 minute'))) as due_count,
+        (select count(*)::int from sources where enabled and (next_attempt_at is null or next_attempt_at <= now()) and (next_attempt_at is not null or last_scanned_at is null or last_scanned_at < now() - (interval_minutes * interval '1 minute'))) as due_count,
         (select count(*)::int from keywords) as keyword_count,
         (select count(*)::int from keywords where enabled) as keyword_enabled,
-        (select count(*)::int from keywords where enabled and (last_scanned_at is null or last_scanned_at < now() - (interval_minutes * interval '1 minute'))) as keyword_due,
+        (select count(*)::int from keywords where enabled and (next_attempt_at is null or next_attempt_at <= now()) and (next_attempt_at is not null or last_scanned_at is null or last_scanned_at < now() - (interval_minutes * interval '1 minute'))) as keyword_due,
         (select coalesce(sum(hits), 0)::int from keywords) as keyword_hits`,
   );
   const platformRows = await sql.query<Record<string, unknown>>(

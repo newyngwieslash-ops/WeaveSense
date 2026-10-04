@@ -184,3 +184,11 @@ test("stage codes never carry a URL, token or provider text", async () => {
   assert.equal(result.stages.collection, "failed");
   assert.equal(result.stages.production, "failed");
 });
+
+test('default wake-up is one minute; source and production cadence remain server-owned', () => {
+  const original = globalThis.setInterval;
+  let observed;
+  globalThis.setInterval = (_callback, milliseconds) => { observed=milliseconds; return {unref(){}}; };
+  const loop=createCronLoop({endpoint:'http://synthetic/tick',secret:'test',fetchImpl:async()=>Response.json({})});
+  try {loop.start();assert.equal(observed,60_000);} finally {loop.stop();globalThis.setInterval=original;}
+});

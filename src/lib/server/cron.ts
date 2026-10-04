@@ -1,3 +1,4 @@
+import { collectionFetch } from "./outbound-policy.ts";
 import { timingSafeEqual } from "node:crypto";
 
 const shanghaiClock = new Intl.DateTimeFormat("en-GB", {
@@ -199,12 +200,12 @@ export async function requestWechatReconciliation({ url, token, fetchImpl = fetc
   if (!endpoint) return { ok: false, error: "wechat_gateway_unavailable" };
   let response: Response;
   try {
-    response = await fetchImpl(endpoint, {
+    response = await collectionFetch(endpoint, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(120_000),
       redirect: "error",
-    });
+    }, fetchImpl);
   } catch {
     return { ok: false, error: "wechat_gateway_unavailable" };
   }
@@ -225,9 +226,9 @@ export async function requestWechatReconciliationAck({ url, token, sourceIds, fe
   const endpoint = gatewayUrl(url, "/v1/reconcile/ack");
   if (!endpoint) return { ok: false, error: "wechat_gateway_ack_failed" };
   try {
-    const response = await fetchImpl(endpoint, { method: "POST", redirect: "error",
+    const response = await collectionFetch(endpoint, { method: "POST", redirect: "error",
       headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({ source_ids: sourceIds }), signal: AbortSignal.timeout(10_000) });
+      body: JSON.stringify({ source_ids: sourceIds }), signal: AbortSignal.timeout(10_000) }, fetchImpl);
     if (!response.ok) { await response.body?.cancel(); return { ok: false, error: "wechat_gateway_ack_failed" }; }
     const body = await readGatewayJson(response);
     if (!body || typeof body !== "object" || Array.isArray(body)
@@ -244,10 +245,6 @@ export async function requestWechatReconciliationAck({ url, token, sourceIds, fe
 export function cronWorkSlot(now: Date): "collect" | "extract" {
   if (!(now instanceof Date) || !Number.isFinite(now.getTime())) throw new TypeError("now must be a valid Date");
   return Math.floor(now.getTime() / 1_800_000) % 4 === 3 ? "extract" : "collect";
-}
-
-export function cronDueQuotas(limit: number): { sources: number; keywords: 1 } {
-  return { sources: Math.min(34, Math.max(1, Number.isSafeInteger(limit) ? limit - 1 : 1)), keywords: 1 };
 }
 
 export async function runReconciledSourceJobs(
@@ -308,4 +305,20 @@ export async function runCronStages<Collection, Production, Reconciliation>({
     production: productionResult,
     reconciliation: reconciliationResult,
   };
+}
+
+/** Four ordinary sources, one continuation, one keyword per round; vacant shares are borrowed. */
+export function fairCollectionQueue<T>(sources: T[], backfill: T[], keywords: T[], limit: number): {row:T; kind:'source'|'keyword'}[] {
+  const groups = [sources, backfill, keywords];
+  const cursors = [0,0,0];
+  const result: {row:T; kind:'source'|'keyword'}[] = [];
+  while (result.length < limit) {
+    const before = result.length;
+    for (const group of [2,1,0,0,0,0]) {
+      if (result.length === limit) break;
+      if (cursors[group] < groups[group].length) result.push({row:groups[group][cursors[group]++],kind:group===2?'keyword':'source'});
+    }
+    if (result.length===before) break;
+  }
+  return result;
 }

@@ -5,7 +5,7 @@ import { createServer } from "vite";
 
 test("feed collectors expose rejection counts and window-only coverage", async () => {
   const vite = await createServer({ configFile: false, logLevel: "silent",
-    resolve: { alias: { "@": path.resolve("src") } }, server: { middlewareMode: true } });
+    resolve: { alias: { "@": path.resolve("src") } }, server: { middlewareMode: true, watch: null } });
   try {
     const { collectSource } = await vite.ssrLoadModule("/src/lib/server/collectors/index.ts");
     const io = { resolver: { async lookup() { return [{ address: "1.1.1.1", family: 4 }]; } },
@@ -57,7 +57,7 @@ test("RSS fallback preserves paid gateway attempts in batch metadata", async () 
     } })
     : new Response("unexpected direct fetch", { status: 500 });
   const vite = await createServer({ configFile: false, logLevel: "silent",
-    resolve: { alias: { "@": path.resolve("src") } }, server: { middlewareMode: true } });
+    resolve: { alias: { "@": path.resolve("src") } }, server: { middlewareMode: true, watch: null } });
   try {
     const { collectSource } = await vite.ssrLoadModule("/src/lib/server/collectors/index.ts");
 
@@ -98,7 +98,7 @@ test("gateway byte caps and cancellation retain collector errors without replayi
   const source = { id: "wx-source", platform: "wechat", name: "公众号", handle: "gh_example", url: "",
     feed_url: "", adapter: "wechat_gateway", last_external_id: "" };
   const vite = await createServer({ configFile: false, logLevel: "silent",
-    resolve: { alias: { "@": path.resolve("src") } }, server: { middlewareMode: true } });
+    resolve: { alias: { "@": path.resolve("src") } }, server: { middlewareMode: true, watch: null } });
   try {
     const { collectSource } = await vite.ssrLoadModule("/src/lib/server/collectors/index.ts");
     let calls = 0;
@@ -168,7 +168,7 @@ test("public and failed RSS fallback wrappers preserve HTTP status, retry time a
     "X-Loom-Provider": "", "X-Loom-Attempts": "primary,dajiala", "X-Loom-Paid-Call": "true",
   } });
   const vite = await createServer({ configFile: false, logLevel: "silent",
-    resolve: { alias: { "@": path.resolve("src") } }, server: { middlewareMode: true } });
+    resolve: { alias: { "@": path.resolve("src") } }, server: { middlewareMode: true, watch: null } });
   try {
     const { collectSource } = await vite.ssrLoadModule("/src/lib/server/collectors/index.ts");
     const io = { resolver: { async lookup() { return [{ address: "1.1.1.1", family: 4 }]; } },
@@ -197,7 +197,7 @@ test("public and failed RSS fallback wrappers preserve HTTP status, retry time a
 
 test("adapters using an explicit RSS URL do not replay its failed request", async () => {
   const vite = await createServer({ configFile: false, logLevel: "silent",
-    resolve: { alias: { "@": path.resolve("src") } }, server: { middlewareMode: true } });
+    resolve: { alias: { "@": path.resolve("src") } }, server: { middlewareMode: true, watch: null } });
   try {
     const { collectSource } = await vite.ssrLoadModule("/src/lib/server/collectors/index.ts");
     for (const adapter of ["rss", "telegram_web", "bilibili", "youtube", "rsshub"]) {
@@ -222,7 +222,7 @@ test("gateway HTTP failures do not wait for stalled cancellation cleanup", async
     cancel() { cancelled = true; return new Promise(() => {}); },
   }), { status: 503, headers: { "X-Loom-Provider": "primary", "X-Loom-Attempts": "primary", "X-Loom-Paid-Call": "false" } });
   const vite = await createServer({ configFile: false, logLevel: "silent",
-    resolve: { alias: { "@": path.resolve("src") } }, server: { middlewareMode: true } });
+    resolve: { alias: { "@": path.resolve("src") } }, server: { middlewareMode: true, watch: null } });
   try {
     const { collectSource } = await vite.ssrLoadModule("/src/lib/server/collectors/index.ts");
     const controller = new AbortController();
@@ -240,4 +240,20 @@ test("gateway HTTP failures do not wait for stalled cancellation cleanup", async
     delete process.env.WECHAT_GATEWAY_URL;
     delete process.env.WECHAT_GATEWAY_TOKEN;
   }
+});
+
+test('gateway cooldown cannot be hidden by RSS fallback success', async () => {
+  process.env.WECHAT_GATEWAY_URL='https://gateway.example';process.env.WECHAT_GATEWAY_TOKEN='test';
+  const original=globalThis.fetch;
+  globalThis.fetch=async()=>new Response('',{status:429,headers:{'retry-after':'172800','X-Loom-Provider':'primary','X-Loom-Attempts':'primary','X-Loom-Paid-Call':'false'}});
+  const vite=await createServer({configFile:false,logLevel:'silent',resolve:{alias:{'@':path.resolve('src')}},server:{middlewareMode:true,watch:null}});
+  try {
+    const {collectSource}=await vite.ssrLoadModule('/src/lib/server/collectors/index.ts');
+    let fallback=0;
+    await assert.rejects(()=>collectSource({id:'s',platform:'wechat',name:'s',handle:'',url:'',feed_url:'https://feed.example/',adapter:'wechat_gateway'}, {
+      resolver:{async lookup(){fallback++;return [{address:'1.1.1.1',family:4}];}},
+      transport:async()=>({status:200,headers:{},body:new Response('<rss><channel/></rss>').body}),
+    }),/** @param {unknown} error */ error=>{const failure=httpFailure(error);assert.equal(failure.code,'rate_limited');assert.ok(Number(failure.retryAt)>Date.now()+47*3600000);return true;});
+    assert.equal(fallback,0);
+  } finally {await vite.close();globalThis.fetch=original;delete process.env.WECHAT_GATEWAY_URL;delete process.env.WECHAT_GATEWAY_TOKEN;}
 });

@@ -4,7 +4,7 @@ import { prod, telethonConfigured } from "./config";
 import type { NormalizedItem } from "./collectors/types";
 import { parseTelegramHandle, parseTelegramHandles } from "../telegram-handle";
 import { z } from "zod";
-import { abortable, CollectionHttpError, collectionHttpError, parseRetryAfter, readCapped, TEXT_MAX_BYTES } from "./outbound-policy.ts";
+import { collectionFetch, abortable, CollectionHttpError, collectionHttpError, parseRetryAfter, readCapped, TEXT_MAX_BYTES } from "./outbound-policy.ts";
 
 export { parseTelegramHandle, parseTelegramHandles };
 
@@ -45,7 +45,7 @@ export async function telethonHealth(signal?: AbortSignal): Promise<TelethonHeal
   const deadline = AbortSignal.timeout(2500);
   const combined = signal ? AbortSignal.any([signal, deadline]) : deadline;
   try {
-    const res = await abortable(fetch(`${prod.telegramWorkerUrl}/health`, { signal: combined, redirect: "error" }), combined);
+    const res = await abortable(collectionFetch(`${prod.telegramWorkerUrl}/health`, { signal: combined, redirect: "error" }), combined);
     if (!res.ok) {
       void res.body?.cancel().catch(() => {});
       const value: TelethonHealth = { ok: false, authorized: false, state: "unavailable", status: res.status,
@@ -107,7 +107,7 @@ export async function fetchTelethonHistory(
   const deadline = AbortSignal.timeout(60000);
   const combined = signal ? AbortSignal.any([signal, deadline]) : deadline;
   try {
-    const res = await abortable(fetch(`${prod.telegramWorkerUrl}/v1/history`, {
+    const res = await abortable(collectionFetch(`${prod.telegramWorkerUrl}/v1/history`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -131,7 +131,7 @@ export async function fetchTelethonHistory(
     if (!failure.success) throw new CollectionHttpError(res.ok ? "invalid_response" : res.status === 429 ? "rate_limited" : "http_error",
       res.ok ? "invalid_response" : `Telethon HTTP ${res.status}`, details);
     if (failure.data.flood_wait) throw new CollectionHttpError("rate_limited", `Telethon FloodWait ${failure.data.flood_wait}s`,
-      { ...details, retryAt: details.retryAt ?? Date.now() + failure.data.flood_wait * 1000 });
+      { ...details, retryAt: Math.max(details.retryAt ?? 0, Date.now() + failure.data.flood_wait * 1000) });
     if (!res.ok || failure.data.error) throw new CollectionHttpError(res.status === 429 ? "rate_limited" : failure.data.error === "timeout" ? "timeout" : "http_error",
       failure.data.error === "timeout" ? "timeout" : failure.data.error === "membership_required" ? "Telethon membership_required" : `Telethon HTTP ${res.status}`, details);
     const parsed = historySchema.safeParse(json);

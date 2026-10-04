@@ -87,6 +87,8 @@ export type KeywordAttempt = {
   source: KeywordAttemptSource;
   status: "ok" | "error";
   count: number;
+  retryAt?: number;
+  http_status?: number;
   error_code?: "timeout" | "rate_limited" | "http_error" | "invalid_response" | "network_error";
 };
 

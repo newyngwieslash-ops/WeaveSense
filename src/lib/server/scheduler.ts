@@ -10,7 +10,7 @@ import { collectSource } from "./collectors";
 import type { FetchIo } from "./http.ts";
 import { collectKeyword } from "./collectors/keyword.ts";
 import { collectorMeta, type CollectorMeta, type NormalizedItem, type SourceRecord } from "./collectors/types";
-import { cronDueQuotas, CRON_SOURCE_CONCURRENCY, runCronBatch, type CronBatchOptions } from "./cron";
+import { fairCollectionQueue, CRON_SOURCE_CONCURRENCY, runCronBatch, type CronBatchOptions } from "./cron";
 import { enqueueItemMedia } from "./media";
 import { mapKeyword, mapSource } from "./queries";
 import {
@@ -25,7 +25,7 @@ import {
   finishItemInsert,
   mergeExistingItem,
   SCHEDULER_LEASE_LOST,
-  SCHEDULER_LEASE_MINUTES,
+  selectDueCollections,
 } from "./scheduler-atomic";
 import { ensureRadarSource, ensureSeeded } from "./seed";
 import { keywordRunOutcome } from "./scheduler-outcome.ts";
@@ -194,13 +194,13 @@ export async function runSourceJob(
 ): Promise<{ items_found: number; items_new: number; error: string }> {
   const sql = await getSql();
   const jobId = shortId();
-  const raw = await claimSource(sql, sourceId, jobId);
+  const raw = await claimSource(sql, sourceId, jobId, kind === "manual" || kind === "reconcile");
   if (!raw) {
     const [current] = await sql.query<Record<string, unknown>>("select * from sources where id = $1", [sourceId]);
     if (!current) return { items_found: 0, items_new: 0, error: "信源不存在" };
     const existing = mapSource(current);
     if (!existing.enabled) return { items_found: 0, items_new: 0, error: "已停用" };
-    return { items_found: 0, items_new: 0, error: existing.status === "running" ? "正在运行" : "任务不可用" };
+    return { items_found: 0, items_new: 0, error: existing.status === "running" ? "正在运行" : existing.next_attempt_at ? `冷却中，重试时间 ${existing.next_attempt_at}` : "尚未到采集时间" };
   }
   const source = mapSource(raw);
 
@@ -377,7 +377,7 @@ export async function runSourceJob(
     const failedMeta = collectorMeta(err);
     if (failedMeta.attempts.length) meta = failedMeta;
     const message = errMessage(err);
-    const released = await failSourceClaim(sql, source.id, jobId, message);
+    const released = await failSourceClaim(sql, source.id, jobId, err);
     const jobError = released ? message : SCHEDULER_LEASE_LOST;
     if (jobCreated) {
       await finishSourceJob(sql, jobId, "error", jobError, 0, 0, meta);
@@ -395,14 +395,14 @@ export async function runKeywordJob(
   await ensureRadarSource();
   const sql = await getSql();
   const jobId = shortId();
-  const raw = await claimKeyword(sql, keywordId, jobId);
+  const raw = await claimKeyword(sql, keywordId, jobId, kind === "manual");
   if (!raw) {
     const [current] = await sql.query<Record<string, unknown>>("select * from keywords where id = $1", [keywordId]);
     if (!current) return { items_found: 0, items_new: 0, error: "关键词不存在", phrase: "" };
     const existing = mapKeyword(current);
     if (!existing.enabled) return { items_found: 0, items_new: 0, error: "已停用", phrase: existing.phrase };
     return { items_found: 0, items_new: 0,
-      error: existing.status === "running" ? "正在运行" : "任务不可用", phrase: existing.phrase };
+      error: existing.status === "running" ? "正在运行" : existing.next_attempt_at ? `冷却中，重试时间 ${existing.next_attempt_at}` : "尚未到采集时间", phrase: existing.phrase };
   }
   const kw = mapKeyword(raw);
 
@@ -432,7 +432,12 @@ export async function runKeywordJob(
       localTagged,
     });
 
-    const completed = await completeKeywordClaim(sql, kw.id, jobId, note, hits);
+    const failures = batch.attempts.filter(attempt => attempt.status === 'error');
+    const retryAt = Math.max(0, ...failures.map(attempt => attempt.retryAt ?? 0));
+    const completed = failures.length ? await failKeywordClaim(sql, kw.id, jobId, {
+      message: note, code: failures[0].error_code, status: failures.find(a => a.http_status === 401 || a.http_status === 403)?.http_status,
+      retryAt: retryAt || undefined,
+    }, hits) : await completeKeywordClaim(sql, kw.id, jobId, note, hits);
     if (!completed) {
       await sql.query(
         `update jobs set status = 'error', finished_at = now(), error = $2 where id = $1`,
@@ -448,7 +453,7 @@ export async function runKeywordJob(
     return { items_found: fetched.length + localTagged, items_new: itemsNew, error: note, phrase: kw.phrase };
   } catch (err) {
     const message = errMessage(err);
-    const released = await failKeywordClaim(sql, kw.id, jobId, message);
+    const released = await failKeywordClaim(sql, kw.id, jobId, err);
     const jobError = released ? message : SCHEDULER_LEASE_LOST;
     if (jobCreated) {
       await sql.query(
@@ -468,71 +473,23 @@ export async function tickDueSources(
 ): Promise<TickResult & { deferred: number }> {
   await ensureSeeded();
   const sql = await getSql();
-  const { sources: sourceLimit, keywords: keywordLimit } = cronDueQuotas(limit);
-
-  const due = await sql.query<Record<string, unknown>>(
-    `select * from sources
-     where enabled = true
-       and id <> $2
-       and (
-         (status = 'running' and (
-           claimed_at is null
-           or claimed_at <= now() - ($3::integer * interval '1 minute')
-         ))
-         or (status <> 'running' and (
-           last_scanned_at is null
-           or last_scanned_at < now() - (interval_minutes * interval '1 minute')
-         ))
-       )
-     order by last_scanned_at nulls first
-     limit $1`,
-    [sourceLimit, RADAR_SOURCE_ID, SCHEDULER_LEASE_MINUTES],
-  );
-  const dueKw = await sql.query<Record<string, unknown>>(
-    `select * from keywords
-     where enabled = true
-       and (
-         (status = 'running' and (
-           claimed_at is null
-           or claimed_at <= now() - ($2::integer * interval '1 minute')
-         ))
-         or (status <> 'running' and (
-           last_scanned_at is null
-           or last_scanned_at < now() - (interval_minutes * interval '1 minute')
-         ))
-       )
-     order by last_scanned_at nulls first
-     limit $1`,
-    [keywordLimit, SCHEDULER_LEASE_MINUTES],
-  );
-
-  // Fixed pools let keyword and source work share the same bounded window without either backlog starving.
-  const [keywordBatch, sourceBatch] = await Promise.all([runCronBatch(dueKw, async (row) => {
-    const kw = mapKeyword(row);
-    const result = await runKeywordJob(kw.id, "keyword", io);
-    return {
-      source_id: kw.id,
-      name: `关键词 · ${kw.phrase}`,
-      items_new: result.items_new,
-      error: result.error,
-      kind: "keyword",
-    };
-  }, budget), runCronBatch(due, async (row) => {
+  const count = Math.min(35, Math.max(1, Number.isSafeInteger(limit) ? limit : 5));
+  const due = await selectDueCollections(sql, count);
+  const queue = fairCollectionQueue(due.sources, due.backfill, due.keywords, count);
+  const batch = await runCronBatch(queue, async ({row,kind}) => {
+    if (kind === 'keyword') {
+      const kw = mapKeyword(row);
+      const result = await runKeywordJob(kw.id, 'keyword', io);
+      return { source_id: kw.id, name: `关键词 · ${kw.phrase}`, items_new: result.items_new, error: result.error, kind };
+    }
     const source = mapSource(row);
-    const result = await runSourceJob(source.id, "incremental", io);
-    return {
-      source_id: source.id,
-      name: source.name,
-      items_new: result.items_new,
-      error: result.error,
-      kind: "source",
-    };
-  }, { ...budget, concurrency: CRON_SOURCE_CONCURRENCY })]);
-
-  const jobs: TickResult["jobs"] = [...keywordBatch.results, ...sourceBatch.results];
+    const result = await runSourceJob(source.id, 'incremental', io);
+    return { source_id: source.id, name: source.name, items_new: result.items_new, error: result.error, kind };
+  }, { ...budget, concurrency: Math.min(CRON_SOURCE_CONCURRENCY, budget.concurrency ?? CRON_SOURCE_CONCURRENCY) });
+  const jobs: TickResult['jobs'] = batch.results;
   const items_new = jobs.reduce((total, job) => total + job.items_new, 0);
   const errors = jobs.filter((job) => job.error && (job.kind === "source"
     || (job.items_new === 0 && job.error !== "已停用" && !job.error.includes("本地")))).length;
 
-  return { ran: jobs.length, items_new, errors, jobs, deferred: sourceBatch.deferred + keywordBatch.deferred };
+  return { ran: jobs.length, items_new, errors, jobs, deferred: batch.deferred };
 }

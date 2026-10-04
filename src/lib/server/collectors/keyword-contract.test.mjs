@@ -84,7 +84,7 @@ async function withKeyword(fn) {
     configFile: false,
     logLevel: "silent",
     resolve: { alias: { "@": path.resolve("src") } },
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, watch: null },
   });
   try {
     const mod = await vite.ssrLoadModule("/src/lib/server/collectors/keyword.ts");
@@ -255,7 +255,7 @@ test("an oversized image is refused, never trimmed into a corrupt data URL", asy
     configFile: false,
     logLevel: "silent",
     resolve: { alias: { "@": path.resolve("src") } },
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, watch: null },
   });
   const originalKey = process.env.XAI_API_KEY;
   const originalFetch = globalThis.fetch;

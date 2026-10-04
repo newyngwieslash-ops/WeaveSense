@@ -13,6 +13,10 @@ export type SourceRow = {
   last_published_at: string | null;
   last_scanned_at: string | null;
   last_error: string;
+  next_attempt_at?: string | null;
+  consecutive_failures?: number;
+  last_success_at?: string | null;
+  last_error_code?: string;
   status: "idle" | "running" | "ok" | "error";
   adapter: AdapterId;
   notes: string;
@@ -32,6 +36,10 @@ export type KeywordRow = {
   enabled: boolean;
   last_scanned_at: string | null;
   last_error: string;
+  next_attempt_at?: string | null;
+  consecutive_failures?: number;
+  last_success_at?: string | null;
+  last_error_code?: string;
   status: "idle" | "running" | "ok" | "error";
   hits: number;
   notes: string;

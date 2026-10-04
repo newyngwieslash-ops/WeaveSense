@@ -1,3 +1,4 @@
+import { clearConfigurationFailure } from "./scheduler-atomic.ts";
 import { initialScanState } from "./cursor.ts";
 import { createServerFn } from "@tanstack/react-start";
 import type { AskResult } from "../types";
@@ -247,21 +248,23 @@ export const addKeywordsFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const phrases = parseKeywordList(data.phrases);
     if (!phrases.length) throw new Error("请填写至少一个关键词（2–40 字）");
+    if (data.platforms && (!Array.isArray(data.platforms) || data.platforms.some(p => !isPlatform(p)))) throw new Error("未知平台");
     const platforms = parsePlatformList(data.platforms ?? []);
     const interval = data.interval_minutes || 30;
     const sql = await getSql();
     const created: string[] = [];
     for (const phrase of phrases) {
-      const [existing] = await sql.query<{ id: string }>(
-        "select id from keywords where lower(phrase) = lower($1)",
+      const [existing] = await sql.query<{ id: string; platforms: unknown }>(
+        "select id, platforms from keywords where lower(phrase) = lower($1)",
         [phrase],
       );
       if (existing) {
         await sql.query(
-          `update keywords set enabled = true, interval_minutes = $2, platforms = $3::jsonb, last_error = ''
+          `update keywords set enabled = true, interval_minutes = $2, platforms = $3::jsonb
            where id = $1`,
           [existing.id, interval, JSON.stringify(platforms)],
         );
+        if (JSON.stringify(existing.platforms) !== JSON.stringify(platforms)) await clearConfigurationFailure(sql, "keywords", existing.id);
         created.push(existing.id);
         continue;
       }
@@ -301,10 +304,12 @@ export const updateKeywordFn = createServerFn({ method: "POST" })
       ]);
     }
     if (data.platforms) {
-      await sql.query("update keywords set platforms = $2::jsonb where id = $1", [
+      if (!Array.isArray(data.platforms) || data.platforms.some(p => !isPlatform(p))) throw new Error("未知平台");
+      const changed = await sql.query("update keywords set platforms = $2::jsonb where id = $1 and platforms is distinct from $2::jsonb returning id", [
         data.id,
         JSON.stringify(parsePlatformList(data.platforms)),
       ]);
+      if (changed.length) await clearConfigurationFailure(sql, "keywords", data.id);
     }
     return { ok: true };
   });

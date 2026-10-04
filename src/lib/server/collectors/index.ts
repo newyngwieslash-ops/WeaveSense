@@ -7,7 +7,7 @@ import { fetchJson, type FetchIo } from "../http";
 import { parseFeedXml } from "../rss-parser";
 import { WECHAT_GATEWAY_FEED_TIMEOUT_MS } from "../cron";
 import { providerFromItems } from "../wechat-meta.ts";
-import { abortable, CollectionHttpError, collectionHttpError, parseRetryAfter, readCapped } from "../outbound-policy.ts";
+import { collectionFetch, abortable, CollectionHttpError, collectionHttpError, parseRetryAfter, readCapped } from "../outbound-policy.ts";
 import { CollectorBatchError, collectorMeta,
   type CollectorAdapter, type CollectorBatch, type CollectorMeta, type NormalizedItem,
   type SourceRecord } from "./types";
@@ -87,7 +87,7 @@ const wechatGatewayAdapter: CollectorAdapter = {
     const deadline = AbortSignal.timeout(WECHAT_GATEWAY_FEED_TIMEOUT_MS);
     const signal = io.signal ? AbortSignal.any([io.signal, deadline]) : deadline;
     try {
-      response = await abortable(fetch(gatewayFeedUrl(source.id), {
+      response = await abortable(collectionFetch(gatewayFeedUrl(source.id), {
         headers: { Accept: "application/atom+xml", Authorization: `Bearer ${prod.wechatGatewayToken}` },
         signal,
         redirect: "error",
@@ -352,6 +352,8 @@ export async function collectSource(source: SourceRecord, io: FetchIo = {}): Pro
     const attempted = failed.attempts.length ? failed.attempts : [adapter.id];
     // Other adapters already fetched feed_url via RSS; replaying it here resets its deadline.
     if (source.feed_url.startsWith("http") && adapter.id === "wechat_gateway" && !io.signal?.aborted &&
+      !(err as { retryAt?: number })?.retryAt &&
+      ![401, 403, 429].includes((err as { status?: number })?.status ?? 0) &&
       !["aborted", "timeout"].includes((err as { code?: string })?.code ?? "")) {
       const attempts = [...new Set([...attempted, "rss"])];
       try {

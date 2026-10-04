@@ -26,6 +26,7 @@
  */
 import { isIP } from "node:net";
 import dns from "node:dns/promises";
+import { acquireCollectionPermit } from "./collection-limits.ts";
 
 /** First-release caps, as code constants (documented, not auto-expanding). */
 export const TEXT_MAX_BYTES = 4 * 1024 * 1024;
@@ -555,6 +556,7 @@ export async function publicFetch(
   const combined = signal ? AbortSignal.any([signal, deadline.signal]) : deadline.signal;
   const expiresAt = Date.now() + timeoutMs;
   let response: OutboundResponse | undefined;
+  let release: (() => void) | undefined;
   try {
     let url = assertPublicUrl(rawUrl);
     let redirects = 0;
@@ -565,6 +567,8 @@ export async function publicFetch(
       const addresses = await abortable(resolvePublicAddresses(url.hostname, resolver), combined);
       const approved = [...addresses];
       const lookup = createPinnedLookup(approved);
+      release = await acquireCollectionPermit(url, combined);
+      combined.throwIfAborted();
       const remainingMs = expiresAt - Date.now();
       if (remainingMs <= 0) throw new CollectionHttpError("timeout");
       const pending = transport(url, { method: "GET", headers: requestHeaders,
@@ -581,6 +585,7 @@ export async function publicFetch(
         const location = responseHeaders.location;
         cancelBody(response.body);
         response = undefined;
+        release(); release = undefined;
         if (!location) throw new Error("redirect_without_location");
         if (redirects >= maxRedirects) throw new Error("too_many_redirects");
         redirects += 1;
@@ -605,5 +610,37 @@ export async function publicFetch(
   } finally {
     clearTimeout(timer);
     if (response) cancelBody(response.body);
+    release?.();
   }
+}
+
+/** Fixed operator endpoints only. Hold admission through body EOF, cancellation or deadline. */
+export async function collectionFetch(url: string, init: RequestInit, fetchImpl: typeof fetch = fetch): Promise<Response> {
+  const signal = init.signal ?? undefined;
+  const release = await acquireCollectionPermit(new URL(url), signal);
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  const finish = () => { signal?.removeEventListener('abort', abort); release(); };
+  const abort = () => { void reader?.cancel().catch(() => {}); finish(); };
+  signal?.addEventListener('abort', abort, { once: true });
+  try {
+    signal?.throwIfAborted();
+    const pending = fetchImpl(url, { ...init, redirect: 'error' });
+    void pending.then(r => { if(signal?.aborted) void r.body?.cancel().catch(() => {}); }, () => {});
+    const response = await abortable(pending, signal);
+    if (!response.body) { finish(); return response; }
+    reader = response.body.getReader();
+    const body = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        try {
+          const part = await abortable(reader!.read(), signal);
+          if (part.done) { finish(); controller.close(); }
+          else controller.enqueue(part.value);
+        } catch (error) { abort(); controller.error(error); }
+      },
+      cancel() { abort(); },
+    }, { highWaterMark: 0 });
+    const result = new Response(body, {status:response.status, statusText:response.statusText, headers:response.headers});
+    Object.defineProperty(result, 'url', {value:response.url});
+    return result;
+  } catch (error) { abort(); throw collectionHttpError(error, signal); }
 }

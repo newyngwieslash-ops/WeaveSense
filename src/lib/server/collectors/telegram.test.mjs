@@ -27,7 +27,7 @@ async function loadCollector() {
     configFile: false,
     logLevel: "silent",
     resolve: { alias: { "@": path.resolve("src") } },
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, watch: null },
   });
   const { collectSource } = await vite.ssrLoadModule("/src/lib/server/collectors/index.ts");
   return { vite, collectSource };
@@ -158,6 +158,16 @@ test("Telethon history is capped, shape validated, cancellable, and keeps safe H
         assert.ok((error.retryAt ?? 0) >= before + 120000);
         assert.ok(!error.message.includes("secret"));
         return true;
+      });
+    }
+    for (const [headerSeconds, floodSeconds] of [[60,172800],[172800,60]]) {
+      globalThis.fetch = async () => new Response(JSON.stringify({error:'flood_wait',flood_wait:floodSeconds}), {
+        status:429,headers:{'Retry-After':String(headerSeconds)},
+      });
+      const before=Date.now();
+      await assert.rejects(()=>fetchTelethonHistory('channel','0'), caught=>{
+        const error=/** @type {import('../outbound-policy.ts').CollectionHttpError} */ (caught);
+        assert.equal(error.code,'rate_limited');assert.ok(Number(error.retryAt)>=before+172800000);return true;
       });
     }
     globalThis.fetch = async () => json({ error: "membership_required", items: [] }, 400);

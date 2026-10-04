@@ -1,3 +1,4 @@
+import { RADAR_SOURCE_ID } from "../keyword.ts";
 type Queryable = {
   query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<T[]>;
 };
@@ -6,21 +7,39 @@ type Queryable = {
 export const SCHEDULER_LEASE_MINUTES = 15;
 export const SCHEDULER_LEASE_LOST = "scheduler_lease_lost";
 
+const available = `(next_attempt_at is null or next_attempt_at <= now()) and
+  (status <> 'running' or claimed_at is null or claimed_at <= now() - (${SCHEDULER_LEASE_MINUTES} * interval '1 minute'))`;
+const due = `(status = 'running' or next_attempt_at is not null or last_scanned_at is null or
+  last_scanned_at <= now() - (interval_minutes * interval '1 minute'))`;
+const sourceDue = `(${due} or (has_more and last_scanned_at <= now() - interval '1 minute'))`;
+
+export async function selectDueCollections(sql: Queryable, limit: number) {
+  const order = `order by coalesce(next_attempt_at, last_scanned_at + interval_minutes * interval '1 minute', '-infinity'::timestamptz), id limit $1`;
+  const sources = await sql.query<Record<string, unknown>>(`select * from sources where enabled and id <> '${RADAR_SOURCE_ID}' and ${available} and ${sourceDue} and not has_more ${order}`, [limit]);
+  const backfill = await sql.query<Record<string, unknown>>(`select * from sources where enabled and id <> '${RADAR_SOURCE_ID}' and ${available} and ${sourceDue} and has_more ${order.replace("interval_minutes * interval '1 minute'", "interval '1 minute'")}`, [limit]);
+  const keywords = await sql.query<Record<string, unknown>>(`select * from keywords where enabled and ${available} and ${due} ${order}`, [limit]);
+  return { sources, backfill, keywords };
+}
+
+/** Only call after a validated configuration change, never an enable/disable toggle. */
+export async function clearConfigurationFailure(sql: Queryable, table: 'sources' | 'keywords', id: string) {
+  await sql.query(`update ${table} set next_attempt_at=null, consecutive_failures=0, last_error_code='', last_error=''
+    where id=$1 and last_error_code='config_error' and status <> 'running'`, [id]);
+}
+
 export async function claimSource(
   sql: Queryable,
   sourceId: string,
   claimToken: string,
+  manual = false,
 ): Promise<Record<string, unknown> | null> {
   const [row] = await sql.query<Record<string, unknown>>(
     `update sources
      set status = 'running', last_error = '', claim_token = $2, claimed_at = now()
-     where id = $1 and enabled = true and (
-       status <> 'running'
-       or claimed_at is null
-       or claimed_at <= now() - ($3::integer * interval '1 minute')
-     )
+     where id = $1 and enabled = true and ${available}
+       and ($3::boolean or ${sourceDue})
      returning *`,
-    [sourceId, claimToken, SCHEDULER_LEASE_MINUTES],
+    [sourceId, claimToken, manual],
   );
   return row ?? null;
 }
@@ -29,17 +48,15 @@ export async function claimKeyword(
   sql: Queryable,
   keywordId: string,
   claimToken: string,
+  manual = false,
 ): Promise<Record<string, unknown> | null> {
   const [row] = await sql.query<Record<string, unknown>>(
     `update keywords
      set status = 'running', last_error = '', claim_token = $2, claimed_at = now()
-     where id = $1 and enabled = true and (
-       status <> 'running'
-       or claimed_at is null
-       or claimed_at <= now() - ($3::integer * interval '1 minute')
-     )
+     where id = $1 and enabled = true and ${available}
+       and ($3::boolean or ${due})
      returning *`,
-    [keywordId, claimToken, SCHEDULER_LEASE_MINUTES],
+    [keywordId, claimToken, manual],
   );
   return row ?? null;
 }
@@ -54,7 +71,7 @@ export async function completeSourceClaim(
 ): Promise<boolean> {
   const rows = await sql.query<{ id: unknown }>(
     `update sources set
-       status = 'ok',
+       status = 'ok', next_attempt_at = null, consecutive_failures = 0, last_success_at = now(), last_error_code = '',
        last_scanned_at = now(),
        last_error = '',
        last_external_id = coalesce(nullif($2, ''), last_external_id),
@@ -71,21 +88,31 @@ export async function completeSourceClaim(
   return rows.length === 1;
 }
 
-export async function failSourceClaim(
-  sql: Queryable,
-  sourceId: string,
-  claimToken: string,
-  error: string,
-): Promise<boolean> {
-  const rows = await sql.query<{ id: unknown }>(
-    `update sources set
-       status = 'error', last_scanned_at = now(), last_error = $2,
-       claim_token = '', claimed_at = null
-     where id = $1 and claim_token = $3
-     returning id`,
-    [sourceId, error, claimToken],
-  );
-  return rows.length === 1;
+function retryFailure(error: unknown) {
+  const value = error as { code?: string; status?: number; retryAt?: number; message?: string } | null;
+  const message = typeof error === 'string' ? error : value?.message ?? 'collection_failed';
+  const permanent = value?.status === 401 || value?.status === 403 ||
+    /未配置|需要有效|请填写|requires_authorized_worker|membership_required/.test(message) ||
+    ['config_error', 'invalid_url', 'unsupported_protocol', 'url_credentials_not_allowed', 'blocked_host', 'blocked_address'].includes(value?.code ?? '');
+  // A server deadline must never become clearable through configuration repair.
+  const retryAt = Number.isFinite(value?.retryAt) ? value!.retryAt! : null;
+  return { message: (permanent ? `${message}；请检查信源地址、授权或服务配置` : message).slice(0,400), code: retryAt ? 'rate_limited' : permanent ? 'config_error' : /^[a-z][a-z0-9_]{0,79}$/.test(value?.code ?? '') ? value!.code! : 'collection_failed', retryAt, permanent };
+}
+
+async function failClaim(sql: Queryable, table: 'sources' | 'keywords', id: string, token: string, error: unknown, hits?: number): Promise<boolean> {
+  const failure = retryFailure(error);
+  const rows = await sql.query<{id: unknown}>(`update ${table} set status='error', last_scanned_at=now(), last_error=$2,
+    last_error_code=$4, consecutive_failures=consecutive_failures+1,
+    next_attempt_at=greatest(next_attempt_at, to_timestamp($5::double precision / 1000), now() +
+      (least(360, (case when $6::boolean then 360 when consecutive_failures=0 then 1
+        when consecutive_failures=1 then 5 when consecutive_failures=2 then 15 else 60 end) * (1 + random()*0.2)) * interval '1 minute')),
+    claim_token='', claimed_at=null${table === 'keywords' ? ', hits=coalesce($7::integer,hits)' : ''} where id=$1 and claim_token=$3 returning id`,
+    [id, failure.message, token, failure.code, failure.retryAt, failure.permanent, ...(table === 'keywords' ? [hits ?? null] : [])]);
+  return rows.length===1;
+}
+
+export async function failSourceClaim(sql: Queryable, sourceId: string, claimToken: string, error: unknown): Promise<boolean> {
+  return failClaim(sql, 'sources', sourceId, claimToken, error);
 }
 
 export async function completeKeywordClaim(
@@ -97,7 +124,7 @@ export async function completeKeywordClaim(
 ): Promise<boolean> {
   const rows = await sql.query<{ id: unknown }>(
     `update keywords set
-       status = 'ok', last_scanned_at = now(), last_error = $2, hits = $3,
+       status = 'ok', next_attempt_at = null, consecutive_failures = 0, last_success_at = now(), last_error_code = '', last_scanned_at = now(), last_error = $2, hits = $3,
        claim_token = '', claimed_at = null
      where id = $1 and claim_token = $4
      returning id`,
@@ -106,21 +133,8 @@ export async function completeKeywordClaim(
   return rows.length === 1;
 }
 
-export async function failKeywordClaim(
-  sql: Queryable,
-  keywordId: string,
-  claimToken: string,
-  error: string,
-): Promise<boolean> {
-  const rows = await sql.query<{ id: unknown }>(
-    `update keywords set
-       status = 'error', last_scanned_at = now(), last_error = $2,
-       claim_token = '', claimed_at = null
-     where id = $1 and claim_token = $3
-     returning id`,
-    [keywordId, error, claimToken],
-  );
-  return rows.length === 1;
+export async function failKeywordClaim(sql: Queryable, keywordId: string, claimToken: string, error: unknown, hits?: number): Promise<boolean> {
+  return failClaim(sql, 'keywords', keywordId, claimToken, error, hits);
 }
 
 export async function finishItemInsert(

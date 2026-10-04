@@ -16,6 +16,8 @@ async function sourceDb() {
     last_published_at timestamptz,
     last_scanned_at timestamptz,
     claim_token text not null default '',
+    interval_minutes int default 30, has_more boolean default false,
+    next_attempt_at timestamptz, consecutive_failures int default 0, last_success_at timestamptz, last_error_code text default '',
     claimed_at timestamptz
   )`);
   const sql = {

@@ -9,7 +9,7 @@ import { createServer } from 'vite';
 test(`real scheduler pagination and identity repair (${process.env.T06_CHECKPOINT_REBINDER ? 'native codec subprocess' : 'recorded native codec'})`, async () => {
   process.env.TELEGRAM_WORKER_URL = 'http://synthetic-worker:8787';
   const originalFetch = globalThis.fetch;
-  const vite = await createServer({ configFile:false, logLevel:'silent', resolve:{alias:{'@':path.resolve('src')}}, server:{middlewareMode:true} });
+  const vite = await createServer({ configFile:false, logLevel:'silent', resolve:{alias:{'@':path.resolve('src')}}, server:{middlewareMode:true,watch:null} });
   let failPageTwo = true;
   const requests: string[] = [];
   globalThis.fetch = async (input, init) => {
@@ -24,7 +24,13 @@ test(`real scheduler pagination and identity repair (${process.env.T06_CHECKPOIN
   try {
     const {getSql} = await vite.ssrLoadModule('/src/lib/db.ts');
     const sql = await getSql();
-    const {runSourceJob} = await vite.ssrLoadModule('/src/lib/server/scheduler.ts');
+    const {runSourceJob: scheduledSourceJob} = await vite.ssrLoadModule('/src/lib/server/scheduler.ts');
+    // Advance the persisted scheduling clock between synthetic pages; T07 tests admission separately.
+    const runSourceJob = async (id:string, ...args:unknown[]) => {
+      await sql.query(`update sources set last_scanned_at=now()-interval '1 day',
+        next_attempt_at=case when next_attempt_at is null then null else now()-interval '1 second' end where id=$1`, [id]);
+      return scheduledSourceJob(id,...args);
+    };
     await sql.query(`insert into sources(id,platform,name,handle,adapter,last_external_id) values('t06','telegram','synthetic','channel','telegram_web','100')`);
     const savedIds:string[] = [];
     const first = await runSourceJob('t06');

@@ -60,9 +60,12 @@ async function attempt(
     const items = await run();
     return { items, attempt: { source, status: "ok", count: items.length } };
   } catch (error) {
+    const failure = error as { retryAt?: number; status?: number } | null;
     return {
       items: [],
-      attempt: { source, status: "error", count: 0, error_code: classifyFailure(error) },
+      attempt: { source, status: "error", count: 0, error_code: classifyFailure(error),
+        ...(Number.isFinite(failure?.retryAt) ? { retryAt: failure!.retryAt } : {}),
+        ...(Number.isFinite(failure?.status) ? { http_status: failure!.status } : {}) },
     };
   }
 }
