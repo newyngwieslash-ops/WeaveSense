@@ -33,9 +33,9 @@ export async function getNodesStatus(): Promise<{
   try {
     const [m] = await sql.query<Record<string, unknown>>(
       `select count(*)::int as total,
-              count(*) filter (where status = 'remote')::int as remote,
+              count(*) filter (where status in ('remote','running') or (status='error' and next_attempt_at is not null))::int as remote,
               count(*) filter (where status = 'stored')::int as stored,
-              count(*) filter (where status = 'error')::int as error
+              count(*) filter (where status = 'dead' or (status='error' and next_attempt_at is null))::int as error
        from media_objects`,
     );
     media = {

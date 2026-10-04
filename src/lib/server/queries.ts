@@ -202,6 +202,9 @@ export function mapMediaObject(row: Record<string, unknown>): MediaObjectRow {
     kind: String(row.kind ?? "file"),
     status: String(row.status ?? "remote"),
     error: String(row.error ?? ""),
+    attempts: asInt(row.attempts) ?? 0,
+    next_attempt_at: iso(row.next_attempt_at),
+    claimed_at: iso(row.claimed_at),
   };
 }
 

@@ -11,7 +11,7 @@ import { analyzeInput, askInput, briefingInput } from "../agent-contract.ts";
 import { analyzeItemWith, askKnowledgeWith, generateBriefingWith } from "./analyze";
 import { getAiJob, cancelQueuedResearchJobs } from "./agent-queue";
 import { extractItem, extractPending } from "./extract";
-import { ingestPending } from "./media";
+import { ingestPending, replayMedia } from "./media";
 import { getNodesStatus, runProductionTick } from "./nodes";
 import { getOverview, listKeywords, listSources, mapAnalysis, mapExtractJob, mapItem, mapJob, mapMediaObject, mapNote } from "./queries";
 import { ensureSeeded } from "./seed";
@@ -390,7 +390,7 @@ export const getItemFn = createServerFn({ method: "GET" })
     try {
       media = (
         await sql.query<Record<string, unknown>>(
-          "select id, source_url, object_key, public_url, content_type, bytes, kind, status, error from media_objects where item_id = $1 order by created_at",
+          "select id, source_url, object_key, public_url, content_type, bytes, kind, status, error, attempts, next_attempt_at, claimed_at from media_objects where item_id = $1 order by created_at",
           [data.id],
         )
       ).map(mapMediaObject);
@@ -500,6 +500,13 @@ export const extractItemFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => extractItem(data.id));
 
 export const ingestMediaFn = createServerFn({ method: "POST" }).handler(async () => ingestPending(8));
+
+export const replayMediaFn = createServerFn({ method: "POST" })
+  .validator((input: { id: string }) => {
+    if (typeof input?.id !== 'string' || !input.id.trim() || input.id.length > 100) throw new Error('invalid_media_id');
+    return { id: input.id.trim() };
+  })
+  .handler(async ({ data }) => ({ requeued: await replayMedia(await getSql(), data.id) }));
 
 export const extractPendingFn = createServerFn({ method: "POST" }).handler(async () => extractPending(3));
 

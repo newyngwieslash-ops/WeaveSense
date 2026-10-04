@@ -1,0 +1,488 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import path from "node:path";
+import { createServer } from "vite";
+import type { Sql } from "../db.ts";
+import type { OutboundTransport } from "./outbound-policy.ts";
+
+test("media queue: actual ingest, SQL leases/retries and fixed storage boundary", async (t) => {
+  const vite = await createServer({
+    configFile: false,
+    logLevel: "silent",
+    resolve: { alias: { "@": path.resolve("src") } },
+    server: { middlewareMode: true, watch: null },
+  });
+  const originalFetch = globalThis.fetch;
+  try {
+    const { getSql } = await vite.ssrLoadModule("/src/lib/db.ts");
+    const sql: Sql = await getSql();
+    const media = await vite.ssrLoadModule("/src/lib/server/media.ts");
+    const { getNodesStatus } = await vite.ssrLoadModule("/src/lib/server/nodes.ts");
+    const { prod } = await vite.ssrLoadModule("/src/lib/server/config.ts");
+    Object.assign(prod, {
+      minioEndpoint: "http://storage.fixture",
+      minioAccessKey: "fake-key",
+      minioSecretKey: "fake-secret",
+      minioBucket: "fixture",
+      minioPublicUrl: "https://display.fixture",
+    });
+    let now = Date.parse("2026-10-04T00:00:00Z"),
+      status = 200,
+      mime = "image/jpeg",
+      size = 4;
+    let requests = 0,
+      uploads = 0,
+      storageStatus = 200;
+    let retryAfter = "",
+      storageRetryAfter = "";
+    let duringUpload: (() => Promise<void>) | undefined;
+    const objects = new Map<string, Uint8Array>();
+    globalThis.fetch = async (url, init) => {
+      const target = new URL(String(url));
+      assert.equal(target.origin, "http://storage.fixture");
+      assert.equal(init?.redirect, "error", "signed storage never follows redirects");
+      if (init?.method === "HEAD") return new Response(null, { status: 200 });
+      if (init?.method === "GET")
+        return new Response(new Uint8Array(objects.get(target.pathname) ?? []), { status: 200 });
+      assert.equal(init?.method, "PUT");
+      uploads++;
+      if (storageStatus === 200)
+        objects.set(target.pathname, new Uint8Array(init.body as Uint8Array));
+      await duringUpload?.();
+      return new Response("", {
+        status: storageStatus,
+        headers: { "retry-after": storageRetryAfter },
+      });
+    };
+    const transport: OutboundTransport = async () => {
+      requests++;
+      return {
+        status,
+        headers: { "content-type": mime, "retry-after": retryAfter },
+        body: new Response(new Uint8Array(size)).body!,
+      };
+    };
+    const io = {
+      resolver: {
+        async lookup() {
+          return [{ address: "93.184.216.34", family: 4 }];
+        },
+      },
+      transport,
+      now: () => now,
+    };
+    const ingest = (limit = 1) => media.ingestPending(limit, io);
+    const row = async (id = "m") =>
+      (await sql.query<any>("select * from media_objects where id=$1", [id]))[0];
+    const reset = async (urls = ["https://cdn.example/no-extension"], kind = "video") => {
+      await sql.query("delete from extract_jobs");
+      await sql.query("delete from media_objects");
+      await sql.query("delete from items");
+      await sql.query(
+        `insert into items(id,source_id,platform,external_id,media_urls,thumbnail_url)
+        values('i','s','rss','1',$1::jsonb,$2)`,
+        [JSON.stringify(urls), urls[0]],
+      );
+      for (const [i, url] of urls.entries())
+        await sql.query(
+          `insert into media_objects(id,item_id,source_url,public_url,kind)
+        values($1,'i',$2,$2,$3)`,
+          [i ? `m${i}` : "m", url, kind],
+        );
+      status = 200;
+      retryAfter = "";
+      storageRetryAfter = "";
+      mime = "image/jpeg";
+      size = 4;
+      requests = 0;
+      uploads = 0;
+      storageStatus = 200;
+      duringUpload = undefined;
+      objects.clear();
+      now = Date.parse("2026-10-04T00:00:00Z");
+    };
+
+    await t.test(
+      "single atomic winner, expiry replaces token and consumes an attempt",
+      async () => {
+        await reset();
+        const claims = await Promise.all([
+          media.claimMedia(sql, "a", now),
+          media.claimMedia(sql, "b", now),
+        ]);
+        assert.equal(claims.filter(Boolean).length, 1);
+        assert.equal((await row()).attempts, 1);
+        assert.equal(await media.claimMedia(sql, "c", now + media.MEDIA_LEASE_MS - 1), null);
+        now += media.MEDIA_LEASE_MS;
+        assert.equal((await media.claimMedia(sql, "c", now)).claim_token, "c");
+        assert.equal((await row()).attempts, 2);
+        for (let n = 0; n < 2; n++) {
+          now += media.MEDIA_LEASE_MS;
+          await media.claimMedia(sql, `claim-${n}`, now);
+        }
+        now += media.MEDIA_LEASE_MS;
+        assert.equal(await media.claimMedia(sql, "exhausted", now), null);
+        assert.equal((await row()).status, "dead");
+        assert.equal((await row()).attempts, 4);
+        assert.match((await row()).error, /attempts_exhausted/);
+      },
+    );
+
+    await t.test(
+      "503 recovers after persisted one-minute backoff; three retries mean four attempts",
+      async () => {
+        await reset();
+        status = 503;
+        for (const [index, delay] of [60_000, 300_000, 900_000].entries()) {
+          assert.deepEqual(await ingest(), { stored: 0, errors: 1 });
+          assert.equal((await row()).status, "error");
+          assert.equal((await row()).attempts, index + 1);
+          assert.equal(new Date((await row()).next_attempt_at).getTime(), now + delay);
+          assert.deepEqual(await ingest(), { stored: 0, errors: 0 });
+          now += delay;
+        }
+        assert.deepEqual(await ingest(), { stored: 0, errors: 1 });
+        assert.equal((await row()).status, "dead");
+        assert.equal((await row()).attempts, 4);
+        now += 86_400_000;
+        assert.deepEqual(await ingest(), { stored: 0, errors: 0 });
+        assert.equal(requests, 4);
+        assert.equal(await media.replayMedia(sql, "m"), true);
+        assert.equal((await row()).attempts, 0);
+        status = 200;
+        assert.deepEqual(await ingest(), { stored: 1, errors: 0 });
+        assert.equal(await media.replayMedia(sql, "m"), false);
+        await reset();
+        status = 503;
+        await ingest();
+        now += 60_000;
+        status = 200;
+        assert.deepEqual(await ingest(), { stored: 1, errors: 0 });
+        assert.equal((await row()).attempts, 2);
+      },
+    );
+
+    await t.test(
+      "permanent URL, missing object and size failures dead-letter; historical errors need explicit replay",
+      async () => {
+        for (const code of ["private", "404", "410", "too-large"]) {
+          await reset([
+            code === "private" ? "http://127.0.0.1/secret" : "https://cdn.example/file",
+          ]);
+          if (code === "404" || code === "410") status = Number(code);
+          if (code === "too-large") size = 25 * 1024 * 1024 + 1;
+          assert.deepEqual(await ingest(), { stored: 0, errors: 1 });
+          assert.equal((await row()).status, "dead");
+          assert.equal(uploads, 0);
+          assert.deepEqual(await ingest(), { stored: 0, errors: 0 });
+        }
+        await reset();
+        await sql.query("update media_objects set status='error',error='historical' where id='m'");
+        assert.deepEqual(await ingest(), { stored: 0, errors: 0 });
+        assert.equal(await media.replayMedia(sql, "missing"), false);
+        assert.equal(await media.replayMedia(sql, "m"), true);
+        assert.deepEqual(await ingest(), { stored: 1, errors: 0 });
+        assert.equal((await row()).source_url, "https://cdn.example/no-extension");
+      },
+    );
+
+    await t.test(
+      "upload succeeds but item DB write rolls back, then overwrites the same key",
+      async () => {
+        await reset();
+        const transaction = sql.transaction.bind(sql);
+        let fail = true;
+        sql.transaction = (fn) =>
+          transaction((tx) =>
+            fn({
+              query: async <T>(text: string, params?: unknown[]) => {
+                if (fail && /update items/i.test(text)) {
+                  fail = false;
+                  throw new Error("synthetic_db_failure");
+                }
+                return tx.query<T>(text, params);
+              },
+            }),
+          );
+        try {
+          assert.deepEqual(await ingest(), { stored: 0, errors: 1 });
+        } finally {
+          sql.transaction = transaction;
+        }
+        assert.equal((await row()).status, "error");
+        assert.deepEqual((await getNodesStatus()).media, {
+          total: 1,
+          remote: 1,
+          stored: 0,
+          error: 0,
+        });
+        assert.equal((await row()).public_url, (await row()).source_url);
+        assert.equal(objects.size, 1);
+        const key = (await row()).object_key;
+        assert.equal(key, "i/m");
+        assert.deepEqual(
+          (await sql.query<any>("select media_urls from items where id='i'"))[0].media_urls,
+          ["https://cdn.example/no-extension"],
+        );
+        now += 60_000;
+        mime = "image/png";
+        assert.deepEqual(await ingest(), { stored: 1, errors: 0 });
+        assert.equal((await row()).object_key, key);
+        assert.equal(uploads, 2);
+        assert.equal(objects.size, 1);
+        assert.equal((await row()).public_url, "https://display.fixture/i/m");
+      },
+    );
+
+    await t.test(
+      "expired completion and stale owner cannot change media or display URLs",
+      async () => {
+        await reset();
+        duringUpload = async () => {
+          now += media.MEDIA_LEASE_MS;
+        };
+        assert.deepEqual(await ingest(), { stored: 0, errors: 0 });
+        assert.equal((await row()).status, "running");
+        assert.equal((await row()).public_url, (await row()).source_url);
+        const recovered = await media.claimMedia(sql, "replacement", now);
+        assert.equal(recovered.attempts, 2);
+        assert.equal(await media.replayMedia(sql, "m"), false);
+        await reset();
+        duringUpload = async () => {
+          now += media.MEDIA_LEASE_MS;
+          await media.claimMedia(sql, "new-owner", now);
+        };
+        assert.deepEqual(await ingest(), { stored: 0, errors: 0 });
+        assert.equal((await row()).claim_token, "new-owner");
+        assert.equal((await row()).status, "running");
+        assert.deepEqual(
+          (await sql.query<any>("select media_urls from items where id='i'"))[0].media_urls,
+          ["https://cdn.example/no-extension"],
+        );
+        await reset();
+        duringUpload = async () => {
+          now += media.MEDIA_LEASE_MS;
+          await media.claimMedia(sql, "failure-owner", now);
+          throw new Error("synthetic_failed_old_upload");
+        };
+        assert.deepEqual(await ingest(), { stored: 0, errors: 0 });
+        assert.equal((await row()).claim_token, "failure-owner");
+        assert.equal((await row()).status, "running");
+      },
+    );
+
+    await t.test(
+      "complete DB outage after upload leaves a recoverable lease and same persisted object key",
+      async () => {
+        await reset();
+        const query = sql.query.bind(sql),
+          transaction = sql.transaction.bind(sql);
+        sql.transaction = async () => {
+          throw new Error("synthetic_database_offline");
+        };
+        sql.query = async <T>(text: string, params?: unknown[]) => {
+          if (/status=\$3,error=\$4/.test(text)) throw new Error("synthetic_failure_write_offline");
+          return query<T>(text, params);
+        };
+        try {
+          await assert.rejects(ingest, /synthetic_failure_write_offline/);
+        } finally {
+          sql.query = query;
+          sql.transaction = transaction;
+        }
+        assert.equal((await row()).status, "running");
+        assert.equal((await row()).object_key, "i/m");
+        assert.equal(objects.size, 1);
+        now += media.MEDIA_LEASE_MS;
+        assert.deepEqual(await ingest(), { stored: 1, errors: 0 });
+        assert.equal((await row()).attempts, 2);
+        assert.equal(uploads, 2);
+        assert.equal(objects.size, 1);
+      },
+    );
+
+    await t.test(
+      "overlapping workers preserve both display replacements and MIME classifies cover for OCR",
+      async () => {
+        await reset(["https://cdn.example/one", "https://cdn.example/two"]);
+        assert.deepEqual(await Promise.all([ingest(), ingest()]), [
+          { stored: 1, errors: 0 },
+          { stored: 1, errors: 0 },
+        ]);
+        assert.equal(requests, 2);
+        assert.equal(uploads, 2);
+        const [item] = await sql.query<any>(
+          "select media_urls,thumbnail_url from items where id='i'",
+        );
+        assert.deepEqual(item.media_urls, [
+          "https://display.fixture/i/m",
+          "https://display.fixture/i/m1",
+        ]);
+        assert.equal(item.thumbnail_url, "https://display.fixture/i/m");
+        assert.equal((await row()).kind, "image");
+        const { runExtractTargets } = await vite.ssrLoadModule(
+          "/src/lib/server/extract-targets.ts",
+        );
+        const { getObject } = await vite.ssrLoadModule("/src/lib/server/storage.ts");
+        let ocr = 0,
+          asr = 0;
+        const result = await runExtractTargets({
+          sql,
+          itemId: "i",
+          targets: [await row()],
+          load: async (target: any) => ({
+            bytes: (await getObject(target.object_key)).bytes,
+            contentType: target.content_type,
+          }),
+          ocr: async () => {
+            ocr++;
+            return { text: "cover", model: "fake-vision" };
+          },
+          asr: async () => {
+            asr++;
+            throw new Error("cover_not_audio");
+          },
+        });
+        assert.equal(result.ran, 1);
+        assert.equal(ocr, 1);
+        assert.equal(asr, 0);
+        await reset();
+        mime = "application/octet-stream";
+        await ingest();
+        assert.equal((await row()).kind, "file");
+        await reset();
+        mime = "audio/mpeg";
+        await ingest();
+        assert.equal((await row()).kind, "audio");
+      },
+    );
+
+    await t.test(
+      "storage HTTP 503 schedules retry and a redirect never becomes another target",
+      async () => {
+        await reset();
+        storageStatus = 503;
+        assert.deepEqual(await ingest(), { stored: 0, errors: 1 });
+        assert.equal((await row()).status, "error");
+        now += 60_000;
+        storageStatus = 200;
+        assert.deepEqual(await ingest(), { stored: 1, errors: 0 });
+        await reset();
+        storageStatus = 302;
+        assert.deepEqual(await ingest(), { stored: 0, errors: 1 });
+        assert.equal((await row()).status, "dead");
+        assert.equal(uploads, 1);
+        assert.deepEqual((await getNodesStatus()).media, {
+          total: 1,
+          remote: 0,
+          stored: 0,
+          error: 1,
+        });
+      },
+    );
+
+    await t.test(
+      "48-hour Retry-After survives manual replay, including exhausted dead rows",
+      async () => {
+        for (const exhausted of [false, true]) {
+          await reset();
+          now = Date.now();
+          status = 429;
+          retryAfter = String(48 * 60 * 60);
+          if (exhausted) await sql.query("update media_objects set attempts=3 where id='m'");
+          assert.deepEqual(await ingest(), { stored: 0, errors: 1 });
+          const failed = await row(),
+            deadline = new Date(failed.next_attempt_at).getTime();
+          assert.equal(failed.status, exhausted ? "dead" : "error");
+          assert.ok(deadline >= now + 48 * 60 * 60_000);
+          assert.equal(await media.replayMedia(sql, "m", now), true);
+          assert.equal((await row()).attempts, 0);
+          assert.equal(new Date((await row()).next_attempt_at).getTime(), deadline);
+          assert.equal(await media.claimMedia(sql, "early-manual", now + 24 * 60 * 60_000), null);
+          now = deadline;
+          status = 200;
+          retryAfter = "";
+          assert.deepEqual(await ingest(), { stored: 1, errors: 0 });
+          assert.equal((await row()).attempts, 1);
+        }
+      },
+    );
+
+    await t.test("storage Retry-After also survives explicit replay", async () => {
+      await reset();
+      now = Date.now();
+      storageStatus = 429;
+      storageRetryAfter = String(48 * 60 * 60);
+      assert.deepEqual(await ingest(), { stored: 0, errors: 1 });
+      const deadline = new Date((await row()).next_attempt_at).getTime();
+      assert.ok(deadline >= now + 48 * 60 * 60_000);
+      assert.equal(await media.replayMedia(sql, "m", now), true);
+      assert.equal(
+        await media.claimMedia(sql, "early-storage-replay", now + 24 * 60 * 60_000),
+        null,
+      );
+    });
+
+    await t.test(
+      "actual production entry cannot steal manual ingest; media retries retain 30-minute admission",
+      async () => {
+        await reset();
+        now = Date.now();
+        const base = now;
+        const { runProductionTick } = await vite.ssrLoadModule("/src/lib/server/nodes.ts");
+        await sql.query("delete from stage_windows");
+        let automatic: any;
+        duringUpload = async () => {
+          automatic = await runProductionTick({ now: () => base });
+        };
+        assert.deepEqual(await ingest(), { stored: 1, errors: 0 });
+        assert.equal(automatic.stored, 0);
+        assert.equal(automatic.ingest_errors, 0);
+        assert.equal(requests, 1);
+        assert.equal(uploads, 1);
+        await sql.query(
+          `insert into media_objects(id,item_id,source_url,status,attempts,next_attempt_at)
+        values('retry','i','http://127.0.0.1/private','error',1,$1::timestamptz)`,
+          [new Date(base - 1).toISOString()],
+        );
+        assert.equal((await runProductionTick({ now: () => base + 60_000 })).stored, 0);
+        assert.equal((await row("retry")).attempts, 1, "due retry cannot bypass the ingest window");
+        await runProductionTick({ now: () => base + 30 * 60_000 });
+        assert.equal((await row("retry")).attempts, 2);
+        assert.equal((await row("retry")).status, "dead");
+        assert.equal(
+          (
+            await sql.query<any>("select count(*)::int n from stage_windows where stage='ingest'")
+          )[0].n,
+          2,
+        );
+      },
+    );
+
+    await t.test(
+      "unique enqueue preserves failed rows; signed storage reads enforce the media cap",
+      async () => {
+        await reset();
+        await sql.query(
+          "update media_objects set status='dead',attempts=4,error='historical' where id='m'",
+        );
+        assert.equal(
+          await media.enqueueItemMedia("i", ["https://cdn.example/no-extension"], "image", sql),
+          0,
+        );
+        assert.equal((await row()).status, "dead");
+        const { getObject } = await vite.ssrLoadModule("/src/lib/server/storage.ts");
+        objects.set("/fixture/large", new Uint8Array(25 * 1024 * 1024 + 1));
+        await assert.rejects(() => getObject("large"), /response_too_large/);
+        objects.set("/fixture/large", new Uint8Array(25 * 1024 * 1024));
+        assert.equal((await getObject("large")).bytes.length, 25 * 1024 * 1024);
+      },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    await vite.close();
+    const pg = await (globalThis as any).__pgliteInstance__;
+    if (pg) await pg.close();
+    delete (globalThis as any).__pgliteInstance__;
+  }
+});

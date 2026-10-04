@@ -1,5 +1,6 @@
 import { createHash, createHmac } from "node:crypto";
 import { minioConfigured, prod } from "./config";
+import { collectionFetch, readCapped, parseRetryAfter, MEDIA_MAX_BYTES, TEXT_MAX_BYTES } from "./outbound-policy.ts";
 
 let healthCache: { at: number; value: { ok: boolean; error?: string } } | null = null;
 
@@ -72,7 +73,7 @@ async function s3(
   key: string,
   body?: Buffer,
   contentType?: string,
-): Promise<{ ok: boolean; status: number; bytes: Buffer }> {
+): Promise<{ ok: boolean; status: number; bytes: Buffer; retryAt?: number }> {
   const target = objectUrl(key);
   const payload = body ?? Buffer.alloc(0);
   const bodyHash = sha256Hex(payload);
@@ -80,14 +81,17 @@ async function s3(
   if (contentType) extra["content-type"] = contentType;
   if (body) extra["content-length"] = String(body.length);
   const headers = signHeaders(method, target, bodyHash, extra);
-  const res = await fetch(target, {
+  // Only the fixed operator endpoint is trusted; never follow a signed redirect.
+  const signal = AbortSignal.timeout(30000);
+  const res = await collectionFetch(target.toString(), {
     method,
     headers,
     body: body && method !== "GET" && method !== "HEAD" ? new Uint8Array(body) : undefined,
-    signal: AbortSignal.timeout(30000),
+    signal,
   });
-  const bytes = Buffer.from(await res.arrayBuffer());
-  return { ok: res.ok, status: res.status, bytes };
+  const bytes = Buffer.from(await readCapped(res.body, method === 'GET' ? MEDIA_MAX_BYTES : TEXT_MAX_BYTES, signal));
+  return { ok: res.ok, status: res.status, bytes,
+    retryAt: parseRetryAfter(res.headers.get('retry-after'), Date.now()) ?? undefined };
 }
 
 export function objectPublicUrl(key: string): string {
@@ -101,10 +105,11 @@ export async function ensureBucket(): Promise<{ ok: boolean; error?: string }> {
   const target = new URL(`${url.pathname.replace(/\/$/, "")}/${prod.minioBucket}`.replace(/\/+/g, "/"), url.origin);
   const bodyHash = sha256Hex("");
   const headers = signHeaders("PUT", target, bodyHash, {});
-  const res = await fetch(target, { method: "PUT", headers, signal: AbortSignal.timeout(8000) });
+  const signal = AbortSignal.timeout(8000);
+  const res = await collectionFetch(target.toString(), { method: "PUT", headers, signal });
+  const msg = Buffer.from(await readCapped(res.body, TEXT_MAX_BYTES, signal)).toString('utf8');
   if (res.ok || res.status === 409 || res.status === 200) return { ok: true };
   if (res.status === 404 || res.status === 403) {
-    const msg = await res.text();
     return { ok: false, error: `MinIO ${res.status} ${msg.slice(0, 180)}` };
   }
   return { ok: res.ok, error: res.ok ? undefined : `MinIO ${res.status}` };
@@ -114,10 +119,10 @@ export async function putObject(
   key: string,
   body: Buffer,
   contentType: string,
-): Promise<{ ok: boolean; url: string; error?: string }> {
+): Promise<{ ok: boolean; url: string; error?: string; status?: number; retryAt?: number }> {
   if (!minioConfigured()) return { ok: false, url: "", error: "MinIO 未配置" };
   const result = await s3("PUT", key, body, contentType || "application/octet-stream");
-  if (!result.ok) return { ok: false, url: "", error: `上传失败 ${result.status}` };
+  if (!result.ok) return { ok: false, url: "", error: `上传失败 ${result.status}`, status: result.status, retryAt: result.retryAt };
   return { ok: true, url: objectPublicUrl(key) };
 }
 
@@ -139,7 +144,8 @@ export async function minioHealth(): Promise<{ ok: boolean; error?: string }> {
     );
     const bodyHash = sha256Hex("");
     const headers = signHeaders("HEAD", target, bodyHash, {});
-    const res = await fetch(target, { method: "HEAD", headers, signal: AbortSignal.timeout(4000) });
+    const res = await collectionFetch(target.toString(), { method: "HEAD", headers, signal: AbortSignal.timeout(4000) });
+    await res.body?.cancel();
     if (res.ok || res.status === 404) {
       if (res.status === 404) {
         const created = await ensureBucket();

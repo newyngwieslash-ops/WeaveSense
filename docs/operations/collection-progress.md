@@ -119,3 +119,48 @@ structured link changes retain their exact bytes and are not rewritten or archiv
 bounded input/output and no shell. Table locks protect SQL races but cannot invalidate
 in-memory work, which is why stopping workers remains mandatory. Larger corpora need
 a separately reviewed maintenance procedure, not relaxed silent truncation.
+
+## Media recovery
+
+Media ingest (node-page manual action and production stage) uses one atomic SQL
+claim per row. A claim has a five-minute lease; completion/failure requires the
+current token and an unexpired lease. Expired work can be claimed again. No
+upload/download runs inside a database transaction. Completion locks the item
+before its media row (the same order as source persistence), then commits media
+state and item display URLs together so concurrent media completions preserve
+both replacements.
+
+`attempts` counts claims in the current replay cycle, including a crashed claim.
+The first claim plus **three automatic retries** gives **four total claims**.
+Transient network/storage/database failures and HTTP 408/425/429/5xx are eligible
+after 1, 5 and 15 minutes respectively; these are earliest eligibility times.
+An upstream `Retry-After` later than the local backoff is persisted instead,
+including upload/storage 429 responses. Even an exhausted dead row retains a
+future upstream deadline. Explicit replay preserves that future deadline; it
+cannot force an early claim or override worker/account cooldowns.
+Production ingest still runs in its existing 30-minute persistent stage window,
+so the next admitted window performs a due retry. Manual ingest also respects
+the persisted due time. Collection's minute wake-up does not bypass this window.
+Private/invalid addresses, oversized bodies, HTTP 404/410 and other deterministic
+HTTP failures become `dead` immediately. Exhaustion becomes `dead` with an
+`attempts_exhausted` error; final expired claims also converge on the next ingest.
+
+Historical `error` rows with no `next_attempt_at` stay paused. Review the row's
+`source_url`, error, attempts and object key before replaying **one identified
+row**. The existing server-function surface exposes `replayMediaFn({data:{id}})`
+(or call `replayMedia(sql,id)` from an operator server context). It only requeues
+`error`/`dead`, resets cycle attempts (and only clears elapsed retry time), and preserves row identity,
+storage information and item references. It returns whether a row was requeued;
+it never resets stored/running rows or a whole queue. Run normal ingest afterwards
+or allow the next production window to pick it up. There is no new UI control.
+
+New objects use `item_id/media_row_id`, persisted during claim, independent of
+response MIME and retry count. Existing nonempty keys are retained. An upload
+followed by SQL failure can leave an object at that key while the row remains
+`error` or `running`; recovery overwrites the same key. Even at exhaustion the
+row/key/object are retained for inspection and controlled replay, not deleted.
+`source_url` remains enqueue identity; public URL is only display data. Response
+MIME updates media kind: a cover image remains OCR input rather than ASR. Public
+downloads keep per-hop SSRF/DNS pinning, shared limits and the 25 MiB cap. Signed
+storage reads/writes use only the fixed operator endpoint, reject redirects,
+share admission limits, and cap stored-object reads at 25 MiB.

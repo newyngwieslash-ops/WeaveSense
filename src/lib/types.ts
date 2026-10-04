@@ -148,6 +148,9 @@ export type MediaObjectRow = {
   kind: string;
   status: string;
   error: string;
+  attempts: number;
+  next_attempt_at: string | null;
+  claimed_at: string | null;
 };
 
 export type ExtractJobView = {
