@@ -195,6 +195,7 @@ test("the stage intervals keep their documented values", () => {
   // A regression here is the 30× frequency change the plan forbids.
   assert.equal(STAGE_INTERVAL_MINUTES.ingest, 30);
   assert.equal(STAGE_INTERVAL_MINUTES.extract, 30);
+  assert.equal(STAGE_INTERVAL_MINUTES.analyze, 30);
   assert.ok(STAGE_INTERVAL_MINUTES.reconcile >= 1440, "the paid reconciliation window is daily at most");
 });
 

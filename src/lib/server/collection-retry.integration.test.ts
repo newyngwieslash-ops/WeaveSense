@@ -116,3 +116,59 @@ test("real scheduler manual and keyword entrances preserve partial Retry-After a
     delete (globalThis as any).__pgliteInstance__;
   }
 });
+
+test("missing Bili mid and RSSHub feed persist permanent configuration failures without cursor changes", async () => {
+  const vite = await createServer({
+    configFile: false,
+    logLevel: "silent",
+    resolve: { alias: { "@": path.resolve("src") } },
+    server: { middlewareMode: true, watch: null },
+  });
+  try {
+    const { getSql } = await vite.ssrLoadModule("/src/lib/db.ts");
+    const sql = await getSql();
+    const { runSourceJob } = await vite.ssrLoadModule("/src/lib/server/scheduler.ts");
+    const { clearConfigurationFailure } = await vite.ssrLoadModule(
+      "/src/lib/server/scheduler-atomic.ts",
+    );
+    for (const adapter of ["bilibili", "rsshub"]) {
+      await sql.query(
+        "insert into sources(id,platform,name,handle,adapter,last_external_id,scan_state,has_more) values($1,'bilibili','synthetic','username',$1,'cursor-kept','{\"bootstrap\":\"backfill\",\"page\":3}',true)",
+        [adapter],
+      );
+      const io = {
+        resolver: {
+          async lookup() {
+            throw new Error("unexpected DNS");
+          },
+        },
+        transport: async () => {
+          throw new Error("unexpected network");
+        },
+      };
+      const result = await runSourceJob(adapter, "manual", io);
+      assert.ok(result.error);
+      const [row] = await sql.query(
+        "select last_error_code,consecutive_failures,last_external_id,scan_state,has_more,extract(epoch from(next_attempt_at-last_scanned_at))/60 as delay from sources where id=$1",
+        [adapter],
+      );
+      assert.equal(row.last_error_code, "config_error");
+      assert.equal(Number(row.delay), 360);
+      assert.equal(row.consecutive_failures, 1);
+      assert.equal(row.last_external_id, "cursor-kept");
+      assert.deepEqual(row.scan_state, { bootstrap: "backfill", page: 3 });
+      assert.equal(row.has_more, true);
+      await sql.query(
+        "update sources set last_error_code='rate_limited',next_attempt_at=now()+interval '48 hours' where id=$1",
+        [adapter],
+      );
+      await clearConfigurationFailure(sql, "sources", adapter);
+      assert.match((await runSourceJob(adapter, "manual", io)).error, /冷却/);
+    }
+  } finally {
+    await vite.close();
+    const pg = await (globalThis as any).__pgliteInstance__;
+    if (pg) await pg.close();
+    delete (globalThis as any).__pgliteInstance__;
+  }
+});

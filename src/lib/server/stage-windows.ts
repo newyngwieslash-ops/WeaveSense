@@ -12,7 +12,7 @@ import type { Sql } from "@/lib/db";
  *   - **collection** — cheap-ish discovery; runs on the tick, and each source
  *     still observes its own `interval_minutes`. Shortening the wake-up does not
  *     change any source's frequency.
- *   - **production** (media ingest, OCR/ASR extraction, paid reconciliation) —
+ *   - **production** (media ingest, OCR/ASR extraction, automatic analysis, paid reconciliation) —
  *     expensive and, for the paid path, billable. These must keep their own,
  *     much slower cadence. Running them per-minute would multiply落盘/OCR/付费
  *     对账 by 30×, which is the exact regression this guards against.
@@ -37,7 +37,7 @@ import type { Sql } from "@/lib/db";
  */
 
 /** Stage ids are a closed set: an unknown stage can never be claimed. */
-export const PRODUCTION_STAGES = ["ingest", "extract", "reconcile"] as const;
+export const PRODUCTION_STAGES = ["ingest", "extract", "analyze", "reconcile"] as const;
 export type ProductionStage = (typeof PRODUCTION_STAGES)[number];
 
 /**
@@ -47,6 +47,7 @@ export type ProductionStage = (typeof PRODUCTION_STAGES)[number];
 export const STAGE_INTERVAL_MINUTES: Record<ProductionStage, number> = {
   ingest: 30,
   extract: 30,
+  analyze: 30,
   // The WeChat reconciliation window is the 23:30 Shanghai half-hour and is
   // additionally gated by `reconciliationDue`; this is a safety net only.
   reconcile: 1440,

@@ -104,7 +104,7 @@ export async function getNodesStatus(): Promise<{
 }
 
 /**
- * The heavy production stages (media ingest, OCR/ASR extraction), each gated by
+ * The heavy production stages (media ingest, OCR/ASR extraction, automatic analysis), each gated by
  * its own persistent window.
  *
  * T09: the scheduler wake-up is short (60 s) so collection due-times are honoured
@@ -126,7 +126,7 @@ export async function runProductionTick({ deadlineMs, now = Date.now, allowExtra
   ingest_errors: number;
   extract_errors: number;
   deferred: number;
-  stages: { ingest: string; extract: string };
+  stages: { ingest: string; extract: string; analyze: string };
 }> {
   const bounded = deadlineMs !== undefined;
   const nowMs = now();
@@ -160,8 +160,9 @@ export async function runProductionTick({ deadlineMs, now = Date.now, allowExtra
 
   let analyzed = 0;
   const cfg = autoAnalyzeConfigFromEnv();
-  if (cfg.autoAnalyze) {
-    const sql = await getSql();
+  // Daily reservations cap spend, not dispatch frequency; automatic work keeps the former 30-minute cadence.
+  const analyzeWindow = cfg.autoAnalyze ? await runStageOnce(stageSql, "analyze", async () => {
+    const sql = stageSql;
     const day = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Shanghai" });
     await enqueueReadyAnalyses(sql, cfg, day);
     const job = await claimAiJob(sql, { worker: "cron", leaseSeconds: 60, kind: "analyze" });
@@ -179,8 +180,10 @@ export async function runProductionTick({ deadlineMs, now = Date.now, allowExtra
       });
       }
       if (result.ok) analyzed = 1;
+      else return { ok: false, note: result.error_code ?? "analysis_failed" };
     }
-  }
+    return { ok: true, note: `analyzed=${analyzed}` };
+  }, nowMs) : null;
   return {
     stored: ingest.stored,
     extracted: extract.ran,
@@ -190,8 +193,12 @@ export async function runProductionTick({ deadlineMs, now = Date.now, allowExtra
     // Deferred = a stage this tick wanted to run but could not start, either
     // because the window was taken or because the budget ran out first.
     deferred: Number(!ingestWindow.ran || ingestWindow.result?.note === "deferred_budget")
-      + Number(extractEligible && (!extractWindow?.ran || extractWindow.result?.note === "deferred_budget")),
+      + Number(extractEligible && (!extractWindow?.ran || extractWindow.result?.note === "deferred_budget"))
+      + Number(cfg.autoAnalyze && !analyzeWindow?.ran),
     stages: {
+      analyze: analyzeWindow
+        ? (analyzeWindow.ran ? analyzeWindow.result?.note ?? "ran" : analyzeWindow.reason ?? "skipped")
+        : "disabled",
       ingest: ingestWindow.ran ? ingestWindow.result?.note ?? "ran" : ingestWindow.reason ?? "skipped",
       extract: extractWindow
         ? (extractWindow.ran ? extractWindow.result?.note ?? "ran" : extractWindow.reason ?? "skipped")

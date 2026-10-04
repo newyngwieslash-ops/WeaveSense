@@ -247,7 +247,7 @@ const biliAdapter: CollectorAdapter = {
         if (url.hostname === "space.bilibili.com" && !url.username && !url.password) mid = url.pathname.match(/^\/(\d+)\/?$/)?.[1] ?? "";
       } catch { /* Not an exact channel ID or channel URL. */ }
     }
-    if (!mid) throw new Error("需要 B 站 mid");
+    if (!mid) throw new CollectionHttpError("config_error", "需要 B 站 mid");
 
     // Walk pages until a known item is reached (or the page cap). Previously only
     // page 1 was read; the cursor then advanced to the newest item in it, so any
@@ -321,7 +321,7 @@ const rsshubAdapter: CollectorAdapter = {
   async fetch(source, io = {}) {
     const url = source.feed_url || source.handle;
     if (!url.startsWith("http")) {
-      throw new Error("该平台需要 RSSHub / WeWe 订阅地址，或等待浏览器采集节点");
+      throw new CollectionHttpError("config_error", "该平台需要 RSSHub / WeWe 订阅地址，或等待浏览器采集节点");
     }
     return feedBatch(url, source, "rsshub", io);
   },
