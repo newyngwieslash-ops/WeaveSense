@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 
 type QuerySql = { query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<T[]> };
+export const EXTRACT_TARGET_LIMIT = 4;
+export const EXTRACT_LEASE_MINUTES = 15;
 
 export type ExtractTarget = {
   id: string;
@@ -105,7 +107,10 @@ export async function runExtractTargets({ sql, itemId, targets, load, ocr, asr }
   // Candidates are the first few targets; whether each one is OCR or ASR is
   // decided per target, after its bytes are loaded, because the *served* content
   // type is the honest signal (see kindOf).
-  const eligible = targets.slice(0, 4).map((target) => ({ target, key: extractTargetKey(target) }));
+  const eligible = [...new Map(targets.slice(0, EXTRACT_TARGET_LIMIT).map((target) => {
+    const key = extractTargetKey(target);
+    return [key, { target, key }] as const;
+  })).values()];
   if (!eligible.length) return { ok: false, ran: 0, error: "没有可 OCR/ASR 的媒体" };
   let ran = 0;
   let lastError = "";
@@ -130,8 +135,8 @@ export async function runExtractTargets({ sql, itemId, targets, load, ocr, asr }
       set status='running', attempts=attempts+1, error='', finished_at=null, started_at=now(), claim_token=$3
       where item_id=$1 and target_key=$2 and attempts < 3
         and (status in ('pending','error')
-          or (status='running' and (started_at is null or started_at <= now() - interval '15 minutes')))
-      returning id`, [itemId, key, claimToken]);
+          or (status='running' and (started_at is null or started_at <= now() - ($4::integer * interval '1 minute'))))
+      returning id`, [itemId, key, claimToken, EXTRACT_LEASE_MINUTES]);
     if (!claimed) continue;
     try {
       const file = await load(target);

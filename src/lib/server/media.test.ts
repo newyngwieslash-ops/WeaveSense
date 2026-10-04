@@ -311,6 +311,152 @@ test("media queue: actual ingest, SQL leases/retries and fixed storage boundary"
       }
     });
 
+    await t.test("actual extractPending limit1 skips dead/cooling-only newest work and revisits recovered media", async () => {
+      const previousKey = process.env.XAI_API_KEY;
+      process.env.XAI_API_KEY = "synthetic-fixture-key";
+      const { extractItem, extractPending } = await vite.ssrLoadModule("/src/lib/server/extract.ts");
+      const fixtureFetch = globalThis.fetch;
+      let modelCalls = 0;
+      globalThis.fetch = async (url, init) => {
+        if (String(url) === "https://api.x.ai/v1/chat/completions") {
+          modelCalls++;
+          return Response.json({ choices: [{ message: { content: "synthetic queue text" } }] });
+        }
+        return fixtureFetch(url, init);
+      };
+      try {
+        for (const cooling of [false, true]) {
+          await reset(); now = Date.now(); modelCalls = 0;
+          assert.deepEqual(await ingest(), { stored: 1, errors: 0 });
+          await sql.query("update items set collected_at=$1::timestamptz where id='i'", [new Date(now-86_400_000).toISOString()]);
+          await sql.query(`insert into items(id,source_id,platform,external_id,media_urls,collected_at)
+            values('blocker','s','rss','blocker','["https://cdn.example/blocker","https://cdn.example/sibling"]'::jsonb,$1::timestamptz)`,
+          [new Date(now).toISOString()]);
+          await sql.query(`insert into media_objects(id,item_id,source_url,public_url,kind)
+            values('blocker-media','blocker','https://cdn.example/blocker','https://cdn.example/blocker','video')`);
+          status = cooling ? 429 : 404; retryAfter = cooling ? String(48*60*60) : "";
+          assert.deepEqual(await ingest(), { stored: 0, errors: 1 });
+          assert.equal((await row('blocker-media')).status, cooling ? "error" : "dead");
+          const deadline = cooling ? new Date((await row('blocker-media')).next_attempt_at).getTime() : now;
+          if (cooling) assert.ok(deadline >= now+48*60*60_000);
+          await sql.query(`insert into media_objects(id,item_id,source_url,public_url,kind)
+            values('sibling','blocker','https://cdn.example/sibling','https://cdn.example/sibling','image')`);
+          status = 200; retryAfter = "";
+          assert.deepEqual(await ingest(), { stored: 1, errors: 0 });
+          assert.equal((await extractItem('blocker')).ran, 1);
+          assert.equal(modelCalls, 1);
+
+          assert.deepEqual(await extractPending(1), { ran: 1, errors: 0 }, "completed sibling plus waiting target must not block older ready media");
+          assert.equal(modelCalls, 2);
+          assert.equal((await sql.query<any>("select pipeline_status from items where id='i'"))[0].pipeline_status, "extracted");
+          assert.equal((await sql.query<any>("select pipeline_status from items where id='blocker'"))[0].pipeline_status, "ingested");
+          assert.equal((await sql.query<any>("select count(*)::int n from extract_jobs where media_id='blocker-media'"))[0].n, 0);
+          assert.deepEqual(await extractPending(1), { ran: 0, errors: 0 });
+          assert.equal(await media.replayMedia(sql, 'blocker-media', now), true);
+          if (cooling) {
+            assert.deepEqual(await ingest(), { stored: 0, errors: 0 });
+            assert.deepEqual(await extractPending(1), { ran: 0, errors: 0 });
+            now = deadline;
+          }
+          assert.deepEqual(await ingest(), { stored: 1, errors: 0 });
+          assert.deepEqual(await extractPending(1), { ran: 1, errors: 0 });
+          assert.deepEqual(await extractPending(1), { ran: 0, errors: 0 });
+          assert.equal(modelCalls, 3);
+          assert.deepEqual(await sql.query("select media_id,status,attempts from extract_jobs order by media_id"),
+            [{ media_id: "blocker-media", status: "ok", attempts: 1 }, { media_id: "m", status: "ok", attempts: 1 },
+              { media_id: "sibling", status: "ok", attempts: 1 }]);
+        }
+      } finally {
+        globalThis.fetch = fixtureFetch;
+        if (previousKey === undefined) delete process.env.XAI_API_KEY;
+        else process.env.XAI_API_KEY = previousKey;
+      }
+    });
+
+    await t.test("fallback window identity, duplicate convergence and lease admission match actual runner", async () => {
+      await reset(); now = Date.now();
+      await sql.query("delete from media_objects");
+      const urls = ["ignored", "https://cdn.example/a", "https://cdn.example/a", "https://cdn.example/b",
+        "https://cdn.example/c", "https://cdn.example/outside-window"];
+      await sql.query("update items set media_urls=$1::jsonb,collected_at=$2::timestamptz where id='i'",
+        [JSON.stringify(urls), new Date(now).toISOString()]);
+      const previousKey = process.env.XAI_API_KEY;
+      process.env.XAI_API_KEY = "synthetic-fixture-key";
+      const { extractPending } = await vite.ssrLoadModule("/src/lib/server/extract.ts");
+      const { extractTargetKey, EXTRACT_LEASE_MINUTES } = await vite.ssrLoadModule("/src/lib/server/extract-targets.ts");
+      const aKey = extractTargetKey({ id: "", source_url: urls[1], public_url: urls[1] });
+      const fixtureFetch = globalThis.fetch;
+      let modelCalls = 0;
+      globalThis.fetch = async (url, init) => {
+        if (String(url) === "https://api.x.ai/v1/chat/completions") {
+          modelCalls++;
+          return Response.json({ choices: [{ message: { content: "synthetic fallback text" } }] });
+        }
+        return fixtureFetch(url, init);
+      };
+      try {
+        assert.deepEqual(await extractPending(1, io), { ran: 3, errors: 0 });
+        assert.equal(modelCalls, 3); assert.equal(requests, 3, "duplicate URL reads once; fifth URL is outside original window");
+        assert.equal((await sql.query<any>("select count(*)::int n from extract_jobs"))[0].n, 3);
+        assert.deepEqual(await extractPending(1, io), { ran: 0, errors: 0 });
+        await sql.query("update items set pipeline_status='ingested' where id='i'");
+        assert.deepEqual(await extractPending(1, io), { ran: 0, errors: 0 }, "all-terminal jobs still converge pipeline state");
+        assert.equal((await sql.query<any>("select pipeline_status from items where id='i'"))[0].pipeline_status, "extracted");
+        assert.equal(modelCalls, 3); assert.equal(requests, 3);
+        assert.deepEqual(await sql.query("select attempts from extract_jobs order by target_key"),
+          [{ attempts: 1 }, { attempts: 1 }, { attempts: 1 }]);
+
+        await sql.query("update items set pipeline_status='ingested' where id='i'");
+        await sql.query(`update extract_jobs set status='running',attempts=1,started_at=now(),claim_token='fresh'
+          where item_id='i' and target_key=$1`, [aKey]);
+        await sql.query(`insert into items(id,source_id,platform,external_id,collected_at)
+          values('older-ready','s','rss','older-ready',$1::timestamptz)`, [new Date(now-86_400_000).toISOString()]);
+        await sql.query(`insert into media_objects(id,item_id,source_url,kind)
+          values('older-media','older-ready','https://cdn.example/older','image')`);
+        assert.deepEqual(await ingest(), { stored: 1, errors: 0 });
+        assert.deepEqual(await extractPending(1, io), { ran: 1, errors: 0 }, "fresh running fallback cannot block older ready item");
+        assert.equal(modelCalls, 4);
+        assert.equal((await sql.query<any>("select attempts from extract_jobs where target_key=$1", [aKey]))[0].attempts, 1);
+        await sql.query(`update extract_jobs set started_at=now()-($2::integer * interval '1 minute')
+          where item_id='i' and target_key=$1`, [aKey, EXTRACT_LEASE_MINUTES]);
+        assert.deepEqual(await extractPending(1, io), { ran: 1, errors: 0 }, "lease at the inclusive boundary is admitted and reclaimed");
+        assert.equal(modelCalls, 5);
+        assert.equal((await sql.query<any>("select attempts from extract_jobs where target_key=$1", [aKey]))[0].attempts, 2);
+        await sql.query("update items set pipeline_status='ingested' where id='i'");
+        await sql.query(`update extract_jobs set status='running',attempts=1,started_at=null,claim_token='missing-clock'
+          where item_id='i' and target_key=$1`, [aKey]);
+        assert.deepEqual(await extractPending(1, io), { ran: 1, errors: 0 });
+        assert.equal(modelCalls, 6);
+        await sql.query("update items set pipeline_status='ingested' where id='i'");
+        await sql.query("update extract_jobs set status='error',attempts=3 where item_id='i' and target_key=$1", [aKey]);
+        assert.deepEqual(await extractPending(1, io), { ran: 0, errors: 0 }, "existing exhausted-job terminal semantics stay unchanged");
+        assert.equal(modelCalls, 6);
+        await sql.query(`insert into items(id,source_id,platform,external_id,collected_at)
+          values('empty','s','rss','empty',$1::timestamptz),('outside','s','rss','outside',$1::timestamptz)`,
+        [new Date(now+86_400_000).toISOString()]);
+        for (let n = 0; n < 5; n++) await sql.query(`insert into media_objects(id,item_id,source_url,object_key,status,content_type,created_at)
+          values($1,'outside',$1,$1,$2,$3,$4::timestamptz)`,
+        [`outside-${n}`, n < 4 ? 'dead' : 'stored', n < 4 ? '' : 'image/jpeg', new Date(now+n*1000).toISOString()]);
+        await sql.query("update items set pipeline_status='ingested' where id='older-ready'");
+        assert.deepEqual(await extractPending(1, io), { ran: 0, errors: 0 }, "fifth media cannot falsely admit a waiting first-four window");
+        assert.equal((await sql.query<any>("select pipeline_status from items where id='older-ready'"))[0].pipeline_status, "extracted");
+        assert.deepEqual(await sql.query("select id,pipeline_status from items where id in ('empty','outside') order by id"),
+          [{ id: 'empty', pipeline_status: 'ingested' }, { id: 'outside', pipeline_status: 'ingested' }]);
+        assert.equal(modelCalls, 6);
+        await sql.query(`insert into items(id,source_id,platform,external_id,media_urls,collected_at)
+          values('oversize','s','rss','oversize','["https://cdn.example/too-large"]'::jsonb,$1::timestamptz)`,
+        [new Date(now+2*86_400_000).toISOString()]);
+        size = 25*1024*1024+1;
+        assert.deepEqual(await extractPending(1, { ...io, maxBytes: Infinity }), { ran: 0, errors: 1 });
+        assert.equal((await sql.query<any>("select error from extract_jobs where item_id='oversize'"))[0].error, 'response_too_large');
+        assert.equal(modelCalls, 6, "test IO cannot widen the public cap or reach a model with oversized bytes");
+      } finally {
+        globalThis.fetch = fixtureFetch;
+        if (previousKey === undefined) delete process.env.XAI_API_KEY;
+        else process.env.XAI_API_KEY = previousKey;
+      }
+    });
+
     await t.test(
       "expired completion and stale owner cannot change media or display URLs",
       async () => {
