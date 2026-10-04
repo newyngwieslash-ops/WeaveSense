@@ -36,6 +36,22 @@ test("gateway allowlist and media dependencies are independently validated", () 
   assert.equal(ready(summarizePreflight({ WECHAT_PRIMARY_ALLOWED_HOSTS: "host.docker.internal,rss.example.com" }), "wechat_primary_allowlist"), true);
 });
 
+test("MinIO accepts the deployed Telethon host:port shape without inferring connectivity", () => {
+  const credentials = { MINIO_ACCESS_KEY: "SYNTHETIC_ONLY", MINIO_SECRET_KEY: "SYNTHETIC_ONLY" };
+  const deployedEndpoint = readFileSync(new URL("../docker-compose.yml", import.meta.url), "utf8").match(/^\s+MINIO_ENDPOINT: (\S+)/m)?.[1];
+  assert.ok(deployedEndpoint === "minio:9000", "regression must cover the deployed Telethon endpoint shape");
+  for (const endpoint of [deployedEndpoint, "http://minio:9000", "https://minio:9000"]) {
+    const rows = summarizePreflight({ ...credentials, MINIO_ENDPOINT: endpoint });
+    assert.equal(ready(rows, "minio_configuration"), true);
+    assert.ok(rows.every((row) => !row.code.includes("connectivity")));
+    assert.ok(!JSON.stringify(rows).includes("SYNTHETIC_ONLY"));
+  }
+  for (const endpoint of ["", "minio:not-a-port", "minio:65536", "minio:0", "minio:9000/path", "secret@minio:9000", "minio:9000?key=hidden", "ftp://minio:9000", "http://secret@minio:9000"]) {
+    assert.equal(ready(summarizePreflight({ ...credentials, MINIO_ENDPOINT: endpoint }), "minio_configuration"), false);
+  }
+  assert.equal(ready(summarizePreflight({ MINIO_ENDPOINT: "minio:9000" }), "minio_configuration"), false);
+});
+
 test("worker probe distinguishes missing endpoint, connectivity failure and unauthorized session", async () => {
   let calls = 0;
   const fetchImpl = async (_url, options) => {

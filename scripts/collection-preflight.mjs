@@ -5,10 +5,11 @@ import { parseEgressCidrs, pinnedTransport, publicFetch, readCapped } from "../s
 import { isMainModule } from "./with-app-env.mjs";
 
 const present = (value) => Boolean(value?.trim());
-function endpoint(value, protocols = ["http:", "https:"]) {
+function endpoint(value, allowHostPort = false) {
   try {
-    const url = new URL(value);
-    return protocols.includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash;
+    // Telethon's MinIO SDK accepts a bare authority; worker health URLs still require HTTP(S).
+    const url = new URL(allowHostPort && /^[^\s/@?#\\]+:\d+$/.test(value ?? "") ? `http://${value}` : value);
+    return ["http:", "https:"].includes(url.protocol) && url.port !== "0" && !url.username && !url.password && !url.search && !url.hash;
   } catch { return false; }
 }
 
@@ -30,7 +31,7 @@ export function summarizePreflight(env) {
     { code: "wechat_primary_allowlist", ready: hosts.every((host) => /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/i.test(host)) },
     { code: "wechat_paid_credentials", ready: all("DAJIALA_KEY") },
     { code: "wechat_paid_cost_bounds", ready: positive("DAJIALA_LIST_COST_RMB") && positive("DAJIALA_DETAIL_COST_RMB") },
-    { code: "minio_configuration", ready: endpoint(env.MINIO_ENDPOINT) && Boolean((env.MINIO_ACCESS_KEY || env.MINIO_ROOT_USER)?.trim()) && Boolean((env.MINIO_SECRET_KEY || env.MINIO_ROOT_PASSWORD)?.trim()) },
+    { code: "minio_configuration", ready: endpoint(env.MINIO_ENDPOINT, true) && Boolean((env.MINIO_ACCESS_KEY || env.MINIO_ROOT_USER)?.trim()) && Boolean((env.MINIO_SECRET_KEY || env.MINIO_ROOT_PASSWORD)?.trim()) },
     { code: "xai_credentials", ready: all("XAI_API_KEY") },
     { code: "collection_egress_policy", ready: !present(env.LOOM_EGRESS_CIDRS) || parseEgressCidrs(env.LOOM_EGRESS_CIDRS).length === egressEntries.length },
   ];
