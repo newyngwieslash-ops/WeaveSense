@@ -163,6 +163,7 @@ export const MEDIA_TYPES = [
   "text",
   "image",
   "video",
+  "audio",
   "file",
   "link",
 ] as const;
@@ -174,6 +175,7 @@ export const MEDIA_TYPE_LABEL: Record<MediaType, string> = {
   text: "文本",
   image: "图片",
   video: "视频",
+  audio: "音频",
   file: "文件",
   link: "链接",
 };

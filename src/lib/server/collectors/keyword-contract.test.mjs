@@ -163,6 +163,21 @@ test("an invalid JSON payload is invalid_response, not a silent empty", async ()
   });
 });
 
+test("feed parse failures are invalid_response attempts, never empty or network errors", async () => {
+  await withKeyword(async (collectKeyword) => {
+    for (const body of ['<html>verify</html>', '<feed><entry></feed>', '<feed>' + '<entry/>'.repeat(1001) + '</feed>', '<feed><entry/></feed>', `<feed><entry><id>${"g".repeat(321)}</id><title>overlong</title></entry></feed>`]) {
+      const { transport } = routedTransport({
+        "news.google.com": () => ({ status: 200, body }),
+        "hnrss.org": () => ({ status: 200, body }),
+      });
+      const batch = await collectKeyword("offline", ["rss"], io(transport));
+      assert.equal(batch.items.length, 0);
+      assert.equal(batch.attempts.length, 3);
+      assert.ok(batch.attempts.every((attempt) => attempt.status === "error" && attempt.error_code === "invalid_response"), JSON.stringify(batch.attempts));
+    }
+  });
+});
+
 test("a bilibili provider-level rejection is an error, not an empty result", async () => {
   await withKeyword(async (collectKeyword) => {
     const { transport } = routedTransport({

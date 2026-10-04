@@ -56,6 +56,8 @@ export type CollectorBatch = {
   items: NormalizedItem[];
   meta: CollectorMeta;
   coverage?: CollectorCoverage;
+  /** Entries rejected by feed normalization; never counted as collected items. */
+  rejected_entries?: number;
 };
 
 /**

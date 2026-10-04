@@ -128,7 +128,7 @@ export async function extractItem(itemId: string): Promise<{
       object_key: "",
       public_url: u,
       content_type: "",
-      kind: item?.media_type === "image" ? "image" : item?.media_type === "video" ? "video" : "file",
+      kind: ["image", "video", "audio"].includes(item?.media_type) ? item.media_type : "file",
     }));
   }
 

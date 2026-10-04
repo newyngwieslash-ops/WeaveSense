@@ -378,8 +378,8 @@ test("keeps the mirrored canonical algorithm in parity", () => {
   }
 });
 
-test("normalizes at most 24 valid primary entries", async (t) => {
-  const entries = Array.from({ length: 26 }, (_, index) => `
+test("preserves 100 valid primary entries", async (t) => {
+  const entries = Array.from({ length: 100 }, (_, index) => `
     <entry><title>标题 ${index}</title><published>2026-08-28T08:00:00+08:00</published>
     <link rel="alternate" href="https://mp.weixin.qq.com/s?__biz=MzA1&amp;mid=${index + 1}&amp;idx=1&amp;sn=abc"/>
     <content><![CDATA[正文 ${index}]]></content><media:thumbnail url="https://mmbiz.qpic.cn/${index}.jpg"/></entry>`).join("");
@@ -394,11 +394,18 @@ test("normalizes at most 24 valid primary entries", async (t) => {
     account_id: "gh_example", name: "示例号",
     primary_feed_url: `http://127.0.0.1:${port}/feed.atom`,
   }, new Date("2026-08-28T09:00:00Z"), new Set(["127.0.0.1"]));
-  assert.equal(items.length, 24);
+  assert.equal(items.length, 100);
   assert.equal(items[0].provider, "primary");
   assert.equal(items[0].discovered_at, "2026-08-28T09:00:00.000Z");
   assert.equal(items[0].cover_url, "https://mmbiz.qpic.cn/0.jpg");
   assert.equal(items[0].body_complete, true);
+  const store = openStore(":memory:");
+  t.after(() => store.close());
+  store.upsertSource({ id: "wx-100", account_id: "gh_example", name: "示例号", priority: "normal",
+    sample_url: "https://mp.weixin.qq.com/s/example",
+    primary_feed_url: `http://127.0.0.1:${port}/feed.atom` }, "2026-08-28T09:00:00.000Z");
+  store.upsertGatewayItems("wx-100", items, "2026-08-28T09:00:00.000Z");
+  assert.equal(store.listGatewayItems("wx-100", "2026-08-28T00:00:00.000Z").length, 100);
 });
 
 test("primary marks trusted content complete and summaries incomplete", async (t) => {
@@ -417,6 +424,51 @@ test("primary marks trusted content complete and summaries incomplete", async (t
     { body_text: "完整正文", body_complete: true },
     { body_text: "摘要正文", body_complete: false },
   ]);
+});
+
+test("primary rejects over 1000 entries instead of returning a truncated success", async (t) => {
+  const original = globalThis.fetch;
+  t.after(() => { globalThis.fetch = original; });
+  globalThis.fetch = async () => new Response('<feed>' + '<entry/>'.repeat(1001) + '</feed>');
+  await assert.rejects(fetchPrimary({ account_id: "test", name: "test",
+    primary_feed_url: "https://feed.example/feed" }), /feed_entry_limit/);
+});
+
+test("primary rejects malformed roots and XML", async (t) => {
+  const original = globalThis.fetch;
+  t.after(() => { globalThis.fetch = original; });
+  for (const xml of ['<feed/><html/>', '<feed/><feed/>', '<rss/>', '<rss><channel/><channel/></rss>', '<feed><entry></feed>']) {
+    globalThis.fetch = async () => new Response(xml);
+    await assert.rejects(fetchPrimary({ account_id: "test", name: "test",
+      primary_feed_url: "https://feed.example/feed" }), /invalid primary feed/);
+  }
+});
+
+test("primary HTTP, redirect and size failures do not wait for stalled cancel", async (t) => {
+  const original = globalThis.fetch;
+  t.after(() => { globalThis.fetch = original; });
+  for (const init of [
+    { status: 503 },
+    { status: 302, headers: { location: 'https://untrusted.example/feed' } },
+    { headers: { 'content-length': String(9 * 1024 * 1024) } },
+    {},
+  ]) {
+    let cancelled = false;
+    globalThis.fetch = async () => new Response(new ReadableStream({
+      start(controller) { if (!Object.keys(init).length) controller.enqueue(new Uint8Array(9 * 1024 * 1024)); },
+      cancel() { cancelled = true; return new Promise(() => {}); },
+    }), init);
+    let timer;
+    const outcome = await Promise.race([
+      fetchPrimary({ account_id: 'test', name: 'test', primary_feed_url: 'https://feed.example/feed' })
+        .then(() => 'unexpected_success', (error) => error.message),
+      new Promise((resolve) => { timer = setTimeout(() => resolve('still_waiting'), 150); }),
+    ]);
+    clearTimeout(timer);
+    assert.notEqual(outcome, 'still_waiting');
+    assert.notEqual(outcome, 'unexpected_success');
+    assert.equal(cancelled, true);
+  }
 });
 
 test("rejects invalid primary article fields", async (t) => {

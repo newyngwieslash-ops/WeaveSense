@@ -80,10 +80,11 @@ function isoDate(raw) {
   return date.toISOString();
 }
 
-function normalizeEntry(raw, source, discoveredAt) {
+function normalizeEntry(raw, source, discoveredAt, feedUrl) {
   const title = bodyText(raw.title);
   if (!title) throw new Error("invalid primary entry: title");
-  const originalUrl = pickLink(raw.link) || textOf(raw.guid) || textOf(raw.id);
+  const link = pickLink(raw.link);
+  const originalUrl = link ? new URL(link, feedUrl).href : textOf(raw.guid) || textOf(raw.id);
   normalizeWechatUrl(originalUrl);
   const publishedAt = isoDate(textOf(raw.pubDate ?? raw.published ?? raw.updated ?? raw["dc:date"]));
   const completeBody = textOf(raw["content:encoded"] ?? raw.content);
@@ -123,8 +124,8 @@ async function fetchAllowed(rawUrl, allowedFeedHosts) {
       signal,
       redirect: "manual",
     });
-    if (!REDIRECT_STATUSES.has(response.status)) return response;
-    await response.body?.cancel();
+    if (!REDIRECT_STATUSES.has(response.status)) return { response, url: url.href };
+    void response.body?.cancel().catch(() => {});
     if (redirects === 5) throw new Error("primary feed has too many redirects");
     const location = response.headers.get("location");
     if (!location) throw new Error("primary feed redirect has no location");
@@ -136,7 +137,7 @@ async function fetchAllowed(rawUrl, allowedFeedHosts) {
 async function readLimited(response) {
   const declared = Number(response.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > MAX_PRIMARY_FEED_BYTES) {
-    await response.body?.cancel();
+    void response.body?.cancel().catch(() => {});
     throw new Error("primary feed body too large");
   }
   if (!response.body) return "";
@@ -148,7 +149,7 @@ async function readLimited(response) {
     if (done) break;
     size += value.byteLength;
     if (size > MAX_PRIMARY_FEED_BYTES) {
-      await reader.cancel();
+      void reader.cancel().catch(() => {});
       throw new Error("primary feed body too large");
     }
     chunks.push(value);
@@ -158,25 +159,31 @@ async function readLimited(response) {
 
 export async function fetchPrimary(source, now = new Date(), allowedFeedHosts) {
   const hosts = allowedFeedHosts ?? new Set([new URL(source.primary_feed_url).hostname]);
-  const response = await fetchAllowed(source.primary_feed_url, hosts);
+  const { response, url } = await fetchAllowed(source.primary_feed_url, hosts);
   if (!response.ok) {
-    await response.body?.cancel();
+    void response.body?.cancel().catch(() => {});
     throw new Error(`primary feed HTTP ${response.status}`);
   }
   const xml = await readLimited(response);
   if (XMLValidator.validate(xml) !== true) throw new Error("invalid primary feed: malformed XML");
   const doc = parser.parse(xml);
+  const roots = Object.keys(doc).filter((key) => !key.startsWith("?"));
+  if (roots.length !== 1 || Array.isArray(doc[roots[0]])) throw new Error("invalid primary feed: malformed XML");
   let entries;
-  if (Object.hasOwn(doc, "rss")) entries = arrayOf((doc.rss?.channel ?? doc.rss)?.item);
+  if (Object.hasOwn(doc, "rss")) {
+    if (!doc.rss || !Object.hasOwn(doc.rss, "channel") || Array.isArray(doc.rss.channel)) throw new Error("invalid primary feed: malformed XML");
+    entries = arrayOf(doc.rss.channel.item);
+  }
   else if (Object.hasOwn(doc, "feed")) entries = arrayOf(doc.feed?.entry);
   else if (Object.hasOwn(doc, "rdf:RDF")) entries = arrayOf(doc["rdf:RDF"]?.item);
   else throw new Error("invalid primary feed: unknown root");
+  if (entries.length > 1000) throw new Error("feed_entry_limit");
   const discoveredAt = now.toISOString();
   const items = [];
   const invalid = [];
-  for (const [index, entry] of entries.slice(0, 24).entries()) {
+  for (const [index, entry] of entries.entries()) {
     try {
-      items.push(normalizeEntry(entry, source, discoveredAt));
+      items.push(normalizeEntry(entry, source, discoveredAt, url));
     } catch (error) {
       invalid.push({ index, error: error instanceof Error ? error.message : "invalid primary entry" });
     }

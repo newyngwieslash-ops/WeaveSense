@@ -3,6 +3,32 @@ import path from "node:path";
 import test from "node:test";
 import { createServer } from "vite";
 
+test("feed collectors expose rejection counts and window-only coverage", async () => {
+  const vite = await createServer({ configFile: false, logLevel: "silent",
+    resolve: { alias: { "@": path.resolve("src") } }, server: { middlewareMode: true } });
+  try {
+    const { collectSource } = await vite.ssrLoadModule("/src/lib/server/collectors/index.ts");
+    const io = { resolver: { async lookup() { return [{ address: "1.1.1.1", family: 4 }]; } },
+      transport: async () => ({ status: 200, headers: {}, body: new Response('<rss><channel><item/><item><guid>1</guid><title>ok</title></item></channel></rss>').body }) };
+    for (const adapter of ["rss", "telegram_web", "youtube", "bilibili", "rsshub"]) {
+      const result = await collectSource({ id: "s", platform: "rss", name: "s", handle: "", url: "",
+        feed_url: "https://feed.example/feed", adapter }, io);
+      assert.equal(result.items.length, 1);
+      assert.equal(result.rejected_entries, 1);
+      assert.equal(result.coverage.complete, false);
+      assert.equal(result.coverage.window_only, true);
+    }
+    io.transport = async () => ({ status: 200, headers: {}, body: new Response(`<rss><channel><item><guid>${"g".repeat(321)}</guid><title>overlong</title></item><item><guid>supported</guid><title>ok</title></item></channel></rss>`).body });
+    const mixed = await collectSource({ id: "s", platform: "rss", name: "s", handle: "", url: "",
+      feed_url: "https://feed.example/feed", adapter: "rss" }, io);
+    assert.deepEqual(mixed.items.map((/** @type {{ external_id: string }} */ item) => item.external_id), ["supported"]);
+    assert.equal(mixed.rejected_entries, 1);
+    io.transport = async () => ({ status: 200, headers: {}, body: new Response('<html>verify</html>').body });
+    await assert.rejects(() => collectSource({ id: "s", platform: "rss", name: "s", handle: "", url: "",
+      feed_url: "https://feed.example/feed", adapter: "rss" }, io), { code: "feed_unknown_root" });
+  } finally { await vite.close(); }
+});
+
 /** @param {unknown} error */
 function httpFailure(error) {
   assert.ok(error instanceof Error);

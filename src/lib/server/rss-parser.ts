@@ -1,4 +1,4 @@
-import { XMLParser } from "fast-xml-parser";
+import { XMLParser, XMLValidator } from "fast-xml-parser";
 import type { MediaType, PlatformId } from "../platforms.ts";
 import { stripHtml } from "../format.ts";
 import type { NormalizedItem } from "./collectors/types.ts";
@@ -43,7 +43,20 @@ function pickLink(raw: unknown): string {
     };
   });
   const alternate = mapped.find((link) => link.rel === "alternate" && link.href);
-  return (alternate ?? mapped.find((link) => link.href) ?? { href: "" }).href;
+  return (alternate ?? mapped.find((link) => !link.rel && link.href) ?? { href: "" }).href;
+}
+
+function webUrl(raw: string, base?: string): string {
+  if (!raw) return "";
+  try {
+    const url = new URL(raw, base);
+    return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password ? url.href : "";
+  } catch { return ""; }
+}
+
+function enclosureOf(item: Record<string, unknown>): Record<string, unknown> | undefined {
+  return (asArray(item.enclosure)[0] ?? asArray(item.link).find((link) =>
+    link && typeof link === "object" && (link as Record<string, unknown>)["@_rel"] === "enclosure")) as Record<string, unknown> | undefined;
 }
 
 function pickThumb(item: Record<string, unknown>): string {
@@ -53,7 +66,7 @@ function pickThumb(item: Record<string, unknown>): string {
     const url = String(first["@_url"] ?? first["@_href"] ?? "");
     if (url) return url;
   }
-  const enclosure = asArray(item.enclosure)[0] as Record<string, unknown> | undefined;
+  const enclosure = enclosureOf(item);
   const type = String(enclosure?.["@_type"] ?? "");
   if (type.startsWith("image/") && enclosure?.["@_url"]) return String(enclosure["@_url"]);
   const group = item["media:group"] as Record<string, unknown> | undefined;
@@ -61,8 +74,9 @@ function pickThumb(item: Record<string, unknown>): string {
 }
 
 function guessMedia(item: Record<string, unknown>, url: string, thumb: string): MediaType {
-  const enclosure = asArray(item.enclosure)[0] as Record<string, unknown> | undefined;
+  const enclosure = enclosureOf(item);
   const type = String(enclosure?.["@_type"] ?? "");
+  if (type.startsWith("audio/")) return "audio";
   if (type.startsWith("video/") || /youtube|bilibili|youtu\.be|v\.qq|ixigua/i.test(url)) return "video";
   if (type.startsWith("image/") || (thumb && !item.description && !item.summary)) return "image";
   if (type && !type.startsWith("text/")) return "file";
@@ -70,8 +84,8 @@ function guessMedia(item: Record<string, unknown>, url: string, thumb: string): 
 }
 
 function enclosureUrl(item: Record<string, unknown>): string {
-  const enclosure = asArray(item.enclosure)[0] as Record<string, unknown> | undefined;
-  return String(enclosure?.["@_url"] ?? "");
+  const enclosure = enclosureOf(item);
+  return String(enclosure?.["@_url"] ?? enclosure?.["@_href"] ?? "");
 }
 
 function authorOf(item: Record<string, unknown>): string {
@@ -97,61 +111,84 @@ function loomExtra(item: Record<string, unknown>, platform: PlatformId): Record<
   return extra;
 }
 
-export function parseFeedXml(xml: string, sourceId: string, platform: PlatformId): NormalizedItem[] {
+export type FeedParseOptions = { feedUrl?: string; stats?: { rejected_entries: number } };
+
+export function parseFeedXml(xml: string, sourceId: string, platform: PlatformId, options: FeedParseOptions = {}): NormalizedItem[] {
+  if (options.stats) options.stats.rejected_entries = 0;
+  if (XMLValidator.validate(xml) !== true) throw new Error("feed_invalid_xml");
   const doc = parser.parse(xml) as Record<string, unknown>;
+  const roots = Object.keys(doc).filter((key) => !key.startsWith("?"));
+  if (roots.length !== 1 || Array.isArray(doc[roots[0]])) throw new Error("feed_invalid_xml");
   const rss = doc.rss as Record<string, unknown> | undefined;
   const atom = doc.feed as Record<string, unknown> | undefined;
   const rdf = doc["rdf:RDF"] as Record<string, unknown> | undefined;
   let items: Record<string, unknown>[] = [];
-  if (rss) {
-    const channel = (rss.channel ?? rss) as Record<string, unknown>;
+  if (Object.hasOwn(doc, "rss")) {
+    if (!rss || !Object.hasOwn(rss, "channel") || Array.isArray(rss.channel)) throw new Error("feed_invalid_xml");
+    const channel = rss.channel as Record<string, unknown>;
     items = asArray(channel.item) as Record<string, unknown>[];
-  } else if (atom) {
-    items = asArray(atom.entry) as Record<string, unknown>[];
-  } else if (rdf) {
-    items = asArray(rdf.item) as Record<string, unknown>[];
-  }
+  } else if (Object.hasOwn(doc, "feed")) {
+    items = asArray(atom?.entry) as Record<string, unknown>[];
+  } else if (Object.hasOwn(doc, "rdf:RDF")) {
+    items = asArray(rdf?.item) as Record<string, unknown>[];
+  } else throw new Error("feed_unknown_root");
+  if (items.length > 1000) throw new Error("feed_entry_limit");
 
-  return items.slice(0, 24).map((raw) => {
-    const url = pickLink(raw.link) || textOf(raw.guid) || textOf(raw.id);
-    const title = stripHtml(textOf(raw.title) || "未命名");
-    const rawBody = textOf(
-      raw["content:encoded"] ?? raw.content ?? raw.description ?? raw.summary ?? raw["media:description"],
-    );
-    // T11: the stored body is not truncated. The 8,000-char cut that used to be
-    // applied to non-WeChat feeds silently destroyed the tail of long articles at
-    // ingestion, before any model context budget ran — so no downstream fixture
-    // could ever see the missing text. The model layer keeps its own budget
-    // (agent-context); the storage layer keeps the material.
-    //
-    // The one remaining bound is a transport-level safety net: a body whose UTF-8
-    // payload exceeds MAX_BODY_BYTES is refused explicitly (marked `body_too_large`
-    // + `body_complete: false`) rather than silently trimmed, for every platform.
-    const tooLarge = Buffer.byteLength(rawBody, "utf8") > MAX_BODY_BYTES;
-    const body = tooLarge ? "" : stripHtml(rawBody);
-    const author = stripHtml(authorOf(raw));
-    const published = textOf(raw.pubDate ?? raw.published ?? raw.updated ?? raw["dc:date"] ?? "") || null;
-    const thumb = pickThumb(raw);
-    const media = enclosureUrl(raw);
-    const id = textOf(raw.guid ?? raw.id) || url || `${sourceId}:${title}:${published ?? ""}`;
-    const extra = loomExtra(raw, platform);
-    if (tooLarge) {
-      extra.body_error = "body_too_large";
-      extra.body_complete = false;
-    }
-    return {
-      external_id: id.slice(0, 320),
-      title,
-      body,
-      author,
-      url,
-      media_type: guessMedia(raw, url, thumb),
-      media_urls: [media, thumb].filter(Boolean),
-      thumbnail_url: thumb,
-      views: null,
-      likes: null,
-      published_at: published,
-      extra,
-    };
-  });
+  const result: NormalizedItem[] = [];
+  let rejected = 0;
+  for (const raw of items) {
+    try {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("feed_invalid_entry");
+      const rawLink = pickLink(raw.link);
+      const guid = raw.guid as Record<string, unknown> | undefined;
+      const url = webUrl(rawLink, options.feedUrl) ||
+        (guid?.["@_isPermaLink"] === "false" ? "" : webUrl(textOf(raw.guid))) || webUrl(textOf(raw.id));
+      const title = stripHtml(textOf(raw.title) || "未命名");
+      const rawBody = textOf(
+        raw["content:encoded"] ?? raw.content ?? raw.description ?? raw.summary ?? raw["media:description"],
+      );
+      // T11: the stored body is not truncated. The 8,000-char cut that used to be
+      // applied to non-WeChat feeds silently destroyed the tail of long articles at
+      // ingestion, before any model context budget ran — so no downstream fixture
+      // could ever see the missing text. The model layer keeps its own budget
+      // (agent-context); the storage layer keeps the material.
+      //
+      // The one remaining bound is a transport-level safety net: a body whose UTF-8
+      // payload exceeds MAX_BODY_BYTES is refused explicitly (marked `body_too_large`
+      // + `body_complete: false`) rather than silently trimmed, for every platform.
+      const tooLarge = Buffer.byteLength(rawBody, "utf8") > MAX_BODY_BYTES;
+      const body = tooLarge ? "" : stripHtml(rawBody);
+      const author = stripHtml(authorOf(raw));
+      const published = textOf(raw.pubDate ?? raw.published ?? raw.updated ?? raw["dc:date"] ?? "") || null;
+      if (published && Number.isNaN(Date.parse(published))) throw new Error("feed_invalid_entry");
+      const thumb = webUrl(pickThumb(raw), options.feedUrl);
+      const media = webUrl(enclosureUrl(raw), options.feedUrl);
+      if (!textOf(raw.guid ?? raw.id) && !url && !textOf(raw.title) && !rawBody && !media) throw new Error("feed_invalid_entry");
+      const id = textOf(raw.guid ?? raw.id) || rawLink || url || `${sourceId}:${title}:${published ?? ""}`;
+      // ponytail: IDs support at most 320 characters; accepting longer IDs requires a persisted-ID migration.
+      if (id.length > 320) throw new Error("feed_entry_id_limit");
+      const extra = loomExtra(raw, platform);
+      if (tooLarge) {
+        extra.body_error = "body_too_large";
+        extra.body_complete = false;
+      }
+      result.push({
+        external_id: id,
+        title,
+        body,
+        author,
+        url,
+        media_type: guessMedia(raw, url, thumb),
+        media_urls: [media, thumb].filter(Boolean),
+        thumbnail_url: thumb,
+        views: null,
+        likes: null,
+        published_at: published,
+        extra,
+      });
+    } catch { rejected += 1; }
+  }
+  if (options.stats) options.stats.rejected_entries = rejected;
+  if (!result.length && rejected) throw new Error("feed_no_usable_entries");
+  return result;
 }
