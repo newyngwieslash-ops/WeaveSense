@@ -44,6 +44,9 @@ test("secrets and runtime state are excluded from the source pack", () => {
     "backup/generation.loom-backup",
     "workers/telethon/loom.session-journal",
     "config/model.local.json.bak",
+    ".output/server/stale.mjs",
+    ".nitro/stale.json",
+    "dist/old-client.js",
   ]) {
     assert.equal(packExcluded(path), true, `should be excluded: ${path}`);
   }
@@ -75,7 +78,7 @@ test("the docker build context carries the same exclusion rules", () => {
 test("independent Telethon context only admits required runtime inputs", () => {
   const rules=readFileSync(join(root,'workers/telethon/.dockerignore'),'utf8').split(/\r?\n/).filter(s=>s&&!s.startsWith('#'));
   assert.deepEqual(rules,['*','!Dockerfile','!.dockerignore','!requirements.txt','!server.py','!login.py']);
-  for(const state of ['.superpowers','.venv','.agents','.codex','.comet','.cursor','.tanstack','**/*.loom-backup','**/*.session-*']) assert.ok(dockerignore.split(/\r?\n/).includes(state));
+  for(const state of ['.superpowers','.venv','.agents','.codex','.comet','.cursor','.tanstack','.output','.nitro','dist','**/*.loom-backup','**/*.session-*']) assert.ok(dockerignore.split(/\r?\n/).includes(state));
 });
 
 test("postgres and minio never ship default weak credentials", () => {
