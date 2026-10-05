@@ -1,0 +1,3 @@
+?   	loom.local/agent/cmd/agent	[no test files]
+?   	loom.local/agent/cmd/checkpoint-rebind	[no test files]
+ok  	loom.local/agent/internal/agent	7.819s

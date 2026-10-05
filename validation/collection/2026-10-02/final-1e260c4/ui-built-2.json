@@ -1,0 +1,36 @@
+{
+  "sourceSha": "1e260c4fe435d6b2cdf0d8d70c8b7e6f40bfe664",
+  "snapshot": "E:\\AI-JIANSHI-20260825\\WeaveSense\\.worktrees\\collection-ui-1e260c4",
+  "phase": "built",
+  "attempt": "2",
+  "startedAt": "2026-10-05T04:26:43.097Z",
+  "scope": "isolated PostgreSQL fixture; auto AI/extract/agents disabled; home bootstrap/tick may write fixture; sources/jobs presentation check readonly; browser external requests stubbed",
+  "checks": [
+    {
+      "name": "browser-smoke",
+      "args": [
+        "scripts/browser-smoke.mjs",
+        "http://127.0.0.1:18174",
+        "E:\\AI-JIANSHI-20260825\\WeaveSense\\.worktrees\\collection-ui-1e260c4\\screenshots\\final-built-2.png",
+        "--baseline",
+        "E:\\AI-JIANSHI-20260825\\WeaveSense\\.worktrees\\collection-ui-1e260c4\\screenshots\\final-dev-2.json"
+      ],
+      "exit": 0,
+      "error": null,
+      "elapsedMs": 3996,
+      "log": "C:\\Users\\yi'da'dui\\.codex\\worktrees\\collection-reliability\\WeaveSense\\.superpowers\\sdd\\final-checks-1e260c4\\browser-smoke-built-2.log"
+    },
+    {
+      "name": "source-jobs",
+      "args": [
+        "C:\\Users\\yi'da'dui\\.codex\\worktrees\\collection-reliability\\WeaveSense\\.superpowers\\sdd\\task-16-fix-ui-qa.mjs"
+      ],
+      "exit": 0,
+      "error": null,
+      "elapsedMs": 5756,
+      "log": "C:\\Users\\yi'da'dui\\.codex\\worktrees\\collection-reliability\\WeaveSense\\.superpowers\\sdd\\final-checks-1e260c4\\source-jobs-built-2.log"
+    }
+  ],
+  "ok": true,
+  "finishedAt": "2026-10-05T04:26:52.852Z"
+}

@@ -1,0 +1,28 @@
+✖ history body failures persist long received cooldowns and block manual and scheduled admission (2459.1738ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2841.8198
+
+✖ failing tests:
+
+test at src\lib\server\collection-retry.integration.test.ts:246:1
+✖ history body failures persist long received cooldowns and block manual and scheduled admission (2459.1738ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /Telethon HTTP/. Input:
+  
+  'network_error'
+  
+      at TestContext.<anonymous> (file:///C:/Users/yi'da'dui/.codex/worktrees/collection-reliability/WeaveSense/src/lib/server/collection-retry.integration.test.ts:273:14)
+      at async Test.run (node:internal/test_runner/test:1313:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:385:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'network_error',
+    expected: /Telethon HTTP/,
+    operator: 'match',
+    diff: 'simple'
+  }

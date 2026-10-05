@@ -1,0 +1,47 @@
+✔ keyword outcome metadata stays with its fenced attempt through real interleaving (3104.4852ms)
+✔ real scheduler manual and keyword entrances preserve partial Retry-After and due cadence (1981.9387ms)
+✔ missing Bili mid and RSSHub feed persist permanent configuration failures without cursor changes (1756.7429ms)
+✖ history body failures persist long received cooldowns and block manual and scheduled admission (1754.542ms)
+✔ authorized Telethon failure does not fall back to t.me/s (534.2546ms)
+✔ authorized FloodWait pause does not fall back to t.me/s (204.1993ms)
+✔ unauthorized node uses t.me/s and records that channel (171.9668ms)
+✔ Telethon history is capped, shape validated, cancellable, and keeps safe HTTP metadata (210.0999ms)
+✔ Telethon health rejects truthy authorization and oversized JSON (404.9331ms)
+✔ worker audio history preserves the audio kind and attachment (173.3254ms)
+✔ Telegram attachment metadata is validated and canonicalized without media IO (164.9549ms)
+✔ serialized media leaves history a host permit and cancelled waiters cannot release predecessors (176.1928ms)
+✔ Telethon health and history never wait for stalled cancellation cleanup (178.1957ms)
+✔ unavailable worker never falls back to t.me/s (155.8455ms)
+✔ explicit connecting and unavailable states keep retry metadata and never use the public adapter (302.7797ms)
+✔ worker health preserves all explicit states, rejects malformed states, and retains HTTP retry timing (1290.0639ms)
+✔ explicit backfill never substitutes a finite public or RSS window (131.9769ms)
+✔ history received failures retain cooldown through reset, cap and deadline bodies (229.394ms)
+ℹ tests 18
+ℹ suites 0
+ℹ pass 17
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 9055.0465
+
+✖ failing tests:
+
+test at src\lib\server\collection-retry.integration.test.ts:246:1
+✖ history body failures persist long received cooldowns and block manual and scheduled admission (1754.542ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'rate_limited'
+  - 'http_error'
+  
+      at TestContext.<anonymous> (file:///C:/Users/yi'da'dui/.codex/worktrees/collection-reliability/WeaveSense/src/lib/server/collection-retry.integration.test.ts:275:14)
+      at async Test.run (node:internal/test_runner/test:1313:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:897:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'rate_limited',
+    expected: 'http_error',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

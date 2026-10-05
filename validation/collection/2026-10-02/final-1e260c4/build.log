@@ -1,0 +1,166 @@
+
+> build
+> node scripts/with-app-env.mjs vite build && npm run db:migrate && node scripts/copy-pglite-assets.mjs
+
+[90m[[90mnitro:vercel[90m][39m [36mi[39m Using [36mnodejs24.x[39m runtime.
+[90m[[90mnitro:vercel[90m][39m [36mi[39m Using [36mweb[39m entry format.
+[36mvite v8.2.2 [32mbuilding client environment for production...[36m[39m
+transforming...
+✓ 1964 modules transformed.
+rendering chunks...
+computing gzip size...
+.vercel/output/static/assets/styles-B8JU3M7x.css            83.45 kB │ gzip:  15.25 kB
+.vercel/output/static/assets/refresh-cw-DUjW9hfr.js          0.32 kB │ gzip:   0.22 kB
+.vercel/output/static/assets/platform-chip-DSpUDQ2M.js       0.42 kB │ gzip:   0.31 kB
+.vercel/output/static/assets/agent-request-DKvbOBNW.js       0.59 kB │ gzip:   0.44 kB
+.vercel/output/static/assets/format-CP7WHQpR.js              0.79 kB │ gzip:   0.46 kB
+.vercel/output/static/assets/keyword-ByMp4RCD.js             0.82 kB │ gzip:   0.53 kB
+.vercel/output/static/assets/input-BQRt8nxP.js               0.94 kB │ gzip:   0.35 kB
+.vercel/output/static/assets/button-BQKG81Cn.js              1.58 kB │ gzip:   0.84 kB
+.vercel/output/static/assets/useMutation-BNBCGn0y.js         2.34 kB │ gzip:   0.97 kB
+.vercel/output/static/assets/inbox-BRWmFsc2.js               4.17 kB │ gzip:   1.81 kB
+.vercel/output/static/assets/pipeline-C2P064ue.js            4.40 kB │ gzip:   1.92 kB
+.vercel/output/static/assets/jobs-Bk7lexSf.js                4.57 kB │ gzip:   2.07 kB
+.vercel/output/static/assets/platforms-B4iOkVkw.js           5.53 kB │ gzip:   2.51 kB
+.vercel/output/static/assets/model-settings-GDGII1Za.js      6.79 kB │ gzip:   2.69 kB
+.vercel/output/static/assets/inbox._itemId-DRniTdkh.js       7.45 kB │ gzip:   2.82 kB
+.vercel/output/static/assets/knowledge-giLtPLtV.js           7.65 kB │ gzip:   3.06 kB
+.vercel/output/static/assets/fns-RbUVCWED.js                 7.69 kB │ gzip:   3.52 kB
+.vercel/output/static/assets/useQuery-DYkj7cRr.js            8.12 kB │ gzip:   2.98 kB
+.vercel/output/static/assets/keywords-Cbjvh37p.js            8.31 kB │ gzip:   3.47 kB
+.vercel/output/static/assets/nodes-BgGajGti.js               8.65 kB │ gzip:   3.49 kB
+.vercel/output/static/assets/routes-rn-pvg8X.js              9.67 kB │ gzip:   3.42 kB
+.vercel/output/static/assets/prd-DsFmT72i.js                11.67 kB │ gzip:   4.90 kB
+.vercel/output/static/assets/guide-RjIiAYPb.js              20.20 kB │ gzip:   7.12 kB
+.vercel/output/static/assets/createLucideIcon-CxH52fSw.js   31.52 kB │ gzip:  11.82 kB
+.vercel/output/static/assets/createClientRpc-C3RXqOwO.js    34.44 kB │ gzip:  10.63 kB
+.vercel/output/static/assets/badge-CSeT6h_V.js              35.50 kB │ gzip:  11.67 kB
+.vercel/output/static/assets/sources-DRjkaMRI.js            56.51 kB │ gzip:  19.46 kB
+.vercel/output/static/assets/index-0LrdU92P.js             382.13 kB │ gzip: 116.41 kB
+
+[32m✓ built in 16.36s[39m
+[33m[33m[PLUGIN_TIMINGS] [0mYour build spent 98% of 16.3s inside plugin hooks (16.1s).
+Measured inside the callback, so queue time is excluded and time the callback itself awaited is not:
+  - @tailwindcss/vite:generate:build transform (83%, 13.6s, 1 call)
+Those rows are 83% of the build; the rest of the 98% is below.
+Not measurable — 2 hooks whose calls overlap, so elapsed time covers work other calls were doing. Profile with `node --cpu-prof`:
+  - tanstack-start-core:import-protection resolveId (5799 calls)
+  - tanstack-start-core::server-fn:client transform (15 calls)
+See https://rolldown.rs/reference/InputOptions.checks#plugintimings for more details.
+[39m
+[36mvite v8.2.2 [32mbuilding ssr environment for production...[36m[39m
+transforming...
+✓ 183 modules transformed.
+rendering chunks...
+computing gzip size...
+node_modules/.nitro/vite/services/ssr/assets/styles-B8JU3M7x.css                      83.45 kB │ gzip: 15.25 kB
+node_modules/.nitro/vite/services/ssr/assets/start-5Z2QO8AU.js                         0.14 kB │ gzip:  0.13 kB
+node_modules/.nitro/vite/services/ssr/assets/empty-plugin-adapters-D9UWiqvJ.js         0.22 kB │ gzip:  0.16 kB
+node_modules/.nitro/vite/services/ssr/assets/platform-chip-C6sfsAss.js                 0.61 kB │ gzip:  0.40 kB
+node_modules/.nitro/vite/services/ssr/assets/agent-request-Bscn8ark.js                 0.94 kB │ gzip:  0.57 kB
+node_modules/.nitro/vite/services/ssr/assets/input-EGcXCw2K.js                         1.18 kB │ gzip:  0.42 kB
+node_modules/.nitro/vite/services/ssr/assets/button-Brj73RLh.js                        1.28 kB │ gzip:  0.67 kB
+node_modules/.nitro/vite/services/ssr/assets/platforms-DoZn5Nc-.js                     5.36 kB │ gzip:  2.07 kB
+node_modules/.nitro/vite/services/ssr/assets/_tanstack-start-manifest_v-CM28qVRE.js    5.47 kB │ gzip:  0.97 kB
+node_modules/.nitro/vite/services/ssr/assets/pipeline-CB0whivK.js                      6.39 kB │ gzip:  2.22 kB
+node_modules/.nitro/vite/services/ssr/assets/inbox-BTlQpbnb.js                         6.83 kB │ gzip:  2.33 kB
+node_modules/.nitro/vite/services/ssr/assets/jobs-aA078bgq.js                          7.24 kB │ gzip:  2.53 kB
+node_modules/.nitro/vite/services/ssr/assets/badge-BPzx6mIR.js                         7.42 kB │ gzip:  2.28 kB
+node_modules/.nitro/vite/services/ssr/assets/fns-DloDtQmA.js                           7.88 kB │ gzip:  2.77 kB
+node_modules/.nitro/vite/services/ssr/assets/inbox._itemId-D58dqosD.js                10.69 kB │ gzip:  3.07 kB
+node_modules/.nitro/vite/services/ssr/assets/model-settings-B_fa00Rl.js               10.91 kB │ gzip:  3.30 kB
+node_modules/.nitro/vite/services/ssr/assets/nodes-BrVKrMsb.js                        11.69 kB │ gzip:  3.96 kB
+node_modules/.nitro/vite/services/ssr/assets/knowledge-ChmUwRd5.js                    11.92 kB │ gzip:  3.71 kB
+node_modules/.nitro/vite/services/ssr/assets/keywords-4lQARkbW.js                     12.38 kB │ gzip:  4.12 kB
+node_modules/.nitro/vite/services/ssr/assets/routes-BztQ2LML.js                       14.18 kB │ gzip:  4.07 kB
+node_modules/.nitro/vite/services/ssr/assets/prd-DPGHuidc.js                          15.70 kB │ gzip:  5.36 kB
+node_modules/.nitro/vite/services/ssr/assets/guide-BYsw6px9.js                        27.51 kB │ gzip:  7.70 kB
+node_modules/.nitro/vite/services/ssr/assets/sources-BmalhFyj.js                      33.89 kB │ gzip:  8.69 kB
+node_modules/.nitro/vite/services/ssr/assets/router-BS7AT47m.js                       43.24 kB │ gzip: 12.39 kB
+node_modules/.nitro/vite/services/ssr/assets/fns-CaZ_XvSu.js                          50.57 kB │ gzip: 13.31 kB
+node_modules/.nitro/vite/services/ssr/index.js                                        74.63 kB │ gzip: 19.49 kB
+node_modules/.nitro/vite/services/ssr/assets/scheduler-Pnd4AkbC.js                   353.21 kB │ gzip: 99.64 kB
+
+[32m✓ built in 12.14s[39m
+[33m[33m[PLUGIN_TIMINGS] [0mYour build spent 99% of 12.1s inside plugin hooks (12.0s).
+Measured inside the callback, so queue time is excluded and time the callback itself awaited is not:
+  - @tailwindcss/vite:generate:build transform (90%, 11.0s, 1 call)
+Those rows are 90% of the build; the rest of the 99% is below.
+Not measurable — 3 hooks whose calls overlap, so elapsed time covers work other calls were doing. Profile with `node --cpu-prof`:
+  - tanstack-start-core:import-protection resolveId (556 calls)
+  - vite:asset load (26 calls)
+  - tanstack-start-core::server-fn:ssr transform (15 calls)
+See https://rolldown.rs/reference/InputOptions.checks#plugintimings for more details.
+[39m
+
+[90m[[90mnitro[90m][39m [35mo[39m Building [[35mNitro[39m] [2m(preset: [36mvercel[39m, compatibility: [36m2026-10-05[39m)[22m
+[90m[[90mnitro[90m][39m [32m√[39m Generated public [36m.vercel/output/static[39m
+[36mvite v8.2.2 [32mbuilding nitro environment for production...[36m[39m
+transforming...
+✓ 2064 modules transformed.
+[36mi[39m Tracing dependencies:
+- [36mtslib[39m (2.8.1)
+[32m√[39m Traced 1 dependencies (4 files) in 63ms.
+[36mi[39m Ensure your production environment matches the builder OS and architecture ([36mwin32-x64[39m) to avoid native module issues.
+rendering chunks...
+computing gzip size...
+.vercel/output/functions/__server.func/_ssr/start-5Z2QO8AU.mjs                         0.14 kB │ gzip:   0.13 kB
+.vercel/output/functions/__server.func/_ssr/empty-plugin-adapters-D9UWiqvJ.mjs         0.23 kB │ gzip:   0.16 kB
+.vercel/output/functions/__server.func/_ssr/platform-chip-C6sfsAss.mjs                 0.75 kB │ gzip:   0.46 kB
+.vercel/output/functions/__server.func/_chunks/ssr-renderer.mjs                        0.96 kB │ gzip:   0.49 kB
+.vercel/output/functions/__server.func/_ssr/agent-request-Bscn8ark.mjs                 0.99 kB │ gzip:   0.61 kB
+.vercel/output/functions/__server.func/_ssr/input-EGcXCw2K.mjs                         1.42 kB │ gzip:   0.48 kB
+.vercel/output/functions/__server.func/_ssr/button-Brj73RLh.mjs                        1.49 kB │ gzip:   0.73 kB
+.vercel/output/functions/__server.func/_libs/radix-ui__primitive.mjs                   1.83 kB │ gzip:   0.72 kB
+.vercel/output/functions/__server.func/_runtime.mjs                                    1.92 kB │ gzip:   0.87 kB
+.vercel/output/functions/__server.func/_libs/class-variance-authority+clsx.mjs         3.17 kB │ gzip:   1.24 kB
+.vercel/output/functions/__server.func/_libs/anynum.mjs                                3.85 kB │ gzip:   1.69 kB
+.vercel/output/functions/__server.func/_tanstack-start-manifest_v-CM28qVRE.mjs         5.53 kB │ gzip:   1.01 kB
+.vercel/output/functions/__server.func/_libs/radix-ui__react-context+react.mjs         5.74 kB │ gzip:   1.67 kB
+.vercel/output/functions/__server.func/_libs/tanstack__react-query.mjs                 6.64 kB │ gzip:   1.77 kB
+.vercel/output/functions/__server.func/_ssr/pipeline-CB0whivK.mjs                      7.53 kB │ gzip:   2.31 kB
+.vercel/output/functions/__server.func/_ssr/fns-DloDtQmA.mjs                           7.82 kB │ gzip:   2.76 kB
+.vercel/output/functions/__server.func/_ssr/inbox-BTlQpbnb.mjs                         7.85 kB │ gzip:   2.48 kB
+.vercel/output/functions/__server.func/_ssr/jobs-aA078bgq.mjs                          8.02 kB │ gzip:   2.61 kB
+.vercel/output/functions/__server.func/_ssr/badge-BPzx6mIR.mjs                         8.43 kB │ gzip:   2.39 kB
+.vercel/output/functions/__server.func/_libs/h3-v2+rou3.mjs                           10.17 kB │ gzip:   3.18 kB
+.vercel/output/functions/__server.func/_libs/tanstack__history.mjs                    12.05 kB │ gzip:   3.46 kB
+.vercel/output/functions/__server.func/_ssr/inbox._itemId-D58dqosD.mjs                12.54 kB │ gzip:   3.24 kB
+.vercel/output/functions/__server.func/_ssr/model-settings-B_fa00Rl.mjs               12.61 kB │ gzip:   3.47 kB
+.vercel/output/functions/__server.func/_ssr/nodes-BrVKrMsb.mjs                        12.98 kB │ gzip:   4.06 kB
+.vercel/output/functions/__server.func/_ssr/knowledge-ChmUwRd5.mjs                    13.60 kB │ gzip:   3.89 kB
+.vercel/output/functions/__server.func/_ssr/keywords-4lQARkbW.mjs                     14.19 kB │ gzip:   4.30 kB
+.vercel/output/functions/__server.func/_ssr/routes-BztQ2LML.mjs                       16.47 kB │ gzip:   4.25 kB
+.vercel/output/functions/__server.func/_libs/lucide-react.mjs                         16.52 kB │ gzip:   3.83 kB
+.vercel/output/functions/__server.func/_libs/@radix-ui/react-compose-refs+[...].mjs   16.79 kB │ gzip:   4.66 kB
+.vercel/output/functions/__server.func/_ssr/prd-DPGHuidc.mjs                          17.78 kB │ gzip:   5.49 kB
+.vercel/output/functions/__server.func/_libs/nodable__entities.mjs                    19.14 kB │ gzip:   6.39 kB
+.vercel/output/functions/__server.func/_libs/h3+rou3+srvx.mjs                         22.57 kB │ gzip:   6.12 kB
+.vercel/output/functions/__server.func/_ssr/guide-BYsw6px9.mjs                        31.64 kB │ gzip:   7.83 kB
+.vercel/output/functions/__server.func/index.mjs                                      32.11 kB │ gzip:  10.06 kB
+.vercel/output/functions/__server.func/_ssr/sources-BmalhFyj.mjs                      37.79 kB │ gzip:   8.88 kB
+.vercel/output/functions/__server.func/_ssr/router-BS7AT47m.mjs                       42.76 kB │ gzip:  12.36 kB
+.vercel/output/functions/__server.func/_ssr/fns-CaZ_XvSu.mjs                          50.36 kB │ gzip:  13.27 kB
+.vercel/output/functions/__server.func/_libs/sonner.mjs                               53.69 kB │ gzip:  12.12 kB
+.vercel/output/functions/__server.func/_libs/tanstack__query-core.mjs                 67.59 kB │ gzip:  14.37 kB
+.vercel/output/functions/__server.func/_ssr/ssr.mjs                                   72.78 kB │ gzip:  19.46 kB
+.vercel/output/functions/__server.func/_libs/@radix-ui/react-dialog+[...].mjs         84.62 kB │ gzip:  19.92 kB
+.vercel/output/functions/__server.func/_libs/tailwind-merge.mjs                       88.13 kB │ gzip:  15.66 kB
+.vercel/output/functions/__server.func/_libs/fast-xml-parser+[...].mjs               114.77 kB │ gzip:  29.93 kB
+.vercel/output/functions/__server.func/_libs/@tanstack/router-core+[...].mjs         122.94 kB │ gzip:  25.89 kB
+.vercel/output/functions/__server.func/_libs/zod.mjs                                 134.10 kB │ gzip:  26.04 kB
+.vercel/output/functions/__server.func/_libs/pg.mjs                                  148.63 kB │ gzip:  34.39 kB
+.vercel/output/functions/__server.func/_ssr/scheduler-Pnd4AkbC.mjs                   357.01 kB │ gzip: 102.23 kB
+.vercel/output/functions/__server.func/_libs/@tanstack/react-router+[...].mjs        654.17 kB │ gzip: 137.29 kB
+.vercel/output/functions/__server.func/_libs/electric-sql__pglite.mjs                752.04 kB │ gzip: 153.30 kB
+
+[32m✓ built in 676ms[39m
+[36mi[39m Generated [36m.vercel/output/nitro.json[39m
+
+[90m[[90mnitro[90m][39m [32m√[39m You can preview this build using [36mnpx vite preview[39m
+[90m[[90mnitro[90m][39m [32m√[39m You can deploy this build using [36mnpx nitro deploy --prebuilt[39m
+
+> db:migrate
+> node scripts/migrate.mjs
+
+[migrate] DATABASE_URL not set — skipping (the PGLite fallback migrates itself).

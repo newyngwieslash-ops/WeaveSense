@@ -1,0 +1,35 @@
+{
+  "productionTouched": false,
+  "portsClosed": true,
+  "sourceSha": "1e260c4fe435d6b2cdf0d8d70c8b7e6f40bfe664",
+  "reservedFixturePostgres": "retained",
+  "owned": [
+    {
+      "mode": "dev",
+      "pid": 38252,
+      "port": 18173,
+      "command": "node F:/nodejs/node_modules/npm/bin/npm-cli.js run dev -- --host 127.0.0.1 --port 18173 --strictPort",
+      "createdUtc": "2026-10-05T04:22:31.857008Z",
+      "sourceReceipt": "E:\\AI-JIANSHI-20260825\\WeaveSense\\.worktrees\\collection-ui-1e260c4\\.superpowers\\sdd\\ui-dev-runtime.json",
+      "removed": true
+    },
+    {
+      "mode": "preview",
+      "pid": 39304,
+      "port": 18174,
+      "command": "node F:/nodejs/node_modules/npm/bin/npm-cli.js run preview -- --host 127.0.0.1 --port 18174 --strictPort",
+      "createdUtc": "2026-10-05T04:23:21.562391Z",
+      "sourceReceipt": "E:\\AI-JIANSHI-20260825\\WeaveSense\\.worktrees\\collection-ui-1e260c4\\.superpowers\\sdd\\ui-preview-runtime.json",
+      "removed": true
+    },
+    {
+      "mode": "gateway",
+      "pid": 37752,
+      "port": 18175,
+      "command": "F:\\nodejs\\node.exe C:\\Users\\yi'da'dui\\.codex\\worktrees\\collection-reliability\\WeaveSense\\.superpowers\\sdd\\task-13-ui-gateway.mjs",
+      "createdUtc": "2026-10-05T04:22:31.630182Z",
+      "sourceReceipt": ".superpowers/sdd/final-ui-gateway-runtime.json",
+      "removed": true
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+
+> dev
+> node scripts/with-app-env.mjs vite dev --host 0.0.0.0 --port 8080 --host 127.0.0.1 --port 18173 --strictPort
+
+
+  [32m[1mVITE[22m v8.2.2[39m  [2mready in [0m[1m2632[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://127.0.0.1:[1m18173[22m/[39m
+[2m12:23:22[22m [36m[1m[vite][22m[39m [34m[2m(ssr)[22m[39m connected.
+[2m12:23:43[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mdependencies optimized: [33m@tanstack/router-core, @tanstack/router-core/isServer, @tanstack/router-core/ssr/client, seroval[32m[39m
+[2m12:23:43[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32moptimized dependencies changed. reloading[39m
+Error: aborted
+    at abortIncoming (node:_http_server:855:17)
+    ... 2 lines matching cause stack trace ...
+    at TCP.<anonymous> (node:net:350:12) {
+  cause: Error: aborted
+      at abortIncoming (node:_http_server:855:17)
+      at socketOnClose (node:_http_server:848:3)
+      at Socket.emit (node:events:521:24)
+      at TCP.<anonymous> (node:net:350:12) {
+    code: 'ECONNRESET'
+  },
+  status: 500,
+  statusText: undefined,
+  headers: undefined,
+  data: undefined,
+  body: undefined,
+  unhandled: true
+}
+Error: aborted
+    at abortIncoming (node:_http_server:855:17)
+    ... 2 lines matching cause stack trace ...
+    at TCP.<anonymous> (node:net:350:12) {
+  cause: Error: aborted
+      at abortIncoming (node:_http_server:855:17)
+      at socketOnClose (node:_http_server:848:3)
+      at Socket.emit (node:events:521:24)
+      at TCP.<anonymous> (node:net:350:12) {
+    code: 'ECONNRESET'
+  },
+  status: 500,
+  statusText: undefined,
+  headers: undefined,
+  data: undefined,
+  body: undefined,
+  unhandled: true
+}

@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
+import {readFileSync,mkdirSync,openSync,closeSync,writeFileSync,existsSync} from 'node:fs';
+import path from 'node:path';
+import {offlineEnv} from '../../scripts/readiness-offline.mjs';
+const [sha,phase,attempt='1']=process.argv.slice(2);
+assert.match(sha,/^[a-f0-9]{40}$/);assert.ok(['dev','built'].includes(phase));assert.match(attempt,/^[1-9][0-9]*$/);
+const root=process.cwd();const snapshot=path.resolve('E:/AI-JIANSHI-20260825/WeaveSense/.worktrees',`collection-ui-${sha.slice(0,7)}`);
+assert.equal(readFileSync(path.join(snapshot,'.superpowers/sdd/source-sha.txt'),'utf8').trim(),sha);
+const out=path.join(root,'.superpowers/sdd',`final-checks-${sha.slice(0,7)}`);mkdirSync(out,{recursive:true});mkdirSync(path.join(snapshot,'screenshots'),{recursive:true});
+const base=`http://127.0.0.1:${phase==='dev'?18173:18174}`;
+const report={sourceSha:sha,snapshot,phase,attempt,startedAt:new Date().toISOString(),scope:'isolated PostgreSQL fixture; auto AI/extract/agents disabled; home bootstrap/tick may write fixture; sources/jobs presentation check readonly; browser external requests stubbed',checks:[],ok:false};
+function check(name,args,overrides={}){
+ const log=path.join(out,`${name}-${phase}-${attempt}.log`);const fd=openSync(log,'wx');const started=Date.now();let r;
+ try{r=spawnSync(process.execPath,args,{cwd:snapshot,env:offlineEnv(process.env,overrides),stdio:['ignore',fd,fd],windowsHide:true,timeout:240000});}finally{closeSync(fd);}
+ const row={name,args,exit:r.status,error:r.error?.code??null,elapsedMs:Date.now()-started,log};report.checks.push(row);console.log(JSON.stringify(row));assert.equal(r.status,0,`${name} failed: ${log}`);
+}
+try{
+ const png=path.join(snapshot,'screenshots',`final-${phase}-${attempt}.png`);
+ const baseline=path.join(snapshot,'screenshots','final-dev-'+attempt+'.json');
+ check('browser-smoke',['scripts/browser-smoke.mjs',base,png,...(phase==='built'?['--baseline',baseline]:[])],{AGENT_OFFLINE_SMOKE:'true',BROWSER_SMOKE_TIMEOUT_MS:'120000'});
+ if(!existsSync(path.join(snapshot,`screenshots/t16-fix-${phase}-verdict.json`)))check('source-jobs',[path.join(root,'.superpowers/sdd/task-16-fix-ui-qa.mjs')],{T16_UI_URL:base,T16_UI_SHA:sha,T16_UI_PHASE:phase});
+ if(phase==='built'){const verdict=JSON.parse(readFileSync(png.replace(/\.png$/,'.json'),'utf8'));assert.equal(verdict.divergesFromBaseline,false,'built render differs from dev baseline');} report.ok=true;
+}finally{report.finishedAt=new Date().toISOString();writeFileSync(path.join(out,`ui-${phase}-${attempt}.json`),JSON.stringify(report,null,2));}
+
+
+

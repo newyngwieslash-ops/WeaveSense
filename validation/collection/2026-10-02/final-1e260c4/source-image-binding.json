@@ -1,0 +1,235 @@
+{
+  "sourceSha": "1e260c4fe435d6b2cdf0d8d70c8b7e6f40bfe664",
+  "verifiedAt": "2026-10-05T04:30:41.964Z",
+  "scope": "parent actual raw-Git/snapshot/image-ID/cipher checks, isolated fixtures only",
+  "sourceFiles": [
+    {
+      "path": ".dockerignore",
+      "gitBlobOid": "fab207469b0286b7c491a989146e9aac0cb4efda",
+      "gitBytes": 746,
+      "gitSha256": "80a142c1ccb476bb45050d32155ff1d7a178f500dc4e2d82b0458a5a55345343",
+      "snapshotBytes": 799,
+      "snapshotSha256": "59b4fb7e24429764d5d1d87a8c29be23ec109ec431158208286ae16f4839e272"
+    },
+    {
+      "path": "Dockerfile",
+      "gitBlobOid": "3aaa27b83ef2f0d6467cf8fc1719af251e59898b",
+      "gitBytes": 707,
+      "gitSha256": "b659a34c55ddc1187e7864a28c1e165aef6c88c40234e530a8749a571f336b6f",
+      "snapshotBytes": 722,
+      "snapshotSha256": "09b1e091dd50503515d62a636f813d8da1ff460c4f0f2175dbe9116c0f63b011"
+    },
+    {
+      "path": "docker-compose.yml",
+      "gitBlobOid": "34ea0939191c9bcb009f02eb324dc3d43378163c",
+      "gitBytes": 12780,
+      "gitSha256": "c5975e2d0bc5d3ef55bb76539c8b51aa9c69b42ed6c63687aa27bd2ba63597c3",
+      "snapshotBytes": 13079,
+      "snapshotSha256": "94b94c833e0e6af53c7f342d0b90c79f1c8365c64d02d57ce897af9937be13f8"
+    },
+    {
+      "path": "package.json",
+      "gitBlobOid": "1984ec6bbab7f7a710d86e845ba19d863262860c",
+      "gitBytes": 7483,
+      "gitSha256": "d7e0297a8d71cde098bf826bd06305221c51234a995e54ecd2d93325aa0bdc75",
+      "snapshotBytes": 7596,
+      "snapshotSha256": "e539e4d989ff19c6916a453a1b3b7eca041af7c0d5cb046fef767b51f67499b1"
+    },
+    {
+      "path": "package-lock.json",
+      "gitBlobOid": "00c7ff2df4a5c65869a7730390d10a726850f6c2",
+      "gitBytes": 270072,
+      "gitSha256": "05b31509cccb7ecb7993ba750d495c84e7c2c95846de36a95de810f9e050ad4c",
+      "snapshotBytes": 277685,
+      "snapshotSha256": "adddd028c346b3b43aafb3a0de809f0a917fee05d58be3563efacaf2e95a756b"
+    },
+    {
+      "path": "workers/telethon/Dockerfile",
+      "gitBlobOid": "8a15074ae3accc49d3a2b7f4c000fccc1bc8b6a4",
+      "gitBytes": 393,
+      "gitSha256": "39ce72957b3a0d9a476ee2b771203f0a6f8e58126910aba0dcd86e05b5944eef",
+      "snapshotBytes": 404,
+      "snapshotSha256": "a432f4e95152b402da3972f6305ccbf555f268de40fd32f015fa3dabca913ef4"
+    },
+    {
+      "path": "workers/telethon/.dockerignore",
+      "gitBlobOid": "42be4da1c0fd39e492a5a6a12add3e1519a1ef41",
+      "gitBytes": 149,
+      "gitSha256": "b43663890dce10b52ffe687502247e964fbbae0b9b5a7417928f0c458498b97e",
+      "snapshotBytes": 156,
+      "snapshotSha256": "83f292e9e038fb3e34b27fd29cf23f2cb7d92a3462ae6adc6bccd5cd31a53d93"
+    },
+    {
+      "path": "workers/telethon/requirements.txt",
+      "gitBlobOid": "39d218b1d20c427b47b9c0e07a9cbcf5a6d1a380",
+      "gitBytes": 525,
+      "gitSha256": "915075d7f0dae24c382898980e035f12fac7010ceaa3d1d7b3f0119a619c6733",
+      "snapshotBytes": 549,
+      "snapshotSha256": "72cb3c07370331acbf1c1f845ae3134d7e594317e4f40f65923c0b3937ec066c"
+    },
+    {
+      "path": "workers/telethon/server.py",
+      "gitBlobOid": "460aeee2f7dd1937bce5c11612fea35a46febe84",
+      "gitBytes": 22491,
+      "gitSha256": "c71ba7860ec0de2449c9c4ded366d9cd8c7e3ce238cd5cd6902f8b36c6c84843",
+      "snapshotBytes": 22992,
+      "snapshotSha256": "e073405bafc1c25c800023953a980170a1b7a239a51884e8f685f1f16d20ac27"
+    },
+    {
+      "path": "workers/telethon/test_history.py",
+      "gitBlobOid": "266000f11fd7bf9b6a4f7e3c6aad99ffab87a139",
+      "gitBytes": 51120,
+      "gitSha256": "492ec5d07ac2d46a6f6895df111cdc78d58fbc8bb8970907ddedafd14aca81ed",
+      "snapshotBytes": 52186,
+      "snapshotSha256": "7959541331da6b8911993f245ea12f977aa24e404e9ebeebe07826d05d32be8d"
+    },
+    {
+      "path": "scripts/collection-backup.mjs",
+      "gitBlobOid": "29df509d187539e7947c9c6d3808023134a4cf7e",
+      "gitBytes": 27825,
+      "gitSha256": "2e1748f5ec2b680f05b38b6fcf219fac7e081d03039fcbc795958d3f8c52498c",
+      "snapshotBytes": 28201,
+      "snapshotSha256": "21d7523109c0f3e61984a43f2e68dd2acd75c9666eaa848d6ba5b1bbd922bfc5"
+    },
+    {
+      "path": "scripts/collection-backup.test.mjs",
+      "gitBlobOid": "e770966009142ad09fca50d88fc1343745589d1e",
+      "gitBytes": 6800,
+      "gitSha256": "35877c229ea725f5eb9c689bbc7031e5a2a86b478f3f8ceb800bcb3d729ffc9e",
+      "snapshotBytes": 6900,
+      "snapshotSha256": "c1dc45c4eb4d9796749ee115fef0021704d5f8c68951798813f0b0bcfcafaea4"
+    },
+    {
+      "path": "scripts/postgres-recovery-check.mjs",
+      "gitBlobOid": "cc602e068be35c77f44aca1278fa58c455be11ba",
+      "gitBytes": 12360,
+      "gitSha256": "be109cbf7b28de6010581a07865dc50fa4b111c43833854ee7c345552b501561",
+      "snapshotBytes": 12646,
+      "snapshotSha256": "5a906f8d757d5853ed0ea2d9bda31a254869e1715b30a1c9ce5e4c5abc75467a"
+    },
+    {
+      "path": "scripts/restore-policy.mjs",
+      "gitBlobOid": "f7eef375046e1c25498200e379ba9692da9bd7b4",
+      "gitBytes": 1233,
+      "gitSha256": "544db8bc89b378ebff27e1e8ba05c7eafedbfa6b306002feb1142d9c493b289c",
+      "snapshotBytes": 1264,
+      "snapshotSha256": "faa573e71b1afc2282396a6595adb9825cbf675b20720c98d2ac6b7e964c17e1"
+    },
+    {
+      "path": "scripts/restore-policy.test.mjs",
+      "gitBlobOid": "c5d799ce65e892db8a4663c481c8184103a227ed",
+      "gitBytes": 1348,
+      "gitSha256": "9a4eb64c6da1bdad1d7691cc45acf3abeaff465daf76707602d8c7003391ec75",
+      "snapshotBytes": 1386,
+      "snapshotSha256": "74eb9bba2072a7274405e871670788fc7475774b0a735c7d9a2e2e2a02e1c889"
+    },
+    {
+      "path": "scripts/deployment-policy.mjs",
+      "gitBlobOid": "4bc3e1131599aeea1ec7271eea38aa6260dfc099",
+      "gitBytes": 4951,
+      "gitSha256": "7489bae844a94984b0ff4f19fc70a4d44a109f2bdb9492ab6e6124d7cd2c6868",
+      "snapshotBytes": 5067,
+      "snapshotSha256": "cbd2d79806fb0cbb8fbf9c0c765ae9d6de8588cd95f36c5c07bfb38b8880429f"
+    },
+    {
+      "path": "scripts/deployment-policy.test.mjs",
+      "gitBlobOid": "c11c129dcf0e586b0c5189fa0ac808f6669a50aa",
+      "gitBytes": 5744,
+      "gitSha256": "61dd2c089ea9143fcf4fb7440e9c36411f91c1aa878db4a6f5c77837c924c17e",
+      "snapshotBytes": 5895,
+      "snapshotSha256": "92b18f35a3d77c36d4de4ae39029cf5d1248b496a4a53fe31d0b9d7caffdf2d5"
+    },
+    {
+      "path": "scripts/pack-source.mjs",
+      "gitBlobOid": "3beea7f1040d603e6ea0d8ed4f04a6ff9f254a2d",
+      "gitBytes": 4006,
+      "gitSha256": "18272db4c102979721ef242d4cc587368ab638673e2c73460645884a96a300d0",
+      "snapshotBytes": 4114,
+      "snapshotSha256": "df1a2c470c69a1bc076a69c1863d33c04d9158c8f025902602ab7cf1b90af9e7"
+    },
+    {
+      "path": "scripts/pack-source.test.mjs",
+      "gitBlobOid": "5d9102513e65911c1664ff61538a3b3f6fcd6c8b",
+      "gitBytes": 4996,
+      "gitSha256": "2f749ade90861b22ee879e06926a7188478e2ed257c5f9b2b293ad589eec5ddc",
+      "snapshotBytes": 5093,
+      "snapshotSha256": "06d31230d2c3d5ccfc296cf7965e053b34960349cf4e4d2bb7d946bf51908fae"
+    },
+    {
+      "path": "validation/collection/2026-10-02/backup-check.mjs",
+      "gitBlobOid": "9ffea131ef166f4914e0bc5d89c980ccc0c3d982",
+      "gitBytes": 11541,
+      "gitSha256": "6708fe30baaf091b0a7ff8b2cd76d204aa8790ca5c7c907f834503a659a9fda7",
+      "snapshotBytes": 11672,
+      "snapshotSha256": "f8ef336fa10b1f38653a3dbed85e17057872bdc590479ee8f799e1a42c902ad5"
+    },
+    {
+      "path": "src/lib/server/media.test.ts",
+      "gitBlobOid": "e5a571c83e80dc6ef1ffb9c8dd92ac53c4c77e38",
+      "gitBytes": 58783,
+      "gitSha256": "6882b0c716571fd6a31ecdda10252ddbf828338bbceccdb70fc31358a407e729",
+      "snapshotBytes": 59878,
+      "snapshotSha256": "951f3551553fe39b791e63b2115b843fba1a7acdcb42272e3a131f81db7ca7f5"
+    },
+    {
+      "path": "src/lib/server/telethon.ts",
+      "gitBlobOid": "51de77ea0b4a80e55012f259a379593c36441965",
+      "gitBytes": 13254,
+      "gitSha256": "d916030cbbd4bfc1cbde85be2aa2344a73f240cd2715d6b9cdb512f93bdfa3ef",
+      "snapshotBytes": 13481,
+      "snapshotSha256": "f4d99656b8450dc95a09eb5b27de497e487f8bedd2517338a24a64901a53393f"
+    },
+    {
+      "path": "src/lib/server/collectors/telegram.test.mjs",
+      "gitBlobOid": "dd58218f1266e8a7bf7ecda696c6e2ec5e9c3c5a",
+      "gitBytes": 22944,
+      "gitSha256": "87d8f0f8085c9a5987bf39261f11971b660c1690808605c8c7a7e3fdf1d6f5f2",
+      "snapshotBytes": 23429,
+      "snapshotSha256": "33ceea9c401d38abd25f9fe66e030e11663c3e4fc01371bb7e2aa56c430a02c2"
+    },
+    {
+      "path": "src/lib/server/collection-retry.integration.test.ts",
+      "gitBlobOid": "26500d15fd09ab065c7c04954dffcc9413ce33b5",
+      "gitBytes": 15578,
+      "gitSha256": "4752ad69a6436e2ecfd6154ff1234ec84cb2bb119e4e2e8e4e6e09d2c092e0df",
+      "snapshotBytes": 15871,
+      "snapshotSha256": "09d2d46280c30a935d4d126c8ec6c404a94f9699629e66c63cd3b853d1406746"
+    },
+    {
+      "path": "src/routes/nodes.tsx",
+      "gitBlobOid": "f5dfd9c4b341b40e6e862844312efe299903650a",
+      "gitBytes": 9835,
+      "gitSha256": "e554a3f07d97d3178a5e5000b6dc20f3aa853974359da30cf4c835fe2fac639b",
+      "snapshotBytes": 9992,
+      "snapshotSha256": "6a183ebf4099059e54639f8b9b3125d0cd6ddd40136fc228ca5bc58bfb5295a6"
+    }
+  ],
+  "images": {
+    "app": "sha256:fcb70d08562daab8a0c150916778f2411fa1bcb2c134cccec7749493c2627a17",
+    "telethon": "sha256:f33c93aa2c79b7aec5a5e8b9ca93453d7913f42e11a1e6451724255d3a1d1302"
+  },
+  "ownedSevenContainersAndNetworkAbsent": true,
+  "keyContentsRead": false,
+  "inheritedBackup": {
+    "sourceSha": "17b91d79e3397dae88d7dd816d0cb667570ce99d",
+    "record": "../t18-backup-final-17b91d7.json",
+    "unchangedBackupFiles": [
+      "scripts/collection-backup.mjs",
+      "scripts/collection-backup.test.mjs",
+      "scripts/restore-policy.mjs",
+      "scripts/deployment-policy.mjs",
+      "validation/collection/2026-10-02/backup-check.mjs",
+      "workers/telethon/requirements.txt"
+    ],
+    "actualCipherHashesRechecked": 2,
+    "sameHost": true,
+    "newRestoreNotClaimed": true
+  },
+  "sourceReview": {
+    "critical": 0,
+    "important": 0,
+    "minor": 1,
+    "retained": "DEP-01/02; production gate closed"
+  },
+  "initialDevFailure": "HTTP504 Outdated Optimize Dep, dynamic import failure and desktop overflow; server log records optimization reload; unchanged retry clean, original retained"
+}
