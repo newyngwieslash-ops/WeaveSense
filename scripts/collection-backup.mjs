@@ -331,8 +331,9 @@ export async function restoreBackup(config) {
       same(minio(config,'summary',bucket),objects,'backup_restored_objects');
       mkdirSync(destination,{mode:0o700}); restrictPath(destination,true);
       for(const [kind,name] of [['sqlite','gateway.sqlite'],['session','telegram.session']]) {
-        const db=new DatabaseSync(join(scratch,`${kind}.sqlite`),{readOnly:true});
-        try {await backup(db,join(destination,name)); restrictPath(join(destination,name));} finally {db.close();}
+        // Private immutable scratch has no live writer; reuse the snapshot's
+        // new-target and output-permission checks without a second writer fence.
+        await snapshotSqlite(join(scratch,`${kind}.sqlite`),join(destination,name),true);
         const restored=new DatabaseSync(join(destination,name),{readOnly:true});
         try {same(sqliteSummary(restored),summaries[kind],'backup_restored_sqlite');} finally {restored.close();}
       }

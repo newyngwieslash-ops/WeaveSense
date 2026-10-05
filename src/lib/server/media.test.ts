@@ -241,6 +241,18 @@ test("media queue: actual ingest, SQL leases/retries and fixed storage boundary"
         // Actual route wiring: extract slot defers TG, next collection slot admits it.
         await reset(["telegram://channel/101"]);
         await sql.query("delete from stage_windows");
+        // The real route seeds empty databases; keep both seed guards populated
+        // and disabled so this media test never dispatches live demo collectors.
+        const { RADAR_SOURCE_ID } = await vite.ssrLoadModule("/src/lib/keyword.ts");
+        await sql.query("insert into app_meta(key,value) values('seeded','1')");
+        await sql.query("insert into sources(id,platform,name,enabled) values($1,'rss','fixture',false)", [RADAR_SOURCE_ID]);
+        await sql.query("insert into keywords(id,phrase,enabled) values('media-fixture','fixture',false)");
+        const { ensureSeeded } = await vite.ssrLoadModule("/src/lib/server/seed.ts");
+        await ensureSeeded();
+        const enabledInputs = async () => (await sql.query<{ n: number }>(
+          "select ((select count(*) from sources where enabled) + (select count(*) from keywords where enabled))::int n",
+        ))[0].n;
+        assert.equal(await enabledInputs(), 0, "route fixture must never admit demo collection");
         const { Route } = await vite.ssrLoadModule("/src/routes/api/cron/tick.ts");
         const actualNow = Date.now;
         const oldSecret = prod.cronSecret, oldExtract = prod.extractAuto;
@@ -252,11 +264,17 @@ test("media queue: actual ingest, SQL leases/retries and fixed storage boundary"
             method: "POST", headers: { Authorization: "Bearer synthetic-cron" },
           }) });
           const extractTick = await (await invoke()).json();
+          assert.equal(extractTick.collection.ran, 0);
+          assert.equal(extractTick.collection.items_new, 0);
+          assert.equal(await enabledInputs(), 0);
           assert.equal(extractTick.production.stages.ingest, "deferred_telegram");
           assert.equal((await row()).attempts, 0);
           assert.deepEqual(await sql.query("select * from stage_windows where stage='ingest'"), []);
           now = Date.parse("2026-10-04T02:00:00Z");
           const collectTick = await (await invoke()).json();
+          assert.equal(collectTick.collection.ran, 0);
+          assert.equal(collectTick.collection.items_new, 0);
+          assert.equal(await enabledInputs(), 0);
           assert.equal(collectTick.production.stored, 1);
           assert.equal((await row()).attempts, 1);
         } finally {

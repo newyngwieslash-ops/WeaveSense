@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { randomBytes } from 'node:crypto';
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, symlinkSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -71,4 +71,30 @@ test('SQLite backup API includes committed WAL and preserves pending outbox, wit
     try {assert.deepEqual(sqliteSummary(copy),before);assert.equal(copy.prepare('select state from outbox').get().state,'pending');} finally {copy.close();}
     assert.match(restrictPath(root),/NTFS|POSIX/);
   } finally {db.close();}
+});
+
+test('restore snapshot from private scratch restricts both actual SQLite outputs under umask 022', async () => {
+  const mask=process.umask(0o022);
+  try {
+    const root=privateDirectory(mkdtempSync(join(tmpdir(),'loom-sqlite-restore-')),'restricted');
+    const source=join(root,'scratch.sqlite'); const db=new DatabaseSync(source);
+    db.exec("create table pending(id integer primary key, state text); insert into pending values(1,'pending');"); db.close();
+    restrictPath(source,true);
+    const scratch=new DatabaseSync(source,{readOnly:true});
+    try {
+      const before=sqliteSummary(scratch);
+      for(const name of ['gateway.sqlite','telegram.session']) {
+        const destination=join(root,name);
+        // Same immutable-scratch path used by restoreBackup, including its
+        // actual SQLite backup API output (a raw backup would create mode 0644).
+        await snapshotSqlite(source,destination,true);
+        assert.match(restrictPath(destination),/NTFS|POSIX/);
+        if(process.platform!=='win32') assert.equal(statSync(destination).mode & 0o777,0o600);
+        const restored=new DatabaseSync(destination,{readOnly:true});
+        try {assert.deepEqual(sqliteSummary(restored),before);} finally {restored.close();}
+        await assert.rejects(snapshotSqlite(source,destination,true),/restore_target_exists/);
+      }
+      assert.deepEqual(sqliteSummary(scratch),before);
+    } finally {scratch.close();}
+  } finally {process.umask(mask);}
 });

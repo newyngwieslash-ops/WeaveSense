@@ -44,6 +44,17 @@ Linux Node 备份/恢复策略、调度、网关行为检查 **147/147**；Pytho
 
 未隐藏构建警告：BuildKit 将 `VITE_AUTH_ENABLED` 判为潜在 secret，但 Dockerfile 字面值是非秘密 `false`；Node SQLite 仍提示 experimental；pip 提示容器 root 安装。现有 npm lock 安装提示 **2 个 high severity vulnerabilities** 以及 recharts/eslint 弃用；本任务未升级依赖，也不声称完成依赖安全审计，需另行评估这些既有告警。
 
+### 生产晋级前的依赖债务（2026-10-05 复核）
+
+独立空 npm user/global 配置、任务专属缓存、`offlineEnv` 和显式公共 registry 下执行 `npm audit --package-lock-only --json --ignore-scripts`，退出 1：仍为 **2 high / 0 critical**，不是干净安全门。原始结果见 `t18-dependency-audit-fix-wave.json`，锁文件路径见 `t18-dependency-paths-fix-wave.json`；没有升级或改写依赖锁。
+
+| 债务 | 已锁定的依赖路径 | 当前可达范围与晋级要求 |
+|---|---|---|
+| DEP-01：brace-expansion 1.1.18 / 5.0.9 | eslint 9.39.5 → minimatch 3.1.5 → 1.1.18；typescript-eslint 8.68.0 → typescript-estree 8.68.0 → minimatch 10.2.6 → 5.0.9 | 两条锁路径均 dev-only，但根镜像 `npm ci` 实际保留它们。已读业务入口未使用其 glob API；恶意 lint/glob 输入仍可造成 CPU/栈耗尽。维护者须在晋级前验证兼容补丁、刷新锁并重跑相关 lint/build。 |
+| DEP-02：js-yaml 4.3.1 | @tanstack/react-start 1.168.49 → start-plugin-core 1.171.39 → xmlbuilder2 4.0.3 → js-yaml；另有 eslint → @eslint/eslintrc 3.3.6 → 同版本 | 不是纯 dev 依赖：Vite 配置导入 Start 插件，实际入口 `npm start` 使用 Vite preview。插件的 sitemap 路径用对象/字符串节点构造 XML，未找到请求内容传给 YAMLReader 的路径；这只是当前代码的有限追踪，不能声称不可能利用。维护者须在晋级前验证 js-yaml ≥4.3.2 的兼容补丁、审计实际运行入口并重建验证。 |
+
+公开公告：[brace 嵌套递归](https://github.com/advisories/GHSA-qhr7-859c-m2p7)、[brace 逗号递归](https://github.com/advisories/GHSA-6j4f-fj2g-mc7p)、[brace 二次复杂度](https://github.com/advisories/GHSA-q2hr-2g5m-vwhr)、[YAML 空 merge CPU 消耗](https://github.com/advisories/GHSA-2883-xcg3-v3hh)。修复全部已报 brace 告警需兼容版本至少 1.1.21 / 5.0.12。此处记录风险和后续门槛，不将“未发现业务请求入口”当作漏洞已消除；未执行攻击负载，也未测试真实服务。
+
 ## 复核与复现
 
 证据目录：[`validation/collection/2026-10-02`](../../validation/collection/2026-10-02)。

@@ -1,0 +1,86 @@
+{
+  "name": "app-builder-workspace",
+  "dependencies": {
+    "@tanstack/react-start": {
+      "version": "1.168.49",
+      "resolved": "https://registry.npmjs.org/@tanstack/react-start/-/react-start-1.168.49.tgz",
+      "overridden": false,
+      "dependencies": {
+        "@tanstack/start-plugin-core": {
+          "version": "1.171.39",
+          "resolved": "https://registry.npmjs.org/@tanstack/start-plugin-core/-/start-plugin-core-1.171.39.tgz",
+          "overridden": false,
+          "dependencies": {
+            "xmlbuilder2": {
+              "version": "4.0.3",
+              "resolved": "https://registry.npmjs.org/xmlbuilder2/-/xmlbuilder2-4.0.3.tgz",
+              "overridden": false,
+              "dependencies": {
+                "js-yaml": {
+                  "version": "4.3.1"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "eslint": {
+      "version": "9.39.5",
+      "resolved": "https://registry.npmjs.org/eslint/-/eslint-9.39.5.tgz",
+      "overridden": false,
+      "dependencies": {
+        "@eslint/eslintrc": {
+          "version": "3.3.6",
+          "resolved": "https://registry.npmjs.org/@eslint/eslintrc/-/eslintrc-3.3.6.tgz",
+          "overridden": false,
+          "dependencies": {
+            "js-yaml": {
+              "version": "4.3.1",
+              "resolved": "https://registry.npmjs.org/js-yaml/-/js-yaml-4.3.1.tgz",
+              "overridden": false
+            }
+          }
+        },
+        "minimatch": {
+          "version": "3.1.5",
+          "resolved": "https://registry.npmjs.org/minimatch/-/minimatch-3.1.5.tgz",
+          "overridden": false,
+          "dependencies": {
+            "brace-expansion": {
+              "version": "1.1.18",
+              "resolved": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-1.1.18.tgz",
+              "overridden": false
+            }
+          }
+        }
+      }
+    },
+    "typescript-eslint": {
+      "version": "8.68.0",
+      "resolved": "https://registry.npmjs.org/typescript-eslint/-/typescript-eslint-8.68.0.tgz",
+      "overridden": false,
+      "dependencies": {
+        "@typescript-eslint/typescript-estree": {
+          "version": "8.68.0",
+          "resolved": "https://registry.npmjs.org/@typescript-eslint/typescript-estree/-/typescript-estree-8.68.0.tgz",
+          "overridden": false,
+          "dependencies": {
+            "minimatch": {
+              "version": "10.2.6",
+              "resolved": "https://registry.npmjs.org/minimatch/-/minimatch-10.2.6.tgz",
+              "overridden": false,
+              "dependencies": {
+                "brace-expansion": {
+                  "version": "5.0.9",
+                  "resolved": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.9.tgz",
+                  "overridden": false
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
