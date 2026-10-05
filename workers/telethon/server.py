@@ -80,6 +80,25 @@ def build_minio() -> Minio | None:
         return None
 
 
+async def initialize_storage() -> None:
+    """One bounded SDK attempt; caller owns media_gate until native IO settles."""
+    global minio_client
+    if minio_client is not None or not minio_ready():
+        return
+    setup = asyncio.create_task(asyncio.to_thread(build_minio))
+    try:
+        minio_client = await asyncio.shield(setup)
+    except asyncio.CancelledError:
+        # ponytail: native setup shares upload's SDK-IO ceiling, not a hard async wall.
+        # Keep the media slot until it settles; use process isolation for a hard wall.
+        while not setup.done():
+            with suppress(Exception, asyncio.CancelledError):
+                await asyncio.shield(setup)
+        with suppress(Exception):
+            minio_client = setup.result()
+        raise
+
+
 def build_client() -> TelegramClient | None:
     if not API_ID or not API_HASH:
         return None
@@ -208,8 +227,6 @@ async def handle_media(request: web.Request) -> web.Response:
         or not isinstance(body["channel"], str) or not re.fullmatch(r"[A-Za-z0-9_]{5,32}", body["channel"])
         or not isinstance(body["message_id"], str) or not re.fullmatch(r"[1-9][0-9]{0,319}", body["message_id"])):
         return web.json_response({"error": "invalid_media_locator"}, status=400)
-    if minio_client is None:
-        return web.json_response({"error": "media_unavailable"}, status=503)
     try:
         async with asyncio.timeout(MEDIA_TIMEOUT_SECONDS):
             async with media_gate:
@@ -218,6 +235,9 @@ async def handle_media(request: web.Request) -> web.Response:
                     return web.json_response({"error": "flood_wait"}, status=429, headers={"Retry-After": str(wait)})
                 if client is None or not client.is_connected() or connection_state != "ready":
                     return web.json_response({"error": "unavailable"}, status=503)
+                await initialize_storage()
+                if minio_client is None:
+                    return web.json_response({"error": "media_unavailable"}, status=503)
                 result = await download_media_to_store(body["channel"].lower(), int(body["message_id"]))
                 return web.json_response(result)
     except FloodWaitError as exc:
@@ -435,8 +455,13 @@ async def reconnect() -> None:
 
 
 async def on_start(app: web.Application) -> None:
-    global minio_client, reconnect_task, connection_state
-    minio_client = build_minio()
+    global reconnect_task, connection_state
+    try:
+        async with asyncio.timeout(MEDIA_TIMEOUT_SECONDS):
+            async with media_gate:
+                await initialize_storage()
+    except TimeoutError:
+        pass  # Later authenticated media requests retry storage without reconnecting Telegram.
     if reconnect_task is None:
         connection_state = "connecting"
         reconnect_task = asyncio.create_task(reconnect(), name="telethon-reconnect")

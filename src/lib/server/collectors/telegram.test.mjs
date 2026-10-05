@@ -444,3 +444,42 @@ test("explicit backfill never substitutes a finite public or RSS window", async 
     assert.equal(calls,0);
   } finally {await vite.close();}
 });
+
+
+test("history received failures retain cooldown through reset, cap and deadline bodies", async () => {
+  process.env.TELEGRAM_WORKER_URL = "http://telethon:8787";
+  const originalFetch = globalThis.fetch;
+  const { vite } = await loadCollector();
+  try {
+    const { fetchTelethonHistory } = await vite.ssrLoadModule("/src/lib/server/telethon.ts");
+    for (const status of [200, 429, 503]) for (const fault of ["reset", "cap", "timeout"]) {
+      let cancelled = false;
+      const controller = new AbortController();
+      globalThis.fetch = async input => {
+        assert.equal(String(input), "http://telethon:8787/v1/history");
+        return new Response(new ReadableStream({
+          start(stream) {
+            if (fault === "reset") stream.error(new Error("secret upstream reset"));
+            if (fault === "cap") stream.enqueue(new Uint8Array(4 * 1024 * 1024 + 1));
+            if (fault === "timeout") setTimeout(() => controller.abort(new DOMException("secret", "TimeoutError")), 20);
+          },
+          cancel() { cancelled = true; },
+        }), { status, headers: { "Retry-After": "172800" } });
+      };
+      const before = Date.now();
+      await assert.rejects(fetchTelethonHistory("channel", "0", 80, controller.signal), caught => {
+        const error = /** @type {import("../outbound-policy.ts").CollectionHttpError} */ (caught);
+        assert.equal(error.code, status === 429 ? "rate_limited" : status === 503 ? "http_error"
+          : fault === "reset" ? "network_error" : fault === "cap" ? "response_too_large" : "timeout");
+        assert.equal(error.status, status === 200 ? undefined : status);
+        if (status === 200) assert.equal(error.retryAt, undefined);
+        else assert.ok(Number(error.retryAt) >= before + 172800000);
+        assert.ok(!error.message.includes("secret"));
+        return true;
+      });
+      if (fault !== "reset") assert.equal(cancelled, true);
+    }
+  } finally {
+    await vite.close(); globalThis.fetch = originalFetch; delete process.env.TELEGRAM_WORKER_URL;
+  }
+});

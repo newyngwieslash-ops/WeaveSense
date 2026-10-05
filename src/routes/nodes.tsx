@@ -56,8 +56,10 @@ function NodesPage() {
       }
     >
       <p className="max-w-2xl text-sm leading-relaxed text-muted">
-        控制面仍在这边编排。Telethon 与 MinIO 是 Docker 里的长驻节点：没连上时 Telegram 回退
-        t.me/s，媒体保留远程 URL。OCR / ASR 走 Grok，只在你按键时调用。
+        控制面仍在这边编排。Telethon 与 MinIO 是长驻节点。Telegram 默认从最近 80 条开始，随后增量；
+        节点未配置或未授权时可用 t.me/s 公开窗口，显式 Feed 也仅有有限窗口。
+        已配置节点临时离线或冷却时等待恢复重试；历史回填需已授权节点，不会自动退回网页或 Feed。
+        媒体异步落盘并按冷却重试。OCR / ASR 只在你按键时调用。
       </p>
       {status.isPending ? <p className="mt-4 text-sm text-muted">正在读取节点与指标…</p> : null}
       {status.error ? <p role="alert" className="mt-4 text-sm text-danger">节点读取失败：{status.error.message}</p> : null}

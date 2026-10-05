@@ -116,6 +116,7 @@ export async function fetchTelethonHistory(
   if (!cursor) throw new CollectionHttpError("invalid_response", "invalid_telegram_cursor");
   const deadline = AbortSignal.timeout(60000);
   const combined = signal ? AbortSignal.any([signal, deadline]) : deadline;
+  let receivedFailure: CollectionHttpError | undefined;
   try {
     const res = await abortable(collectionFetch(`${prod.telegramWorkerUrl}/v1/history`, {
       method: "POST",
@@ -129,8 +130,11 @@ export async function fetchTelethonHistory(
       signal: combined,
       redirect: "error",
     }), combined);
-    const text = new TextDecoder().decode(await readCapped(res.body, TEXT_MAX_BYTES, combined));
     const details = { status: res.status, retryAt: parseRetryAfter(res.headers.get("retry-after"), Date.now()) ?? undefined };
+    // Preserve received cooldowns if the error body resets, exceeds the cap or times out.
+    if (!res.ok) receivedFailure = new CollectionHttpError(res.status === 429 ? "rate_limited" : "http_error", `Telethon HTTP ${res.status}`, details);
+    const text = new TextDecoder().decode(await readCapped(res.body, TEXT_MAX_BYTES, combined));
+    receivedFailure = undefined; // A complete body may supply a later FloodWait or a more specific error.
     let json: unknown;
     try {
       json = JSON.parse(text);
@@ -169,7 +173,7 @@ export async function fetchTelethonHistory(
     return Object.assign(items, { has_more: parsed.data.has_more ?? items.length >= limit,
       next_cursor: boundary });
   } catch (error) {
-    throw collectionHttpError(error, combined);
+    throw receivedFailure ?? collectionHttpError(error, combined);
   }
 }
 

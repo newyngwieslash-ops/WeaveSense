@@ -123,6 +123,175 @@ class HistoryPaginationTests(unittest.TestCase):
         module.connection_state = "ready"
         self.mod = module
 
+    def test_storage_startup_failure_recovers_serially_without_reconnecting(self):
+        import json
+        import threading
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        mod = self.mod
+        async def run():
+            message = FakeMessage(101)
+            message.media = mod.MessageMediaPhoto()
+            message.file = SimpleNamespace(size=3, mime_type="image/jpeg")
+            async def messages(**kwargs): return message if "ids" in kwargs else [message]
+            candidate = FakeClient(messages, connected=False)
+            async def download(media, **kwargs): yield b"abc"
+            candidate.iter_download = download
+            mod.build_client = lambda: candidate
+            mod.MEDIA_TOKEN = "synthetic"
+            mod.MINIO_ENDPOINT, mod.MINIO_ACCESS, mod.MINIO_SECRET = "fixture", "synthetic", "synthetic"
+            entered, release = threading.Event(), threading.Event()
+            probes, owners, peak, creates = 0, 0, 0, 0
+            saved = []
+            loop_thread = threading.get_ident()
+            outer = self
+            class Store:
+                def bucket_exists(self, bucket):
+                    nonlocal probes, owners, peak
+                    outer.assertNotEqual(threading.get_ident(), loop_thread)
+                    probes += 1
+                    owners += 1
+                    peak = max(peak, owners)
+                    try:
+                        if probes == 1: raise OSError("secret cold start")
+                        entered.set()
+                        if not release.wait(2): raise TimeoutError("test release missing")
+                        return False
+                    finally: owners -= 1
+                def make_bucket(self, bucket):
+                    nonlocal creates
+                    creates += 1
+                def put_object(self, bucket, key, data, length, **kwargs):
+                    nonlocal owners, peak
+                    owners += 1
+                    peak = max(peak, owners)
+                    try: saved.append((key, data.read()))
+                    finally: owners -= 1
+            class Request:
+                headers = {"Authorization": "Bearer synthetic"}
+                async def json(self): return {"channel": "Channel", "message_id": "101"}
+            with patch.object(mod, "Minio", return_value=Store()):
+                await mod.on_start(None)
+                await until(lambda: mod.connection_state == "ready")
+                try:
+                    self.assertIsNone(mod.minio_client)
+                    health = json.loads((await mod.handle_health(None)).text)
+                    self.assertFalse(health["media_available"])
+                    self.assertEqual(probes, 1, "health must not retry bucket initialization")
+                    item = (await mod.history("channel", 100, 80))["items"][0]
+                    self.assertEqual(item["media_urls"], ["telegram://channel/101"])
+                    first = asyncio.create_task(mod.handle_media(Request()))
+                    second = None
+                    try:
+                        await until(entered.is_set)
+                        second = asyncio.create_task(mod.handle_media(Request()))
+                        await asyncio.sleep(0)
+                        self.assertEqual(probes, 2)
+                        self.assertTrue(mod.media_gate.locked())
+                        self.assertEqual((await asyncio.wait_for(mod.history("channel", 100, 80), 0.2))["items"][0]["external_id"], "101")
+                        await mod.handle_health(None)
+                        self.assertEqual(probes, 2)
+                    finally:
+                        release.set()
+                        responses = await asyncio.gather(first, *([second] if second else []))
+                    self.assertEqual([response.status for response in responses], [200, 200])
+                    self.assertEqual([json.loads(response.text)["object_key"] for response in responses], ["telegram/channel/101"] * 2)
+                    self.assertEqual(saved, [("telegram/channel/101", b"abc")] * 2)
+                    self.assertEqual((probes, creates, peak), (2, 1, 1))
+                    self.assertEqual(candidate.calls, 1)
+                    self.assertEqual(candidate.disconnects, 0)
+                    self.assertTrue(json.loads((await mod.handle_health(None)).text)["media_available"])
+                finally: await mod.on_stop(None)
+            self.assertEqual(len(asyncio.all_tasks()), 1)
+        asyncio.run(run())
+
+    def test_storage_recovery_timeout_or_cancel_retains_native_setup_owner(self):
+        import threading
+        from unittest.mock import patch
+        mod = self.mod
+        async def run():
+            class Request:
+                headers = {"Authorization": "Bearer synthetic"}
+                async def json(self): return {"channel": "channel", "message_id": "101"}
+            mod.MEDIA_TOKEN = "synthetic"
+            mod.MINIO_ENDPOINT, mod.MINIO_ACCESS, mod.MINIO_SECRET = "fixture", "synthetic", "synthetic"
+            async def messages(**kwargs): return []
+            mod.client = FakeClient(messages)
+            for cancel in [False, True]:
+                mod.minio_client = None
+                mod.MEDIA_TIMEOUT_SECONDS = 0.02
+                entered, release = threading.Event(), threading.Event()
+                probes = 0
+                class Store:
+                    def bucket_exists(self, bucket):
+                        nonlocal probes
+                        probes += 1
+                        entered.set()
+                        if not release.wait(2): raise TimeoutError("test release missing")
+                        raise OSError("secret unavailable")
+                with patch.object(mod, "Minio", return_value=Store()):
+                    pending = asyncio.create_task(mod.handle_media(Request()))
+                    try:
+                        await until(entered.is_set)
+                        if cancel: pending.cancel()
+                        await asyncio.sleep(0.04)
+                        if cancel:
+                            pending.cancel()
+                            await asyncio.sleep(0)
+                        self.assertFalse(pending.done())
+                        self.assertTrue(mod.media_gate.locked())
+                        self.assertEqual((await asyncio.wait_for(mod.history("channel", 0, 80), 0.2))["items"], [])
+                        self.assertEqual((await mod.handle_media(Request())).status, 504)
+                        self.assertEqual(probes, 1, "queued timeout must not start a second native setup")
+                    finally:
+                        release.set()
+                        if cancel:
+                            with self.assertRaises(asyncio.CancelledError): await pending
+                        else: self.assertEqual((await pending).status, 504)
+                self.assertFalse(mod.media_gate.locked())
+                self.assertEqual(len(asyncio.all_tasks()), 1)
+        asyncio.run(run())
+
+    def test_storage_absent_configuration_and_persistent_failure_are_bounded_and_safe(self):
+        import contextlib
+        import io
+        import json
+        from unittest.mock import patch
+        mod = self.mod
+        async def run():
+            class Request:
+                headers = {"Authorization": "Bearer synthetic"}
+                async def json(self): return {"channel": "channel", "message_id": "101"}
+            mod.MEDIA_TOKEN = "synthetic"
+            async def messages(**kwargs): return []
+            candidate = FakeClient(messages)
+            mod.client = candidate
+            with patch.object(mod, "Minio") as factory:
+                self.assertEqual((await mod.handle_media(Request())).status, 503)
+                factory.assert_not_called()
+            mod.MINIO_ENDPOINT, mod.MINIO_ACCESS, mod.MINIO_SECRET = "fixture", "synthetic", "synthetic"
+            class Store:
+                def bucket_exists(self, bucket): raise OSError("secret bucket credentials")
+            output = io.StringIO()
+            with patch.object(mod, "Minio", return_value=Store()) as factory, contextlib.redirect_stdout(output):
+                for n in range(3):
+                    response = await asyncio.wait_for(mod.handle_media(Request()), 0.5)
+                    self.assertEqual(response.status, 503)
+                    self.assertEqual(json.loads(response.text), {"error": "media_unavailable"})
+                    self.assertEqual(factory.call_count, n + 1, "only one setup attempt per request")
+                    http = factory.call_args.kwargs["http_client"]
+                    retries = http.connection_pool_kw["retries"]
+                    self.assertFalse(getattr(retries, "total", retries))
+                    self.assertEqual(http.connection_pool_kw["timeout"].connect_timeout, 5)
+                    self.assertEqual(http.connection_pool_kw["timeout"].read_timeout, 20)
+                    self.assertFalse(json.loads((await mod.handle_health(None)).text)["media_available"])
+                    self.assertEqual(factory.call_count, n + 1)
+            self.assertNotIn("secret", output.getvalue())
+            self.assertEqual(mod.connection_state, "ready")
+            self.assertEqual(candidate.disconnects, 0)
+            self.assertEqual((await mod.history("channel", 0, 80))["items"], [])
+        asyncio.run(run())
+
     def test_history_defers_attachments_and_media_endpoint_streams_later(self):
         import hashlib
         import json

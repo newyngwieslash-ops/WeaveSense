@@ -241,3 +241,53 @@ test("missing Bili mid and RSSHub feed persist permanent configuration failures 
     delete (globalThis as any).__pgliteInstance__;
   }
 });
+
+
+test("history body failures persist long received cooldowns and block manual and scheduled admission", async () => {
+  process.env.TELEGRAM_WORKER_URL = "http://telethon:8787";
+  const originalFetch = globalThis.fetch;
+  const vite = await createServer({configFile:false,logLevel:"silent",resolve:{alias:{"@":path.resolve("src")}},server:{middlewareMode:true,watch:null}});
+  try {
+    const { getSql } = await vite.ssrLoadModule("/src/lib/db.ts");
+    const sql = await getSql();
+    const { runSourceJob, tickDueSources } = await vite.ssrLoadModule("/src/lib/server/scheduler.ts");
+    await sql.query("insert into app_meta(key,value) values('seeded','1') on conflict(key) do update set value='1'");
+    await sql.query("insert into keywords(id,phrase,enabled) values('seed-marker','disabled',false)");
+    let calls = 0;
+    for (const status of [429, 503]) for (const fault of ["reset", "timeout"]) {
+      const id = `history-${status}-${fault}`;
+      const controller = new AbortController();
+      globalThis.fetch = async input => {
+        const url = String(input);
+        if (url === "http://telethon:8787/health") return Response.json({ok:true,authorized:true,state:"ready"});
+        assert.equal(url, "http://telethon:8787/v1/history");
+        calls++;
+        return new Response(new ReadableStream({start(stream) {
+          if (fault === "reset") stream.error(new Error("secret reset"));
+          else setTimeout(() => controller.abort(new DOMException("secret", "TimeoutError")), 20);
+        }}), {status,headers:{"Retry-After":"172800"}});
+      };
+      await sql.query(`insert into sources(id,platform,name,handle,adapter,last_external_id,scan_state,has_more)
+        values($1,'telegram','synthetic','channel','telegram_web','100','{"bootstrap":"backfill","boundary":"100"}',true)`, [id]);
+      const before = Date.now();
+      assert.match((await runSourceJob(id,"manual",{signal:controller.signal})).error, /Telethon HTTP/);
+      const [row] = await sql.query("select * from sources where id=$1",[id]);
+      assert.equal(row.last_error_code,"rate_limited", "scheduler classifies any upstream retry timestamp as cooldown");
+      assert.ok(new Date(row.next_attempt_at).getTime() >= before + 172800000);
+      assert.equal(row.last_external_id,"100");
+      assert.deepEqual(row.scan_state,{bootstrap:"backfill",boundary:"100"});
+      assert.equal(row.has_more,true);
+      const [job] = await sql.query("select * from jobs where source_id=$1",[id]);
+      assert.equal(job.error_code,row.last_error_code);
+      assert.equal(new Date(job.retry_at).getTime(),new Date(row.next_attempt_at).getTime());
+      const count = calls;
+      assert.match((await runSourceJob(id,"manual")).error,/冷却/);
+      assert.equal((await tickDueSources(5)).ran,0);
+      assert.equal(calls,count,"neither entry may request history before the received cooldown");
+    }
+    assert.equal(calls,4);
+  } finally {
+    await vite.close(); globalThis.fetch = originalFetch; delete process.env.TELEGRAM_WORKER_URL;
+    const pg = await (globalThis as any).__pgliteInstance__; if (pg) await pg.close(); delete (globalThis as any).__pgliteInstance__;
+  }
+});
