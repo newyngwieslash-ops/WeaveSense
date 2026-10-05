@@ -37,6 +37,33 @@ test("collection reference sets reject missing source, wrong identity and replay
     assert.throws(()=>assertReferenceSets(expected,bad));
 });
 
+test("combined 331 references reject a same-count opaque RSS identity substitution", () => {
+  const reference={pages:Array.from({length:330},(_,i)=>String(i+1)),fault:['001']};
+  const rows=Object.entries(reference).flatMap(([source_id,ids])=>ids.map(external_id=>({source_id,external_id})));
+  assertReferenceSets(reference,rows);
+  const substituted=rows.map(row=>row.source_id==='fault'?{...row,external_id:'1'}:row);
+  assert.equal(substituted.length,331);
+  assert.throws(()=>assertReferenceSets(reference,substituted),/reference mismatch fault/);
+});
+
+test("cleanup rejection still closes every owned resource, persists failure evidence and exits nonzero", () => {
+  const probe=offlineChildProcess(process.execPath,['--input-type=module','-e',`
+    import {finishEvidence} from './scripts/collection-reliability-check.mjs';
+    const report={ok:true},closed=[];
+    process.exitCode=await finishEvidence(report,{
+      vite:async()=>{closed.push('vite');throw new Error('injected Vite cleanup rejection');},
+      minio:async()=>{closed.push('minio');throw new Error('injected MinIO cleanup rejection');},
+      postgres:async()=>{closed.push('postgres');}
+    },()=>process.stdout.write(JSON.stringify({report,closed})));
+  `],process.env);
+  assert.equal(probe.status,1,probe.stderr);
+  const {report,closed}=JSON.parse(probe.stdout);
+  assert.deepEqual(closed,['vite','minio','postgres']);
+  assert.equal(report.ok,false);
+  assert.deepEqual(report.cleanup_errors.map(error=>error.resource),['vite','minio']);
+  assert.match(report.cleanup_errors[1].error,/injected MinIO cleanup rejection/);
+});
+
 const parent = {
   PATH: "/usr/bin",
   SystemRoot: "C:\\Windows",

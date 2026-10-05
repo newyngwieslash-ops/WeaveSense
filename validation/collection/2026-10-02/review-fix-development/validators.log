@@ -1,0 +1,19 @@
+✔ collection evidence rejects missing, invalid and falsely zero metrics (3.0662ms)
+✔ collection reference sets reject missing source, wrong identity and replay duplicates despite matching totals (1.461ms)
+✔ combined 331 references reject a same-count opaque RSS identity substitution (1.4397ms)
+✔ cleanup rejection still closes every owned resource, persists failure evidence and exits nonzero (179.778ms)
+✔ keeps only runtime-necessary variables (0.2078ms)
+✔ drops known real configuration and unknown secrets alike (0.1638ms)
+✔ applies offline-safe defaults (0.3779ms)
+✔ an explicit override is visible and wins over the default (0.1363ms)
+✔ a child process never sees the parent's real configuration (85.12ms)
+✔ the wrapper never echoes values it drops (0.3287ms)
+✔ parent enabled flags cannot suppress safe defaults (0.2339ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 476.1207

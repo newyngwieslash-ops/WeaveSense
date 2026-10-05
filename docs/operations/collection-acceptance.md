@@ -13,7 +13,7 @@ node scripts/readiness-offline.mjs -- node scripts/collection-load-check.mjs --s
 node scripts/readiness-offline.mjs -- node --test scripts/readiness-offline.test.mjs
 ```
 
-The first command includes real wall-clock minute ticks and two serial source profiles, taking approximately 21 minutes. `--quick` omits those timed scenarios and reports them pending. It is a development check, not replacement evidence. On this Windows host use `node F:/nodejs/node_modules/npm/bin/npm-cli.js` for npm commands inside the offline wrapper, and `.venv/Scripts/python.exe` for Python checks.
+The first command includes real wall-clock minute ticks and two serial source profiles, taking approximately 21 minutes. `--quick` omits those timed scenarios and reports them pending. It is focused infrastructure evidence, not replacement evidence for the omitted timed scenarios. On this Windows host use `node F:/nodejs/node_modules/npm/bin/npm-cli.js` for npm commands inside the offline wrapper, and `.venv/Scripts/python.exe` for Python checks.
 
 Each infrastructure run creates new uniquely named, ownership-labelled PostgreSQL and MinIO containers, binds only loopback, uses dummy credentials, pins repository image digests, and enforces 512 MiB / two CPU budgets per database/storage container. Cleanup verifies ownership. It never uses the production compose project, stored model settings, account sessions, provider APIs or deployment credentials. Public fake HTTP uses the existing injected transport after normal SSRF validation; a redirect to a private address remains rejected. Model requests are intercepted before network I/O and routed only to the local fake endpoint. Fake model calls are counted separately from paid calls.
 
@@ -31,7 +31,7 @@ Every report records the source SHA/state, image IDs/digests, runtime, input ref
 - Fake Telethon over loopback HTTP: second-page failure, unchanged persisted cursor, a fresh native child process continuing from PostgreSQL, a second reference round and replay.
 - Independent PostgreSQL connections with different backend PIDs and observed `pg_blocking_pids` overlap: claim race, batch lock versus reclaim, stale token fencing, media uniqueness, and final job-write rollback of content/media/progress.
 - The original append-only 0024 SQL on a transactionally restored pre-migration shape: safe duplicate removal and ambiguous stored duplicate refusal, followed by rollback of the fixture schema changes.
-- Three 100,000-row histories: RSS IDs, Telegram legacy aliases, and normalized WeChat URLs. Existing 80-entry batches return exactly 80 rows; fresh batches return zero unrelated rows and insert exactly 80. Each has an actual `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)`, timings and Node RSS samples.
+- Three 100,000-row histories: RSS IDs, Telegram legacy aliases, and normalized WeChat URLs. The corrected WeChat fixture uses disjoint legacy/incoming external IDs for the same canonical URLs and checks the retained internal IDs. Existing 80-entry batches return exactly 80 rows; fresh batches return zero unrelated rows and insert exactly 80. Each has an actual `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)`, timings and Node RSS samples.
 - Real MinIO upload preceding a failed PostgreSQL completion transaction; extraction remains deferred until MIME/storage metadata commit; retry retains the object key; extraction then runs once.
 - Native PostgreSQL SHA256 first-four extraction query with `LIMIT 1`, dead/cooling-only newest items, no fifth-target expansion, and an exact inclusive 15-minute extraction lease boundary in a pinned transaction.
 - Actual production dispatcher at injected minute/half-hour timestamps: ingest, extract and automatic analysis keep their own windows. Real cron POST handler exercises PostgreSQL enqueue-before-ACK, failed ACK, persistent SQLite reopen and idempotent replay.
@@ -50,7 +50,7 @@ Development evidence is preserved, including failing fixture attempts. These are
 | Python worker | 25/25 | Fake Telethon, no account session |
 | Full registered npm suite | 535/535, 92.816 s | Final 5e0bdd3 tree, original command |
 | TypeScript | Passed, 10.119 s | Final 5e0bdd3 native checkout |
-| Full default reliability | 331/331, 0 missing/duplicates, 1,330.924 s | Actual PG/MinIO, real clocks; 52a16ea |
+| Full default reliability | Reported 331/331, 0 missing/duplicates, 1,330.924 s | Actual PG/MinIO, real clocks; 52a16ea; RSS identity was count-only, corrected proof below |
 | Source retry | 49.255 s after eligibility | Actual second minute cron tick |
 | Ordinary reserve 55 s | 13 collected / 1 deferred; 587.371 s; P95 542.296248 s | Serial 45-second sources |
 | Telegram reserve 195 s | 10 collected / 4 deferred; 571.404 s; P95 406.277657 s | Same sources plus actual 120-second media storage |
@@ -69,3 +69,12 @@ For live acceptance, record each permitted source's platform, interval, accessib
 Final source `5e0bdd31c0b303e1709f62babdcfa8b7d5f99511` built successfully from an exact archive. Dev and built home checks passed desktop/mobile; built did not diverge from dev. Source/jobs presentation checks each passed 4/4, with no horizontal overflow, console errors or page errors. Parent inspected desktop/mobile screenshots for both runtimes. See `validation/collection/2026-10-02/ui-5e0bdd3/manifest.json` for hashed build, verdict, screenshot and audit evidence.
 
 The first desktop home overflow verdict is retained. A fresh DOM probe and unchanged repeat passed; transient initial rendering is only an inference. Opening home invokes its existing bootstrap and automatic scheduler tick: one synthetic Telegram-scoped keyword matched local content, with no external attempts and no new items. Thus home verification includes an isolated database write; source/jobs checks are read-only. Display fixtures are not online-source evidence. The existing utility dashboard OG-card note is retained.
+
+
+## T17 review correction (new SHA evidence pending)
+
+The original 52a16ea timed receipts, 5e0bdd3 full 535-test/build/UI receipts, and original gateway log remain unchanged. Review found that the old WeChat 80-row replay also matched direct external IDs, so that result does not independently prove canonical-URL matching. The old 331 total exactly checked the 330 Telegram IDs but only counted the RSS row; it does not establish opaque RSS identity preservation.
+
+The correction changes only the offline reliability/load harness and their tests plus the owning gateway test. It requires the combined `{pages: ["1", ..., "330"], fault: ["001"]}` reference against actual scoped rows, stores both input and collected sets, and rejects an equal-count RSS substitution. WeChat now uses stored `legacy-1..80` and incoming `incoming-1..80`, records actual returned and retained internal IDs, and retains real PostgreSQL EXPLAIN/timing evidence. Cleanup independently attempts every top-level owned closer, records failures, always persists the report, and returns nonzero on cleanup failure. A child-process failure injection verifies that contract. The gateway test captures and asserts exactly its expected invalid-entry warning; production logging is unchanged.
+
+New correction-SHA focused native PG/MinIO, load-cleanup and gateway evidence is pending the controller's source commit. The business source and timed scenario loop are unchanged; the 52a16ea timed results remain historical evidence for those bytes, not a fresh timed run of the corrected harness. Serial P95 and half-hour media dispatch threshold misses, live 72h/7d, 24h endurance, unknown application memory budget and real Telegram quality remain as stated above.

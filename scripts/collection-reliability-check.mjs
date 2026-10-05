@@ -39,6 +39,16 @@ export function assertReferenceSets(reference, rows) {
     assert.deepEqual(actual.get(id).sort(),[...expected].sort(),`reference mismatch ${id}`);
   }
 }
+export async function finishEvidence(report, resources, persist) {
+  report.cleanup_errors=[];
+  try {
+    for(const [resource,close] of Object.entries(resources)) {
+      try {await close();}
+      catch(error) {report.cleanup_errors.push({resource,error:String(error?.stack??error)});report.ok=false;}
+    }
+  } finally {await persist();}
+  return report.cleanup_errors.length ? 1 : 0;
+}
 export const quantile=(values,p)=>values.length ? [...values].sort((a,b)=>a-b)[Math.max(0,Math.ceil(values.length*p)-1)] : unknownMetric('no observed samples');
 export function isolateEnvironment(overrides={}) {
   const safe=offlineEnv(process.env,overrides);
@@ -72,7 +82,7 @@ export async function isolatedPostgres(label='reliability') {
   const port=Number(inspect.NetworkSettings.Ports['5432/tcp'][0].HostPort);
   const url=`postgresql://postgres:t17-dummy-local@127.0.0.1:${port}/t17`;
   let client;
-  const close=async()=>{await client?.end();const live=JSON.parse(docker(['inspect',id]))[0];assert.equal(live.Config.Labels['weave.t17.owner'],name);docker(['rm','-f','-v',id]);};
+  const close=async()=>{try {await client?.end();} finally {const live=JSON.parse(docker(['inspect',id]))[0];assert.equal(live.Config.Labels['weave.t17.owner'],name);docker(['rm','-f','-v',id]);}};
   try {
     for(let n=0;n<60;n++) {
       const attempt=new pg.Client({connectionString:url,connectionTimeoutMillis:1000});
@@ -123,9 +133,11 @@ async function main() {
   } catch(error) {report.error=String(error?.stack??error);process.exitCode=1;}
   finally {
     clearInterval(sample);report.max_rss_bytes=Math.max(maxRss,process.memoryUsage().rss);
-    await vite?.close(); await services?.close(); await db?.close();
-    report.finished_at=new Date().toISOString();report.duration_seconds=(Date.now()-start)/1000;
-    writeFileSync(join(directory,'result.json'),JSON.stringify(report,null,2));console.log(JSON.stringify({...report,evidence_directory:directory},null,2));
+    const cleanupStatus=await finishEvidence(report,{vite:()=>vite?.close(),services:()=>services?.close(),postgres:()=>db?.close()},()=>{
+      report.finished_at=new Date().toISOString();report.duration_seconds=(Date.now()-start)/1000;
+      writeFileSync(join(directory,'result.json'),JSON.stringify(report,null,2));console.log(JSON.stringify({...report,evidence_directory:directory},null,2));
+    });
+    process.exitCode=process.exitCode||cleanupStatus;
     // The application's singleton pg.Pool has no public close API; all owned resources are closed above.
     process.exit(process.exitCode??0);
   }
@@ -194,9 +206,9 @@ async function fakeServices(report) {
     const response=await fetch(`${origin}${url.pathname}`,{signal:options.signals?.abortSignal,redirect:'manual'});
     return {status:response.status,headers:Object.fromEntries(response.headers),body:response.body};
   }},async close(){
-    globalThis.fetch=originalFetch;server.closeAllConnections();await new Promise(r=>server.close(r));
-    const current=JSON.parse(docker(['inspect',id]))[0];assert.equal(current.Config.Labels['weave.t17.owner'],name);
-    docker(['rm','-f','-v',id]);
+    globalThis.fetch=originalFetch;
+    try {server.closeAllConnections();await new Promise((done,reject)=>server.close(error=>error?reject(error):done()));}
+    finally {const current=JSON.parse(docker(['inspect',id]))[0];assert.equal(current.Config.Labels['weave.t17.owner'],name);docker(['rm','-f','-v',id]);}
   }};
 }
 
@@ -243,8 +255,13 @@ async function reliabilityScenarios({db,sql,vite,scheduler,report,directory,serv
   await outboxScenario({db,sql,vite,services,report,directory});
   if(process.argv.includes('--quick')) report.pending.push('real wall-clock source recovery and 720/750-second capacity profiles omitted by --quick');
   else await timedScenarios({sql,vite,services,addSource,report,directory});
-  const counts=await sql.query("select (select count(*)::int from items where source_id='pages') collected,(select count(*)::int from items where source_id='fault') rss");
-  report.expected=331;report.collected=counts[0].collected+counts[0].rss;report.missing=report.expected-report.collected;report.duplicates=0;
+  const reference={pages:Array.from({length:330},(_,i)=>String(i+1)),fault:['001']};
+  const rows=await sql.query("select source_id,external_id from items where source_id in ('pages','fault')");
+  writeFileSync(join(directory,'reference.json'),JSON.stringify(reference,null,2));
+  writeFileSync(join(directory,'collected.json'),JSON.stringify(rows,null,2));
+  assertReferenceSets(reference,rows);
+  report.reference_file='reference.json';report.collected_file='collected.json';
+  report.expected=Object.values(reference).flat().length;report.collected=rows.length;report.missing=0;report.duplicates=0;
   report.delay_p50=unknownMetric('burst load checker measures due-to-job-start');report.delay_p95=unknownMetric('burst load checker measures due-to-job-start');
   report.retry_recovery_seconds=report.source_recovery?.eligibility_to_dispatch_seconds??unknownMetric('SQL time advanced for source recovery; --quick omits real minute cron wall time');
   report.max_queue_age_seconds=unknownMetric('load checker and cadence scenarios report their distinct queue scopes');
@@ -301,7 +318,7 @@ async function historyScenarios({db,sql,persistCollectedBatch,addSource,report,d
   for(const platform of ['rss','telegram','wechat']) {
     const id=`history-${platform}`;await addSource(id,platform);
     await sql.query(`insert into items(id,source_id,platform,external_id,title,url,normalized_wechat_url,pipeline_status)
-      select $1||'-'||g,$1,$2,case when $2='telegram' then 'fixture/'||g else g::text end,'fixture '||g,
+      select $1||'-'||g,$1,$2,case when $2='telegram' then 'fixture/'||g when $2='wechat' then 'legacy-'||g else g::text end,'fixture '||g,
         case when $2='wechat' then 'https://mp.weixin.qq.com/s?__biz=MzFixture&mid='||g||'&idx=1' else '' end,
         case when $2='wechat' then 'https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid='||g else null end,'extracted'
         from generate_series(1,100000) g`,[id,platform]);
@@ -309,21 +326,34 @@ async function historyScenarios({db,sql,persistCollectedBatch,addSource,report,d
     if(platform==='wechat') {
       const {normalizeWechatUrl}=await import('../src/lib/wechat-canonical.ts');
       const keys=Array.from({length:80},(_,i)=>normalizeWechatUrl(`https://mp.weixin.qq.com/s?__biz=MzFixture&mid=${i+1}&idx=1`));
-      await sql.query('update items set normalized_wechat_url=x.key from unnest($2::text[]) with ordinality x(key,n) where source_id=$1 and external_id=x.n::text',[id,keys]);
+      await sql.query("update items set normalized_wechat_url=x.key from unnest($2::text[]) with ordinality x(key,n) where source_id=$1 and external_id='legacy-'||x.n::text",[id,keys]);
     }
     await db.client.query('analyze items');
     const captured=[];const measure={transaction:fn=>sql.transaction(tx=>fn({query:async(text,params)=>{
       const start=performance.now();const rows=await tx.query(text,params);
-      if(/select id, external_id, url, extra, normalized_wechat_url/.test(text)) captured.push({text,params,rows_returned:rows.length,duration_ms:performance.now()-start});
+      if(/select id, external_id, url, extra, normalized_wechat_url/.test(text)) captured.push({text,params,rows_returned:rows.length,rows:rows.map(({id,external_id,normalized_wechat_url})=>({id,external_id,normalized_wechat_url})),duration_ms:performance.now()-start});
       return rows;
     }}))};
-    const inputs=Array.from({length:80},(_,i)=>({...item(i+1),url:platform==='wechat'?`https://mp.weixin.qq.com/s?idx=1&mid=${i+1}&__biz=MzFixture`:item(i+1).url}));
+    const inputs=Array.from({length:80},(_,i)=>({...item(platform==='wechat'?`incoming-${i+1}`:i+1),url:platform==='wechat'?`https://mp.weixin.qq.com/s?idx=1&mid=${i+1}&__biz=MzFixture`:item(i+1).url}));
     const token=`${id}-batch`;
     await sql.query("update sources set status='running',claim_token=$2 where id=$1",[id,token]);await sql.query('insert into jobs(id,source_id,platform) values($1,$2,$3)',[token,id,platform]);
     const [source]=await sql.query('select * from sources where id=$1',[id]);const rss=process.memoryUsage().rss,start=performance.now();
     assert.equal((await persistCollectedBatch(measure,source,token,batch(inputs))).items_new,0);
     const replayMs=performance.now()-start;
     assert.equal(captured.length,1);assert.equal(captured[0].rows_returned,80,'history lookup must return only the 80 referenced rows');
+    const expectedInternalIds=Array.from({length:80},(_,i)=>`${id}-${i+1}`).sort();
+    assert.deepEqual(captured[0].rows.map(row=>row.id).sort(),expectedInternalIds);
+    assert.equal((await sql.query('select count(*)::int n from items where source_id=$1',[id]))[0].n,100000);
+    let canonicalProof;
+    if(platform==='wechat') {
+      const incomingIds=inputs.map(row=>row.external_id);
+      assert.ok(captured[0].rows.every(row=>!incomingIds.includes(row.external_id)),'canonical proof must not match a stored external ID');
+      const retained=await sql.query('select id,external_id,normalized_wechat_url from items where source_id=$1 and normalized_wechat_url=any($2::text[])',[id,captured[0].params[2]]);
+      assert.deepEqual(retained.map(row=>row.id).sort(),expectedInternalIds,'canonical matches must retain the intended internal IDs without duplicates');
+      assert.equal((await sql.query('select count(*)::int n from items where source_id=$1 and external_id=any($2::text[])',[id,incomingIds]))[0].n,0);
+      canonicalProof={incoming_external_ids:incomingIds,lookup_rows:captured[0].rows,retained_rows:retained,matching_branch:'canonical URL only; stored and incoming external IDs disjoint'};
+      writeFileSync(join(directory,'history-wechat-identities.json'),JSON.stringify(canonicalProof,null,2));
+    }
     const plan=(await db.client.query(`explain (analyze,buffers,format json) ${captured[0].text}`,captured[0].params)).rows[0]['QUERY PLAN'];
     const planPath=`history-${platform}-plan.json`;writeFileSync(join(directory,planPath),JSON.stringify(plan,null,2));
     assert.ok(JSON.stringify(plan).includes('Index'),'indexed history lookup required');
@@ -334,7 +364,7 @@ async function historyScenarios({db,sql,persistCollectedBatch,addSource,report,d
     const freshStart=performance.now();assert.equal((await persistCollectedBatch(measure,freshSource,newToken,batch(fresh))).items_new,80);
     assert.equal(captured[1].rows_returned,0,'80 new IDs must not return unrelated history');
     const newMs=performance.now()-freshStart;assert.equal((await sql.query('select count(*)::int n from items where source_id=$1',[id]))[0].n,100080);
-    report.history.push({platform,history_rows:100000,batch_size:80,application_rows_returned:80,new_batch_rows_returned:0,new_batch_inserted:80,new_batch_duration_ms:newMs,lookup_duration_ms:captured[0].duration_ms,
+    report.history.push({platform,...(canonicalProof?{identity_file:'history-wechat-identities.json',matching_branch:canonicalProof.matching_branch}:{}),history_rows:100000,batch_size:80,application_rows_returned:80,new_batch_rows_returned:0,new_batch_inserted:80,new_batch_duration_ms:newMs,lookup_duration_ms:captured[0].duration_ms,
       existing_batch_duration_ms:replayMs,rss_before_bytes:rss,rss_after_bytes:process.memoryUsage().rss,plan_file:planPath});
     await sql.query('update sources set enabled=false where id=$1',[id]);
   }

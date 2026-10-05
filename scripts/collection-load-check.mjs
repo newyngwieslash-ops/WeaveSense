@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { cpus, totalmem } from 'node:os';
-import { assertEvidence, assertReferenceSets, isolateEnvironment, isolatedPostgres, sourceIdentity, quantile, unknownMetric } from './collection-reliability-check.mjs';
+import { finishEvidence, assertEvidence, assertReferenceSets, isolateEnvironment, isolatedPostgres, sourceIdentity, quantile, unknownMetric } from './collection-reliability-check.mjs';
 
 isolateEnvironment();
 const index=process.argv.indexOf('--sources');
@@ -67,6 +67,9 @@ try {
 } catch(error){report.error=String(error?.stack??error);process.exitCode=1;}
 finally {
   clearInterval(sample);report.max_rss_bytes=Math.max(peak,process.memoryUsage().rss);
-  await vite?.close();await db?.close();report.finished_at=new Date().toISOString();report.duration_seconds=(Date.now()-started)/1000;
-  writeFileSync(join(out,'result.json'),JSON.stringify(report,null,2));console.log(JSON.stringify({...report,evidence_directory:out},null,2));process.exit(process.exitCode??0);
+  const cleanupStatus=await finishEvidence(report,{vite:()=>vite?.close(),postgres:()=>db?.close()},()=>{
+    report.finished_at=new Date().toISOString();report.duration_seconds=(Date.now()-started)/1000;
+    writeFileSync(join(out,'result.json'),JSON.stringify(report,null,2));console.log(JSON.stringify({...report,evidence_directory:out},null,2));
+  });
+  process.exit(process.exitCode||cleanupStatus);
 }

@@ -482,6 +482,8 @@ test("primary HTTP, redirect and size failures do not wait for stalled cancel", 
 });
 
 test("rejects invalid primary article fields", async (t) => {
+  const warnings=[];
+  t.mock.method(console,"warn",message=>warnings.push(JSON.parse(message)));
   const upstream = createServer((_req, res) => res.end(`
     <feed xmlns="http://www.w3.org/2005/Atom"><entry><title></title><published>invalid</published>
     <link href="https://example.com/not-wechat"/></entry></feed>`)).listen(0, "127.0.0.1");
@@ -492,6 +494,8 @@ test("rejects invalid primary article fields", async (t) => {
     account_id: "gh_example", name: "示例号",
     primary_feed_url: `http://127.0.0.1:${port}/feed.atom`,
   }, new Date(), new Set(["127.0.0.1"])), /invalid primary feed/);
+  assert.deepEqual(warnings,[{event:"wechat_primary_invalid_entries",source_id:"",invalid_count:1,
+    errors:[{index:0,error:"invalid primary entry: title"}]}]);
 });
 
 test("accepts empty Atom, RSS, and RDF feeds but rejects an unknown root", async (t) => {
