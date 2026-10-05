@@ -1,0 +1,55 @@
+{
+  "git_sha": "6acbd26fc2a80dcf3dc286ddc972fc86d6178d0d",
+  "checked_at": "2026-10-05T01:40:07.220Z",
+  "owned_resources": [
+    {
+      "name": "weave-t17-reliability-28532-muukx0lh",
+      "id": "427787d5a581b549fd6a3343b25a3f595ff5740b66ac168d493e763e755d2f4d",
+      "absent": true
+    },
+    {
+      "name": "weave-t17-minio-28532-muukx32y",
+      "id": "7891bc31c26db37d7fc93424896c121192a0f18134ea42dacd20f698860d3b07",
+      "absent": true
+    },
+    {
+      "name": "weave-t17-load-100-14188-muukyras",
+      "id": "e9b2357b9f5f9eb435063d7b1587ce2c5cb4560a507e941e5688c7d95af8ebc9",
+      "absent": true
+    },
+    {
+      "name": "weave-t17-load-1000-34584-muukyx2r",
+      "id": "185621edb04301a51857da99dfd46a0a0badc2d78704a7dd99de29653441c86a",
+      "absent": true
+    }
+  ],
+  "reserved_ui_container_present": "a0917771d98f117965e9fa502233312beaa90502b59c48f10a8d7c48814806a3 weave-collection-ui-9faa-1004",
+  "reserved_ui_container_mutated": false,
+  "all_five_check_exit_codes": 0,
+  "canonical_url_only_retained_ids": 80,
+  "opaque_rss_id": "001",
+  "combined_reference_rows": 331,
+  "wechat_plan_nodes": [
+    {
+      "type": "Bitmap Heap Scan",
+      "actual_rows": 80
+    },
+    {
+      "type": "BitmapOr",
+      "actual_rows": 0
+    },
+    {
+      "type": "Bitmap Index Scan",
+      "index": "items_source_id_external_id_key",
+      "actual_rows": 0
+    },
+    {
+      "type": "Bitmap Index Scan",
+      "index": "items_source_wechat_url_idx",
+      "actual_rows": 80
+    }
+  ],
+  "old_gateway_log_blob": "06940a54b6bb8a85cd947a505ccc1d62197eecf4",
+  "old_gateway_log_preserved": true,
+  "new_gateway_unexpected_event_lines": 0
+}

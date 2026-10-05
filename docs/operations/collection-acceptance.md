@@ -71,10 +71,23 @@ Final source `5e0bdd31c0b303e1709f62babdcfa8b7d5f99511` built successfully from 
 The first desktop home overflow verdict is retained. A fresh DOM probe and unchanged repeat passed; transient initial rendering is only an inference. Opening home invokes its existing bootstrap and automatic scheduler tick: one synthetic Telegram-scoped keyword matched local content, with no external attempts and no new items. Thus home verification includes an isolated database write; source/jobs checks are read-only. Display fixtures are not online-source evidence. The existing utility dashboard OG-card note is retained.
 
 
-## T17 review correction (new SHA evidence pending)
+## T17 review correction — 6acbd26
 
 The original 52a16ea timed receipts, 5e0bdd3 full 535-test/build/UI receipts, and original gateway log remain unchanged. Review found that the old WeChat 80-row replay also matched direct external IDs, so that result does not independently prove canonical-URL matching. The old 331 total exactly checked the 330 Telegram IDs but only counted the RSS row; it does not establish opaque RSS identity preservation.
 
 The correction changes only the offline reliability/load harness and their tests plus the owning gateway test. It requires the combined `{pages: ["1", ..., "330"], fault: ["001"]}` reference against actual scoped rows, stores both input and collected sets, and rejects an equal-count RSS substitution. WeChat now uses stored `legacy-1..80` and incoming `incoming-1..80`, records actual returned and retained internal IDs, and retains real PostgreSQL EXPLAIN/timing evidence. Cleanup independently attempts every top-level owned closer, records failures, always persists the report, and returns nonzero on cleanup failure. A child-process failure injection verifies that contract. The gateway test captures and asserts exactly its expected invalid-entry warning; production logging is unchanged.
 
-New correction-SHA focused native PG/MinIO, load-cleanup and gateway evidence is pending the controller's source commit. The business source and timed scenario loop are unchanged; the 52a16ea timed results remain historical evidence for those bytes, not a fresh timed run of the corrected harness. Serial P95 and half-hour media dispatch threshold misses, live 72h/7d, 24h endurance, unknown application memory budget and real Telegram quality remain as stated above.
+New focused evidence targets committed source `6acbd26fc2a80dcf3dc286ddc972fc86d6178d0d` on Node v24.16.0, Windows x64. All five exit codes are zero; every infrastructure report records `clean-commit` and an empty `cleanup_errors` array. The business source and timed scenario loop are unchanged; the 52a16ea timed results remain historical evidence for those bytes, not a fresh timed run of the corrected harness. Serial P95 and half-hour media dispatch threshold misses, live 72h/7d, 24h endurance, unknown application memory budget and real Telegram quality remain as stated above.
+
+
+| Correction-SHA check | Result | Evidence directory |
+| --- | --- | --- |
+| Native PG/MinIO quick reliability | 331 exact source/ID references, 0 missing/duplicates, 0 paid calls, 4 local fake model calls; 30.199 s | `reliability-1791164197944` |
+| 100-source burst | 2,000 exact IDs, replay adds 0; 7.256 s | `load-100-1791164279221` |
+| 1,000-source burst | 20,000 exact IDs, replay adds 0; 25.063 s; first-round P50/P95 2.855336/5.079555 s | `load-1000-1791164286687` |
+| Registered validator file | 11/11, including opaque RSS substitution and cleanup rejection child | `checks-6acbd26/validators.log` |
+| Full gateway suite | 127/127, 1.140 s runner; empty stderr and no escaped invalid-entry event | `checks-6acbd26/gateway.log` |
+
+The quick run covered 2026-10-05 01:36:37.944–01:37:08.143 UTC. Its WeChat lookup returned exactly 80 legacy rows for 80 disjoint incoming IDs, retained the same internal IDs, and inserted zero replay rows. PostgreSQL's actual plan returned 0 rows from the external-ID index and 80 from `items_source_wechat_url_idx`; lookup 5.2541 ms, existing batch 168.6899 ms. Fresh input still returned zero history rows and inserted 80. `history-wechat-identities.json`, `history-wechat-plan.json`, `reference.json` and `collected.json` retain the independently inspectable proof.
+
+The four new owned containers were confirmed absent after cleanup; the reserved UI database container remains present and was not changed. `checks-6acbd26/evidence-audit.json` records exact IDs and the preserved original gateway-log blob. The committed `timedScenarios` function is byte-identical to 52a16ea (Git blob comparison, avoiding checkout line endings); `source-scope.json` records its hash and the intervening source paths. Full npm/build/Python and the long timed profile were not rerun for this harness/test-only correction. Their older receipts keep their original SHA and all stated limits. Native quick-run RSS was 181,088,256 bytes; the PostgreSQL cache-inclusive cgroup again reached its 512 MiB peak without OOM. Neither establishes the pending application budget or endurance gate.

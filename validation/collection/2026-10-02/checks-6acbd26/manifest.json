@@ -1,0 +1,31 @@
+{
+  "git_sha": "6acbd26fc2a80dcf3dc286ddc972fc86d6178d0d",
+  "evidence_scope": "offline focused correction; quick omits timed profile",
+  "files_sha256": {
+    "checks-6acbd26/evidence-audit.json": "1e02634225bdcabf22fb784839abf815f6c4c77298854b9dba7012077701d8c2",
+    "checks-6acbd26/gateway.json": "759e08bda85b63bfdad73647d12c7dbd05eb232ba2abf1b5915221da0184354d",
+    "checks-6acbd26/gateway.log": "704fbc33bdfafa454d18409e9c0747b2c91558d22a2d98ed403d1959b1f9eb70",
+    "checks-6acbd26/load-100.json": "510adc7efdde941fec749a9036c798ee40ae71bef96e066ac6c8ba891af17cf6",
+    "checks-6acbd26/load-100.log": "f4bf1fe4f8504d7550ceb3e822c4942858aa2532898539c1c102d16644f9e1ed",
+    "checks-6acbd26/load-1000.json": "ac0afb20364f25a79bba5f9e873a288b0573cc3a1c52b70731e7b6bf9c9d40b8",
+    "checks-6acbd26/load-1000.log": "1d745b028282f4d043269430cb12ad6630b02c99c0f79b812ef3ee7353c298ae",
+    "checks-6acbd26/reliability-quick.json": "d4eb1c5eeefb33c5efb73c4e3453d7fc92f2263d1074f939f8de22d0baa507a9",
+    "checks-6acbd26/reliability-quick.log": "429c063ca1a2289a94beb26dea42e1dc0daf3e7d29a5ba839a462e034173ce75",
+    "checks-6acbd26/source-scope.json": "2528e366105fe933619caa8918ad0907dd5af1ea1beaec48abe3ee1464b32830",
+    "checks-6acbd26/validators.json": "b0426ac6db15192d6eb72b73f4dfdd2c59201ec1a2df51c490152d2effa5e306",
+    "checks-6acbd26/validators.log": "e37c62a6dc9dfcda03ccdf5fca3eb500292b616fa18c331d7927118a4e0b4066",
+    "reliability-1791164197944/collected.json": "ce8e094ccd58880c69636a1662bc8973b9cb0054a69f10cf558cdfd8f465474f",
+    "reliability-1791164197944/extraction-first4-plan.json": "95eaa4b1952233ac2cfb4ced8f285a5af16f4b3ff5914ac835e602814cf17276",
+    "reliability-1791164197944/history-rss-plan.json": "85606ae77cf0438e517510c45436257c0cfdb4a6526a8a19a925c670baf109a8",
+    "reliability-1791164197944/history-telegram-plan.json": "8a46d35d497fcba92aa9ab40ed3130abf74ecbf2dcf709ce23e282eae1d930f4",
+    "reliability-1791164197944/history-wechat-identities.json": "6f6041ee70486c6db95a769d8a926b0b5f02f8df6904a5ee3022c316eadfcde0",
+    "reliability-1791164197944/history-wechat-plan.json": "b5120f1116a8aed13f1c9d1873678795f3c69da7bfca9c8361ea7343b3e8d8ba",
+    "reliability-1791164197944/offline-gateway.sqlite": "32905b408eef68b440b3986b3fb75007662052f690f46852e4ee0c12b26d6e5c",
+    "reliability-1791164197944/reference.json": "ea65008cc040cb3444c877d0fff27f4740b1a204b15d328dee388e459298e709",
+    "reliability-1791164197944/result.json": "3cffc5133c335629d1bf715f00fc59e6ec7d0a37dd10ffdf4995b9bcc706dace",
+    "load-100-1791164279221/reference.json": "ee843d152997b952c90061d16bb8201626139f2336f44ccfc0f1ebfac7a8d574",
+    "load-100-1791164279221/result.json": "12b6a6870a38622fa1eff14f0641b06f317e62c1fd7581c5baa15a449eb74696",
+    "load-1000-1791164286687/reference.json": "2fd761e3ef5abc65b410c71a07e959e1025ae422bb64280171a95d1d0476baa5",
+    "load-1000-1791164286687/result.json": "2865eeaf8d3436275e2210a0c10d93e575397f99ba03d2ec6dde36792f8ba52e"
+  }
+}

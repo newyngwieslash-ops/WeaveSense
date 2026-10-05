@@ -1,0 +1,19 @@
+{
+  "git_sha": "6acbd26fc2a80dcf3dc286ddc972fc86d6178d0d",
+  "source_state": "clean-commit",
+  "runtime": {
+    "node": "v24.16.0",
+    "platform": "win32",
+    "arch": "x64"
+  },
+  "environment_boundary": "offlineEnv allowlist",
+  "started_at": "2026-10-05T01:37:12.715Z",
+  "finished_at": "2026-10-05T01:37:13.218Z",
+  "command": [
+    "node",
+    "--test",
+    "scripts/readiness-offline.test.mjs"
+  ],
+  "exit_code": 0,
+  "duration_ms": 503
+}

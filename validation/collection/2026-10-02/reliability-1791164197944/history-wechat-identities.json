@@ -1,0 +1,889 @@
+{
+  "incoming_external_ids": [
+    "incoming-1",
+    "incoming-2",
+    "incoming-3",
+    "incoming-4",
+    "incoming-5",
+    "incoming-6",
+    "incoming-7",
+    "incoming-8",
+    "incoming-9",
+    "incoming-10",
+    "incoming-11",
+    "incoming-12",
+    "incoming-13",
+    "incoming-14",
+    "incoming-15",
+    "incoming-16",
+    "incoming-17",
+    "incoming-18",
+    "incoming-19",
+    "incoming-20",
+    "incoming-21",
+    "incoming-22",
+    "incoming-23",
+    "incoming-24",
+    "incoming-25",
+    "incoming-26",
+    "incoming-27",
+    "incoming-28",
+    "incoming-29",
+    "incoming-30",
+    "incoming-31",
+    "incoming-32",
+    "incoming-33",
+    "incoming-34",
+    "incoming-35",
+    "incoming-36",
+    "incoming-37",
+    "incoming-38",
+    "incoming-39",
+    "incoming-40",
+    "incoming-41",
+    "incoming-42",
+    "incoming-43",
+    "incoming-44",
+    "incoming-45",
+    "incoming-46",
+    "incoming-47",
+    "incoming-48",
+    "incoming-49",
+    "incoming-50",
+    "incoming-51",
+    "incoming-52",
+    "incoming-53",
+    "incoming-54",
+    "incoming-55",
+    "incoming-56",
+    "incoming-57",
+    "incoming-58",
+    "incoming-59",
+    "incoming-60",
+    "incoming-61",
+    "incoming-62",
+    "incoming-63",
+    "incoming-64",
+    "incoming-65",
+    "incoming-66",
+    "incoming-67",
+    "incoming-68",
+    "incoming-69",
+    "incoming-70",
+    "incoming-71",
+    "incoming-72",
+    "incoming-73",
+    "incoming-74",
+    "incoming-75",
+    "incoming-76",
+    "incoming-77",
+    "incoming-78",
+    "incoming-79",
+    "incoming-80"
+  ],
+  "lookup_rows": [
+    {
+      "id": "history-wechat-1",
+      "external_id": "legacy-1",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=1"
+    },
+    {
+      "id": "history-wechat-2",
+      "external_id": "legacy-2",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=2"
+    },
+    {
+      "id": "history-wechat-3",
+      "external_id": "legacy-3",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=3"
+    },
+    {
+      "id": "history-wechat-4",
+      "external_id": "legacy-4",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=4"
+    },
+    {
+      "id": "history-wechat-5",
+      "external_id": "legacy-5",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=5"
+    },
+    {
+      "id": "history-wechat-6",
+      "external_id": "legacy-6",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=6"
+    },
+    {
+      "id": "history-wechat-7",
+      "external_id": "legacy-7",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=7"
+    },
+    {
+      "id": "history-wechat-8",
+      "external_id": "legacy-8",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=8"
+    },
+    {
+      "id": "history-wechat-9",
+      "external_id": "legacy-9",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=9"
+    },
+    {
+      "id": "history-wechat-10",
+      "external_id": "legacy-10",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=10"
+    },
+    {
+      "id": "history-wechat-11",
+      "external_id": "legacy-11",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=11"
+    },
+    {
+      "id": "history-wechat-12",
+      "external_id": "legacy-12",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=12"
+    },
+    {
+      "id": "history-wechat-13",
+      "external_id": "legacy-13",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=13"
+    },
+    {
+      "id": "history-wechat-14",
+      "external_id": "legacy-14",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=14"
+    },
+    {
+      "id": "history-wechat-15",
+      "external_id": "legacy-15",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=15"
+    },
+    {
+      "id": "history-wechat-16",
+      "external_id": "legacy-16",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=16"
+    },
+    {
+      "id": "history-wechat-17",
+      "external_id": "legacy-17",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=17"
+    },
+    {
+      "id": "history-wechat-18",
+      "external_id": "legacy-18",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=18"
+    },
+    {
+      "id": "history-wechat-19",
+      "external_id": "legacy-19",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=19"
+    },
+    {
+      "id": "history-wechat-20",
+      "external_id": "legacy-20",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=20"
+    },
+    {
+      "id": "history-wechat-21",
+      "external_id": "legacy-21",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=21"
+    },
+    {
+      "id": "history-wechat-22",
+      "external_id": "legacy-22",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=22"
+    },
+    {
+      "id": "history-wechat-23",
+      "external_id": "legacy-23",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=23"
+    },
+    {
+      "id": "history-wechat-24",
+      "external_id": "legacy-24",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=24"
+    },
+    {
+      "id": "history-wechat-25",
+      "external_id": "legacy-25",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=25"
+    },
+    {
+      "id": "history-wechat-26",
+      "external_id": "legacy-26",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=26"
+    },
+    {
+      "id": "history-wechat-27",
+      "external_id": "legacy-27",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=27"
+    },
+    {
+      "id": "history-wechat-28",
+      "external_id": "legacy-28",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=28"
+    },
+    {
+      "id": "history-wechat-29",
+      "external_id": "legacy-29",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=29"
+    },
+    {
+      "id": "history-wechat-30",
+      "external_id": "legacy-30",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=30"
+    },
+    {
+      "id": "history-wechat-31",
+      "external_id": "legacy-31",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=31"
+    },
+    {
+      "id": "history-wechat-32",
+      "external_id": "legacy-32",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=32"
+    },
+    {
+      "id": "history-wechat-33",
+      "external_id": "legacy-33",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=33"
+    },
+    {
+      "id": "history-wechat-34",
+      "external_id": "legacy-34",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=34"
+    },
+    {
+      "id": "history-wechat-35",
+      "external_id": "legacy-35",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=35"
+    },
+    {
+      "id": "history-wechat-36",
+      "external_id": "legacy-36",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=36"
+    },
+    {
+      "id": "history-wechat-37",
+      "external_id": "legacy-37",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=37"
+    },
+    {
+      "id": "history-wechat-38",
+      "external_id": "legacy-38",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=38"
+    },
+    {
+      "id": "history-wechat-39",
+      "external_id": "legacy-39",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=39"
+    },
+    {
+      "id": "history-wechat-40",
+      "external_id": "legacy-40",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=40"
+    },
+    {
+      "id": "history-wechat-41",
+      "external_id": "legacy-41",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=41"
+    },
+    {
+      "id": "history-wechat-42",
+      "external_id": "legacy-42",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=42"
+    },
+    {
+      "id": "history-wechat-43",
+      "external_id": "legacy-43",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=43"
+    },
+    {
+      "id": "history-wechat-44",
+      "external_id": "legacy-44",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=44"
+    },
+    {
+      "id": "history-wechat-45",
+      "external_id": "legacy-45",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=45"
+    },
+    {
+      "id": "history-wechat-46",
+      "external_id": "legacy-46",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=46"
+    },
+    {
+      "id": "history-wechat-47",
+      "external_id": "legacy-47",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=47"
+    },
+    {
+      "id": "history-wechat-48",
+      "external_id": "legacy-48",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=48"
+    },
+    {
+      "id": "history-wechat-49",
+      "external_id": "legacy-49",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=49"
+    },
+    {
+      "id": "history-wechat-50",
+      "external_id": "legacy-50",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=50"
+    },
+    {
+      "id": "history-wechat-51",
+      "external_id": "legacy-51",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=51"
+    },
+    {
+      "id": "history-wechat-52",
+      "external_id": "legacy-52",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=52"
+    },
+    {
+      "id": "history-wechat-53",
+      "external_id": "legacy-53",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=53"
+    },
+    {
+      "id": "history-wechat-54",
+      "external_id": "legacy-54",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=54"
+    },
+    {
+      "id": "history-wechat-55",
+      "external_id": "legacy-55",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=55"
+    },
+    {
+      "id": "history-wechat-56",
+      "external_id": "legacy-56",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=56"
+    },
+    {
+      "id": "history-wechat-57",
+      "external_id": "legacy-57",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=57"
+    },
+    {
+      "id": "history-wechat-58",
+      "external_id": "legacy-58",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=58"
+    },
+    {
+      "id": "history-wechat-59",
+      "external_id": "legacy-59",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=59"
+    },
+    {
+      "id": "history-wechat-60",
+      "external_id": "legacy-60",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=60"
+    },
+    {
+      "id": "history-wechat-61",
+      "external_id": "legacy-61",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=61"
+    },
+    {
+      "id": "history-wechat-62",
+      "external_id": "legacy-62",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=62"
+    },
+    {
+      "id": "history-wechat-63",
+      "external_id": "legacy-63",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=63"
+    },
+    {
+      "id": "history-wechat-64",
+      "external_id": "legacy-64",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=64"
+    },
+    {
+      "id": "history-wechat-65",
+      "external_id": "legacy-65",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=65"
+    },
+    {
+      "id": "history-wechat-66",
+      "external_id": "legacy-66",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=66"
+    },
+    {
+      "id": "history-wechat-67",
+      "external_id": "legacy-67",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=67"
+    },
+    {
+      "id": "history-wechat-68",
+      "external_id": "legacy-68",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=68"
+    },
+    {
+      "id": "history-wechat-69",
+      "external_id": "legacy-69",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=69"
+    },
+    {
+      "id": "history-wechat-70",
+      "external_id": "legacy-70",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=70"
+    },
+    {
+      "id": "history-wechat-71",
+      "external_id": "legacy-71",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=71"
+    },
+    {
+      "id": "history-wechat-72",
+      "external_id": "legacy-72",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=72"
+    },
+    {
+      "id": "history-wechat-73",
+      "external_id": "legacy-73",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=73"
+    },
+    {
+      "id": "history-wechat-74",
+      "external_id": "legacy-74",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=74"
+    },
+    {
+      "id": "history-wechat-75",
+      "external_id": "legacy-75",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=75"
+    },
+    {
+      "id": "history-wechat-76",
+      "external_id": "legacy-76",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=76"
+    },
+    {
+      "id": "history-wechat-77",
+      "external_id": "legacy-77",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=77"
+    },
+    {
+      "id": "history-wechat-78",
+      "external_id": "legacy-78",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=78"
+    },
+    {
+      "id": "history-wechat-79",
+      "external_id": "legacy-79",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=79"
+    },
+    {
+      "id": "history-wechat-80",
+      "external_id": "legacy-80",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=80"
+    }
+  ],
+  "retained_rows": [
+    {
+      "id": "history-wechat-1",
+      "external_id": "legacy-1",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=1"
+    },
+    {
+      "id": "history-wechat-10",
+      "external_id": "legacy-10",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=10"
+    },
+    {
+      "id": "history-wechat-11",
+      "external_id": "legacy-11",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=11"
+    },
+    {
+      "id": "history-wechat-12",
+      "external_id": "legacy-12",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=12"
+    },
+    {
+      "id": "history-wechat-13",
+      "external_id": "legacy-13",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=13"
+    },
+    {
+      "id": "history-wechat-14",
+      "external_id": "legacy-14",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=14"
+    },
+    {
+      "id": "history-wechat-15",
+      "external_id": "legacy-15",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=15"
+    },
+    {
+      "id": "history-wechat-16",
+      "external_id": "legacy-16",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=16"
+    },
+    {
+      "id": "history-wechat-17",
+      "external_id": "legacy-17",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=17"
+    },
+    {
+      "id": "history-wechat-18",
+      "external_id": "legacy-18",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=18"
+    },
+    {
+      "id": "history-wechat-19",
+      "external_id": "legacy-19",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=19"
+    },
+    {
+      "id": "history-wechat-2",
+      "external_id": "legacy-2",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=2"
+    },
+    {
+      "id": "history-wechat-20",
+      "external_id": "legacy-20",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=20"
+    },
+    {
+      "id": "history-wechat-21",
+      "external_id": "legacy-21",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=21"
+    },
+    {
+      "id": "history-wechat-22",
+      "external_id": "legacy-22",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=22"
+    },
+    {
+      "id": "history-wechat-23",
+      "external_id": "legacy-23",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=23"
+    },
+    {
+      "id": "history-wechat-24",
+      "external_id": "legacy-24",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=24"
+    },
+    {
+      "id": "history-wechat-25",
+      "external_id": "legacy-25",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=25"
+    },
+    {
+      "id": "history-wechat-26",
+      "external_id": "legacy-26",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=26"
+    },
+    {
+      "id": "history-wechat-27",
+      "external_id": "legacy-27",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=27"
+    },
+    {
+      "id": "history-wechat-28",
+      "external_id": "legacy-28",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=28"
+    },
+    {
+      "id": "history-wechat-29",
+      "external_id": "legacy-29",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=29"
+    },
+    {
+      "id": "history-wechat-3",
+      "external_id": "legacy-3",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=3"
+    },
+    {
+      "id": "history-wechat-30",
+      "external_id": "legacy-30",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=30"
+    },
+    {
+      "id": "history-wechat-31",
+      "external_id": "legacy-31",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=31"
+    },
+    {
+      "id": "history-wechat-32",
+      "external_id": "legacy-32",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=32"
+    },
+    {
+      "id": "history-wechat-33",
+      "external_id": "legacy-33",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=33"
+    },
+    {
+      "id": "history-wechat-34",
+      "external_id": "legacy-34",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=34"
+    },
+    {
+      "id": "history-wechat-35",
+      "external_id": "legacy-35",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=35"
+    },
+    {
+      "id": "history-wechat-36",
+      "external_id": "legacy-36",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=36"
+    },
+    {
+      "id": "history-wechat-37",
+      "external_id": "legacy-37",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=37"
+    },
+    {
+      "id": "history-wechat-38",
+      "external_id": "legacy-38",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=38"
+    },
+    {
+      "id": "history-wechat-39",
+      "external_id": "legacy-39",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=39"
+    },
+    {
+      "id": "history-wechat-4",
+      "external_id": "legacy-4",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=4"
+    },
+    {
+      "id": "history-wechat-40",
+      "external_id": "legacy-40",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=40"
+    },
+    {
+      "id": "history-wechat-41",
+      "external_id": "legacy-41",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=41"
+    },
+    {
+      "id": "history-wechat-42",
+      "external_id": "legacy-42",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=42"
+    },
+    {
+      "id": "history-wechat-43",
+      "external_id": "legacy-43",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=43"
+    },
+    {
+      "id": "history-wechat-44",
+      "external_id": "legacy-44",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=44"
+    },
+    {
+      "id": "history-wechat-45",
+      "external_id": "legacy-45",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=45"
+    },
+    {
+      "id": "history-wechat-46",
+      "external_id": "legacy-46",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=46"
+    },
+    {
+      "id": "history-wechat-47",
+      "external_id": "legacy-47",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=47"
+    },
+    {
+      "id": "history-wechat-48",
+      "external_id": "legacy-48",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=48"
+    },
+    {
+      "id": "history-wechat-49",
+      "external_id": "legacy-49",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=49"
+    },
+    {
+      "id": "history-wechat-5",
+      "external_id": "legacy-5",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=5"
+    },
+    {
+      "id": "history-wechat-50",
+      "external_id": "legacy-50",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=50"
+    },
+    {
+      "id": "history-wechat-51",
+      "external_id": "legacy-51",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=51"
+    },
+    {
+      "id": "history-wechat-52",
+      "external_id": "legacy-52",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=52"
+    },
+    {
+      "id": "history-wechat-53",
+      "external_id": "legacy-53",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=53"
+    },
+    {
+      "id": "history-wechat-54",
+      "external_id": "legacy-54",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=54"
+    },
+    {
+      "id": "history-wechat-55",
+      "external_id": "legacy-55",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=55"
+    },
+    {
+      "id": "history-wechat-56",
+      "external_id": "legacy-56",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=56"
+    },
+    {
+      "id": "history-wechat-57",
+      "external_id": "legacy-57",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=57"
+    },
+    {
+      "id": "history-wechat-58",
+      "external_id": "legacy-58",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=58"
+    },
+    {
+      "id": "history-wechat-59",
+      "external_id": "legacy-59",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=59"
+    },
+    {
+      "id": "history-wechat-6",
+      "external_id": "legacy-6",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=6"
+    },
+    {
+      "id": "history-wechat-60",
+      "external_id": "legacy-60",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=60"
+    },
+    {
+      "id": "history-wechat-61",
+      "external_id": "legacy-61",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=61"
+    },
+    {
+      "id": "history-wechat-62",
+      "external_id": "legacy-62",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=62"
+    },
+    {
+      "id": "history-wechat-63",
+      "external_id": "legacy-63",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=63"
+    },
+    {
+      "id": "history-wechat-64",
+      "external_id": "legacy-64",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=64"
+    },
+    {
+      "id": "history-wechat-65",
+      "external_id": "legacy-65",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=65"
+    },
+    {
+      "id": "history-wechat-66",
+      "external_id": "legacy-66",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=66"
+    },
+    {
+      "id": "history-wechat-67",
+      "external_id": "legacy-67",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=67"
+    },
+    {
+      "id": "history-wechat-68",
+      "external_id": "legacy-68",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=68"
+    },
+    {
+      "id": "history-wechat-69",
+      "external_id": "legacy-69",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=69"
+    },
+    {
+      "id": "history-wechat-7",
+      "external_id": "legacy-7",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=7"
+    },
+    {
+      "id": "history-wechat-70",
+      "external_id": "legacy-70",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=70"
+    },
+    {
+      "id": "history-wechat-71",
+      "external_id": "legacy-71",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=71"
+    },
+    {
+      "id": "history-wechat-72",
+      "external_id": "legacy-72",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=72"
+    },
+    {
+      "id": "history-wechat-73",
+      "external_id": "legacy-73",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=73"
+    },
+    {
+      "id": "history-wechat-74",
+      "external_id": "legacy-74",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=74"
+    },
+    {
+      "id": "history-wechat-75",
+      "external_id": "legacy-75",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=75"
+    },
+    {
+      "id": "history-wechat-76",
+      "external_id": "legacy-76",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=76"
+    },
+    {
+      "id": "history-wechat-77",
+      "external_id": "legacy-77",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=77"
+    },
+    {
+      "id": "history-wechat-78",
+      "external_id": "legacy-78",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=78"
+    },
+    {
+      "id": "history-wechat-79",
+      "external_id": "legacy-79",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=79"
+    },
+    {
+      "id": "history-wechat-8",
+      "external_id": "legacy-8",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=8"
+    },
+    {
+      "id": "history-wechat-80",
+      "external_id": "legacy-80",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=80"
+    },
+    {
+      "id": "history-wechat-9",
+      "external_id": "legacy-9",
+      "normalized_wechat_url": "https://mp.weixin.qq.com/s?__biz=MzFixture&idx=1&mid=9"
+    }
+  ],
+  "matching_branch": "canonical URL only; stored and incoming external IDs disjoint"
+}
