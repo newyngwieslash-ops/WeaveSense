@@ -1,0 +1,294 @@
+{
+  "sourceSha": "17b91d79e3397dae88d7dd816d0cb667570ce99d",
+  "context": "E:/AI-JIANSHI-20260825/WeaveSense/.worktrees/collection-ui-17b91d7",
+  "sourceBinding": "Parent supplied committed snapshot and lock receipt. Raw snapshot and canonical LF hashes checked against current source. normalizedGitBlobOid is calculated from canonical LF bytes; direct Git blob verification belongs to parent, not claimed by this fixer.",
+  "evidenceCommits": "Later evidence/docs only; do not change tested code/image source revision.",
+  "sourceFiles": [
+    {
+      "path": ".dockerignore",
+      "bytes": 799,
+      "sha256": "59b4fb7e24429764d5d1d87a8c29be23ec109ec431158208286ae16f4839e272",
+      "normalizedLFSha256": "80a142c1ccb476bb45050d32155ff1d7a178f500dc4e2d82b0458a5a55345343",
+      "normalizedLFBytes": 746,
+      "normalizedGitBlobOid": "fab207469b0286b7c491a989146e9aac0cb4efda"
+    },
+    {
+      "path": "Dockerfile",
+      "bytes": 722,
+      "sha256": "09b1e091dd50503515d62a636f813d8da1ff460c4f0f2175dbe9116c0f63b011",
+      "normalizedLFSha256": "b659a34c55ddc1187e7864a28c1e165aef6c88c40234e530a8749a571f336b6f",
+      "normalizedLFBytes": 707,
+      "normalizedGitBlobOid": "3aaa27b83ef2f0d6467cf8fc1719af251e59898b"
+    },
+    {
+      "path": "docker-compose.yml",
+      "bytes": 13079,
+      "sha256": "94b94c833e0e6af53c7f342d0b90c79f1c8365c64d02d57ce897af9937be13f8",
+      "normalizedLFSha256": "c5975e2d0bc5d3ef55bb76539c8b51aa9c69b42ed6c63687aa27bd2ba63597c3",
+      "normalizedLFBytes": 12780,
+      "normalizedGitBlobOid": "34ea0939191c9bcb009f02eb324dc3d43378163c"
+    },
+    {
+      "path": "package.json",
+      "bytes": 7596,
+      "sha256": "e539e4d989ff19c6916a453a1b3b7eca041af7c0d5cb046fef767b51f67499b1",
+      "normalizedLFSha256": "d7e0297a8d71cde098bf826bd06305221c51234a995e54ecd2d93325aa0bdc75",
+      "normalizedLFBytes": 7483,
+      "normalizedGitBlobOid": "1984ec6bbab7f7a710d86e845ba19d863262860c"
+    },
+    {
+      "path": "package-lock.json",
+      "bytes": 277685,
+      "sha256": "adddd028c346b3b43aafb3a0de809f0a917fee05d58be3563efacaf2e95a756b",
+      "normalizedLFSha256": "05b31509cccb7ecb7993ba750d495c84e7c2c95846de36a95de810f9e050ad4c",
+      "normalizedLFBytes": 270072,
+      "normalizedGitBlobOid": "00c7ff2df4a5c65869a7730390d10a726850f6c2"
+    },
+    {
+      "path": "workers/telethon/Dockerfile",
+      "bytes": 404,
+      "sha256": "a432f4e95152b402da3972f6305ccbf555f268de40fd32f015fa3dabca913ef4",
+      "normalizedLFSha256": "39ce72957b3a0d9a476ee2b771203f0a6f8e58126910aba0dcd86e05b5944eef",
+      "normalizedLFBytes": 393,
+      "normalizedGitBlobOid": "8a15074ae3accc49d3a2b7f4c000fccc1bc8b6a4"
+    },
+    {
+      "path": "workers/telethon/.dockerignore",
+      "bytes": 156,
+      "sha256": "83f292e9e038fb3e34b27fd29cf23f2cb7d92a3462ae6adc6bccd5cd31a53d93",
+      "normalizedLFSha256": "b43663890dce10b52ffe687502247e964fbbae0b9b5a7417928f0c458498b97e",
+      "normalizedLFBytes": 149,
+      "normalizedGitBlobOid": "42be4da1c0fd39e492a5a6a12add3e1519a1ef41"
+    },
+    {
+      "path": "workers/telethon/requirements.txt",
+      "bytes": 549,
+      "sha256": "72cb3c07370331acbf1c1f845ae3134d7e594317e4f40f65923c0b3937ec066c",
+      "normalizedLFSha256": "915075d7f0dae24c382898980e035f12fac7010ceaa3d1d7b3f0119a619c6733",
+      "normalizedLFBytes": 525,
+      "normalizedGitBlobOid": "39d218b1d20c427b47b9c0e07a9cbcf5a6d1a380"
+    },
+    {
+      "path": "workers/telethon/server.py",
+      "bytes": 21435,
+      "sha256": "7249779effff2593397832ae29d9d16acb6a2fbe409fac2d6bf69321278991df",
+      "normalizedLFSha256": "e486182148b94681a9a8d9b42b203876e7b5bbee39c0ccb496f261f70050532f",
+      "normalizedLFBytes": 20965,
+      "normalizedGitBlobOid": "ca4b6d126168a5cbc4240f3eccda13ae84a5fd95"
+    },
+    {
+      "path": "workers/telethon/test_history.py",
+      "bytes": 38189,
+      "sha256": "66aedb89566ce9186a4edf063ba072dce90e9969611de65af8d27fd59531f2ea",
+      "normalizedLFSha256": "54ad7466fc96bab1fafacc3605d11cddb8e7777bab66f415621fc55d75248c38",
+      "normalizedLFBytes": 37363,
+      "normalizedGitBlobOid": "6d9c888953144781d5a9912d29fd68737a53cc9a"
+    },
+    {
+      "path": "scripts/collection-backup.mjs",
+      "bytes": 28201,
+      "sha256": "21d7523109c0f3e61984a43f2e68dd2acd75c9666eaa848d6ba5b1bbd922bfc5",
+      "normalizedLFSha256": "2e1748f5ec2b680f05b38b6fcf219fac7e081d03039fcbc795958d3f8c52498c",
+      "normalizedLFBytes": 27825,
+      "normalizedGitBlobOid": "29df509d187539e7947c9c6d3808023134a4cf7e"
+    },
+    {
+      "path": "scripts/collection-backup.test.mjs",
+      "bytes": 6900,
+      "sha256": "c1dc45c4eb4d9796749ee115fef0021704d5f8c68951798813f0b0bcfcafaea4",
+      "normalizedLFSha256": "35877c229ea725f5eb9c689bbc7031e5a2a86b478f3f8ceb800bcb3d729ffc9e",
+      "normalizedLFBytes": 6800,
+      "normalizedGitBlobOid": "e770966009142ad09fca50d88fc1343745589d1e"
+    },
+    {
+      "path": "scripts/postgres-recovery-check.mjs",
+      "bytes": 12646,
+      "sha256": "5a906f8d757d5853ed0ea2d9bda31a254869e1715b30a1c9ce5e4c5abc75467a",
+      "normalizedLFSha256": "be109cbf7b28de6010581a07865dc50fa4b111c43833854ee7c345552b501561",
+      "normalizedLFBytes": 12360,
+      "normalizedGitBlobOid": "cc602e068be35c77f44aca1278fa58c455be11ba"
+    },
+    {
+      "path": "scripts/restore-policy.mjs",
+      "bytes": 1264,
+      "sha256": "faa573e71b1afc2282396a6595adb9825cbf675b20720c98d2ac6b7e964c17e1",
+      "normalizedLFSha256": "544db8bc89b378ebff27e1e8ba05c7eafedbfa6b306002feb1142d9c493b289c",
+      "normalizedLFBytes": 1233,
+      "normalizedGitBlobOid": "f7eef375046e1c25498200e379ba9692da9bd7b4"
+    },
+    {
+      "path": "scripts/restore-policy.test.mjs",
+      "bytes": 1386,
+      "sha256": "74eb9bba2072a7274405e871670788fc7475774b0a735c7d9a2e2e2a02e1c889",
+      "normalizedLFSha256": "9a4eb64c6da1bdad1d7691cc45acf3abeaff465daf76707602d8c7003391ec75",
+      "normalizedLFBytes": 1348,
+      "normalizedGitBlobOid": "c5d799ce65e892db8a4663c481c8184103a227ed"
+    },
+    {
+      "path": "scripts/deployment-policy.mjs",
+      "bytes": 5067,
+      "sha256": "cbd2d79806fb0cbb8fbf9c0c765ae9d6de8588cd95f36c5c07bfb38b8880429f",
+      "normalizedLFSha256": "7489bae844a94984b0ff4f19fc70a4d44a109f2bdb9492ab6e6124d7cd2c6868",
+      "normalizedLFBytes": 4951,
+      "normalizedGitBlobOid": "4bc3e1131599aeea1ec7271eea38aa6260dfc099"
+    },
+    {
+      "path": "scripts/deployment-policy.test.mjs",
+      "bytes": 5895,
+      "sha256": "92b18f35a3d77c36d4de4ae39029cf5d1248b496a4a53fe31d0b9d7caffdf2d5",
+      "normalizedLFSha256": "61dd2c089ea9143fcf4fb7440e9c36411f91c1aa878db4a6f5c77837c924c17e",
+      "normalizedLFBytes": 5744,
+      "normalizedGitBlobOid": "c11c129dcf0e586b0c5189fa0ac808f6669a50aa"
+    },
+    {
+      "path": "scripts/pack-source.mjs",
+      "bytes": 4114,
+      "sha256": "df1a2c470c69a1bc076a69c1863d33c04d9158c8f025902602ab7cf1b90af9e7",
+      "normalizedLFSha256": "18272db4c102979721ef242d4cc587368ab638673e2c73460645884a96a300d0",
+      "normalizedLFBytes": 4006,
+      "normalizedGitBlobOid": "3beea7f1040d603e6ea0d8ed4f04a6ff9f254a2d"
+    },
+    {
+      "path": "scripts/pack-source.test.mjs",
+      "bytes": 5093,
+      "sha256": "06d31230d2c3d5ccfc296cf7965e053b34960349cf4e4d2bb7d946bf51908fae",
+      "normalizedLFSha256": "2f749ade90861b22ee879e06926a7188478e2ed257c5f9b2b293ad589eec5ddc",
+      "normalizedLFBytes": 4996,
+      "normalizedGitBlobOid": "5d9102513e65911c1664ff61538a3b3f6fcd6c8b"
+    },
+    {
+      "path": "validation/collection/2026-10-02/backup-check.mjs",
+      "bytes": 11672,
+      "sha256": "f8ef336fa10b1f38653a3dbed85e17057872bdc590479ee8f799e1a42c902ad5",
+      "normalizedLFSha256": "6708fe30baaf091b0a7ff8b2cd76d204aa8790ca5c7c907f834503a659a9fda7",
+      "normalizedLFBytes": 11541,
+      "normalizedGitBlobOid": "9ffea131ef166f4914e0bc5d89c980ccc0c3d982"
+    },
+    {
+      "path": "src/lib/server/media.test.ts",
+      "bytes": 59878,
+      "sha256": "951f3551553fe39b791e63b2115b843fba1a7acdcb42272e3a131f81db7ca7f5",
+      "normalizedLFSha256": "6882b0c716571fd6a31ecdda10252ddbf828338bbceccdb70fc31358a407e729",
+      "normalizedLFBytes": 58783,
+      "normalizedGitBlobOid": "e5a571c83e80dc6ef1ffb9c8dd92ac53c4c77e38"
+    }
+  ],
+  "evidence": [
+    {
+      "path": "validation/collection/2026-10-02/t18-backup-17b91d7.json",
+      "bytes": 20314,
+      "sha256": "bd4b407920ab203edf472f622625902f17502c4c500977d28c7c5a8751409c99",
+      "canonicalLFSha256": "bd4b407920ab203edf472f622625902f17502c4c500977d28c7c5a8751409c99"
+    },
+    {
+      "path": "validation/collection/2026-10-02/t18-backup-final-17b91d7.json",
+      "bytes": 21015,
+      "sha256": "bd34f15c4d2f6a2d6f98de64420639c645603928e445b9cd2e509499763b626a",
+      "canonicalLFSha256": "bd34f15c4d2f6a2d6f98de64420639c645603928e445b9cd2e509499763b626a"
+    },
+    {
+      "path": "validation/collection/2026-10-02/t18-backup-failed-retention-17b91d7.log",
+      "bytes": 703,
+      "sha256": "f24c0b10302187d05ffc68daf979cdd9898e4aa0fba59caced76ed2d6ffb977c",
+      "canonicalLFSha256": "5d644f0107ca2a037bb2599a731889f2995c870d7749b4e2acf2d90c70bd8a57"
+    },
+    {
+      "path": "validation/collection/2026-10-02/t18-release-final-17b91d7.json",
+      "bytes": 16660,
+      "sha256": "d3609d050c591921bb91b00dfc582e141dbc8f2fe03b026eba4d88846b16b6a9",
+      "canonicalLFSha256": "d3609d050c591921bb91b00dfc582e141dbc8f2fe03b026eba4d88846b16b6a9"
+    },
+    {
+      "path": "validation/collection/2026-10-02/t18-root-build-17b91d7.log",
+      "bytes": 16863,
+      "sha256": "785634fe8c51b94a2a66eefd53f83cc7ad025578831e77d556e4f7f240a8a944",
+      "canonicalLFSha256": "e5daa6bf10febe3e389d1075922bdd874c93b82afdf2f82bf0b6a5c57776e982"
+    },
+    {
+      "path": "validation/collection/2026-10-02/t18-telethon-build-17b91d7.log",
+      "bytes": 9460,
+      "sha256": "1ba26323e1114f6584e9cc72d56cb60f7662ed3bfca0b7ee235395fefa00fb1e",
+      "canonicalLFSha256": "6fc372b188229262a465ba59dfc211b54c8540caf35e16453014124bc7a40c32"
+    },
+    {
+      "path": "validation/collection/2026-10-02/t18-linux-node-tests-17b91d7.log",
+      "bytes": 29946,
+      "sha256": "a3231ce2df799598e3de9cd435c457580ef6f1989ce43f7bfaa117572cb4dfba",
+      "canonicalLFSha256": "a3231ce2df799598e3de9cd435c457580ef6f1989ce43f7bfaa117572cb4dfba"
+    },
+    {
+      "path": "validation/collection/2026-10-02/t18-linux-python-tests-17b91d7.log",
+      "bytes": 125,
+      "sha256": "0415647f5da301bc8224811923fdd6f9a77936c3ea934d9f51ac36514b9ec189",
+      "canonicalLFSha256": "0415647f5da301bc8224811923fdd6f9a77936c3ea934d9f51ac36514b9ec189"
+    },
+    {
+      "path": "validation/collection/2026-10-02/t18-desktop-17b91d7.png",
+      "bytes": 774326,
+      "sha256": "07200500796f328ce9081726715c9cc33d56c27dd73daed99918aa8241c519d8"
+    },
+    {
+      "path": "validation/collection/2026-10-02/t18-mobile-17b91d7.png",
+      "bytes": 240782,
+      "sha256": "c5f9789897cde38d9e7a7fb271d1f01976998de8cdeec0a893d529a9d8451208"
+    },
+    {
+      "path": "validation/collection/2026-10-02/t18-media-fixture-red.log",
+      "bytes": 3472,
+      "sha256": "3d2bdac81aa5144fd673ed56876351c13ee98e3bc9d1f3c8fd4720d1b7bd2534",
+      "canonicalLFSha256": "2ce73647677c16b93fda6d8187282c6c52aa0d829cb5f077843aedad00515ce0"
+    },
+    {
+      "path": "validation/collection/2026-10-02/t18-media-fixture-green.log",
+      "bytes": 2516,
+      "sha256": "3edd5d60d2bd8fcf271f12d29cd0d6d76d0c6feae9e4ea78f1011ec3d1e78b59",
+      "canonicalLFSha256": "46e4a900f90afb3f5fd2e516fa6bac30aa2b9d8d747a2de9c7ba7660613a3918"
+    },
+    {
+      "path": "validation/collection/2026-10-02/t18-dependency-audit-fix-wave.json",
+      "bytes": 5121,
+      "sha256": "b3f2a8dd51838e522f70e9cb9bd08ccc1501137523fff5e242b600755e6584a5",
+      "canonicalLFSha256": "b3f2a8dd51838e522f70e9cb9bd08ccc1501137523fff5e242b600755e6584a5"
+    },
+    {
+      "path": "validation/collection/2026-10-02/t18-dependency-paths-fix-wave.json",
+      "bytes": 2913,
+      "sha256": "da808ef44c4f606d1622ab1ad45ca8784733fdd71250a91561344c917e7c18c7",
+      "canonicalLFSha256": "da808ef44c4f606d1622ab1ad45ca8784733fdd71250a91561344c917e7c18c7"
+    }
+  ],
+  "images": {
+    "app": "sha256:44c19ee6dd3fa4659d53ddac0ac1c624217ea8301ac759e4121d0a63d071d3c8",
+    "scheduler": "sha256:44c19ee6dd3fa4659d53ddac0ac1c624217ea8301ac759e4121d0a63d071d3c8",
+    "gateway": "sha256:44c19ee6dd3fa4659d53ddac0ac1c624217ea8301ac759e4121d0a63d071d3c8",
+    "telethon": "sha256:2ca43a6c165d1d7d20a668193ae2e01578469e15eefe6a0ceb86dd0a2e4db855"
+  },
+  "backup": {
+    "copies": [
+      {
+        "path": "D:\\Weave-things-1005\\collection-backup-17b91d7-24ef4fb39a\\t18-muunyxcz-316d1a\\generation.loom-backup",
+        "sha256": "5cd25ae8a35ff58e1454ea7a904af55052086497b962eb33fd7b0053c892788a",
+        "permissions": "NTFS-current-SID-and-SYSTEM"
+      },
+      {
+        "path": "E:\\AI-JIANSHI-20260825\\WeaveSense\\.worktrees\\collection-backup-17b91d7-24ef4fb39a\\t18-muunyxcz-316d1a\\generation.loom-backup",
+        "sha256": "5cd25ae8a35ff58e1454ea7a904af55052086497b962eb33fd7b0053c892788a",
+        "permissions": "NTFS-current-SID-and-SYSTEM"
+      }
+    ],
+    "recoveryGoals": {
+      "RPOSeconds": 86400,
+      "RTOSeconds": 7200,
+      "measuredRTOSeconds": 17.387,
+      "observedSnapshotAgeSeconds": 56.913,
+      "continuousRPOProven": false
+    }
+  },
+  "scope": {
+    "productionActivated": false,
+    "offMachine": false,
+    "linuxRestore": "actual final-image shared restore snapshot helper under umask022 with two0600 outputs/content/nooverwrite",
+    "fullCliRestore": "Windows NTFS, actual committed-source PG+MinIO+SQLite orchestration from both copies",
+    "telethon": "Source/requirements unchanged from priorcandidate; newrevisiontag+image; pinned dependency installation reran, no cached-install claim"
+  }
+}

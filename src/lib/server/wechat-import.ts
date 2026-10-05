@@ -21,6 +21,7 @@ export type WechatImportValue = {
   primary_feed_url: string;
   interval_minutes: 60;
   priority: "normal" | "high";
+  expected_update_hours?: number | null;
 };
 
 export type WechatSourceInsert = {
@@ -166,8 +167,11 @@ export function previewWechatImport(
   } catch {
     return globalError("CSV 格式错误");
   }
-  if (!records[0] || records[0].fields.length !== HEADER.length ||
-    records[0].fields.some((field, index) => field !== HEADER[index])) {
+  const hasExpectedHours = records[0]?.fields.length === HEADER.length + 1 &&
+    records[0].fields[HEADER.length] === "expected_update_hours";
+  const fieldCount = HEADER.length + Number(hasExpectedHours);
+  if (!records[0] || records[0].fields.length !== fieldCount ||
+    HEADER.some((field, index) => records[0]?.fields[index] !== field)) {
     return globalError("CSV 表头不正确");
   }
 
@@ -181,8 +185,8 @@ export function previewWechatImport(
 
   for (const record of data) {
     const errors: string[] = [];
-    if (record.fields.length !== HEADER.length) {
-      errors.push("字段数量必须为 6");
+    if (record.fields.length !== fieldCount) {
+      errors.push(`字段数量必须为 ${fieldCount}`);
     }
     const [rawName = "", rawWechatId = "", rawSampleUrl = "", rawFeedUrl = "",
       rawInterval = "", rawPriority = ""] = record.fields;
@@ -193,6 +197,11 @@ export function previewWechatImport(
     const primaryFeedUrl = rawFeedUrl.trim();
     const interval = rawInterval.trim();
     const priority = rawPriority.trim() || "normal";
+    const rawExpectedHours = record.fields[HEADER.length]?.trim() ?? "";
+    const expectedHours = rawExpectedHours ? Number(rawExpectedHours) : null;
+    if (hasExpectedHours && expectedHours !== null && (!Number.isFinite(expectedHours) || expectedHours <= 0)) {
+      errors.push("expected_update_hours 必须为正数或留空");
+    }
     const input = { name, wechat_id: wechatId, priority };
 
     if (!name) errors.push("name 不能为空");
@@ -241,6 +250,7 @@ export function previewWechatImport(
           primary_feed_url: primaryFeedUrl,
           interval_minutes: 60,
           priority: priority as "normal" | "high",
+          ...(hasExpectedHours ? { expected_update_hours: expectedHours } : {}),
         },
       });
       preview.valid += 1;

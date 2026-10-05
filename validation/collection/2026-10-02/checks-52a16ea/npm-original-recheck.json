@@ -1,0 +1,8 @@
+{
+  "command": "node scripts/readiness-offline.mjs -- node F:/nodejs/node_modules/npm/bin/npm-cli.js test",
+  "condition": "original npm registry unchanged; load/gateway/Python/typecheck/build finished; timed fixture mostly waiting IO",
+  "git_sha": "52a16ea23d7af683b57faf5d1f1fd45670ab09dc",
+  "exit": 1,
+  "started_at": "2026-10-04T14:35:01.6488208Z",
+  "duration_seconds": 80.396731
+}

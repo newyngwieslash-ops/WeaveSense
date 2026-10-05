@@ -1,0 +1,12 @@
+✔ the archive round-trips through an external unzip (158.0404ms)
+✔ the pack guard rejects a secret that a future include list adds (0.6236ms)
+✔ the archive is a real zip (PK header) not a renamed blob (9.8179ms)
+✔ actual delivery ZIP contains registered tests and their fixture/import closure, without private state (1501.1992ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1791.2559

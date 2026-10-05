@@ -12,6 +12,7 @@ export type WechatGatewaySource = {
   primary_feed_url: string;
   interval_minutes: 60;
   priority: "normal" | "high";
+  expected_update_hours?: number | null;
 };
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -121,15 +122,38 @@ function healthOverview(value: unknown): {
       fail("wechat_gateway_invalid_response");
     }
     const lastPrimaryOkAt = timestamp(source.last_primary_ok_at);
+    const lastPrimaryContentAt = timestamp(source.last_primary_content_at ?? null);
+    const latestPublishedAt = timestamp(source.latest_published_at ?? null);
+    const expectedHours = source.expected_update_hours == null ? null : nonNegative(source.expected_update_hours);
+    if (expectedHours === 0) fail("wechat_gateway_invalid_response");
+    const freshness = lastPrimaryContentAt === null || expectedHours === null ? "unknown"
+      : Date.parse(asOf) - Date.parse(lastPrimaryContentAt) > 3 * expectedHours * 3_600_000
+        ? "suspected_stale" : "fresh";
+    const diagnostic = freshness === "suspected_stale" ? "primary_content_stale" : "";
+    if (source.freshness_state !== undefined &&
+      oneOf(source.freshness_state, ["unknown", "fresh", "suspected_stale"] as const) !== freshness) {
+      fail("wechat_gateway_invalid_response");
+    }
+    if (source.diagnostic_code !== undefined &&
+      oneOf(source.diagnostic_code, ["", "primary_content_stale"] as const) !== diagnostic) {
+      fail("wechat_gateway_invalid_response");
+    }
     const lastPaidCheckAt = timestamp(source.last_paid_check_at);
-    if ([lastPrimaryOkAt, lastPaidCheckAt].some((value) => value !== null &&
+    if ([lastPrimaryOkAt, lastPrimaryContentAt, lastPaidCheckAt].some((value) => value !== null &&
       Date.parse(value) > Date.parse(asOf))) fail("wechat_gateway_invalid_response");
     return {
       source_id: source.source_id,
       last_primary_ok_at: lastPrimaryOkAt,
+      last_primary_content_at: lastPrimaryContentAt,
+      latest_published_at: latestPublishedAt,
+      expected_update_hours: expectedHours,
+      content_age_hours: lastPrimaryContentAt === null ? null
+        : (Date.parse(asOf) - Date.parse(lastPrimaryContentAt)) / 3_600_000,
+      freshness_state: freshness,
+      diagnostic_code: diagnostic,
       consecutive_primary_failures: nonNegative(source.consecutive_primary_failures, true),
       recent_error_type: oneOf(source.recent_error_type,
-        ["", "primary_feed_failed", "technical_error", "mapping_error"] as const),
+        ["", "primary_feed_failed", "technical_error", "mapping_error", "risk_control"] as const),
       last_paid_check_at: lastPaidCheckAt,
       last_paid_result: oneOf(source.last_paid_result,
         ["", "ok", "technical_error", "mapping_error"] as const),
@@ -220,6 +244,7 @@ export function createWechatGatewayClient({ baseUrl, token, fetchImpl = fetch }:
           priority: source.priority,
           sample_url: source.sample_url,
           primary_feed_url: source.primary_feed_url,
+          ...(source.expected_update_hours !== undefined ? { expected_update_hours: source.expected_update_hours } : {}),
         }),
       }, 200);
       if (!value || typeof value !== "object" || Array.isArray(value) ||

@@ -1,21 +1,23 @@
-import { getSql } from "@/lib/db";
+import { getSql, type Sql } from "@/lib/db";
 import { itemMatchesPhrase, RADAR_SOURCE_ID } from "@/lib/keyword";
 import { isPlatform, type PlatformId } from "@/lib/platforms";
 import { shortId } from "@/lib/utils";
 import { normalizeWechatUrl } from "@/lib/wechat-canonical";
-import { canAdvanceCursor, compareNumericIds, isNumericId } from "./cursor.ts";
+import { canAdvanceCursor, compareNumericIds, isNumericId, telegramMessageId } from "./cursor.ts";
 import type { TickResult } from "@/lib/types";
+import { parseTelegramHandle } from "../telegram-handle.ts";
 import { collectSource } from "./collectors";
 import type { FetchIo } from "./http.ts";
 import { collectKeyword } from "./collectors/keyword.ts";
-import { collectorMeta, type CollectorMeta, type NormalizedItem, type SourceRecord } from "./collectors/types";
-import { cronDueQuotas, CRON_SOURCE_CONCURRENCY, runCronBatch, type CronBatchOptions } from "./cron";
+import { collectorMeta, type CollectorMeta, type CollectorBatch, type NormalizedItem, type SourceRecord } from "./collectors/types";
+import { fairCollectionQueue, CRON_SOURCE_CONCURRENCY, runCronBatch, type CronBatchOptions } from "./cron";
 import { enqueueItemMedia } from "./media";
 import { mapKeyword, mapSource } from "./queries";
 import {
   tagCorpusWithPhrase as atomicTagCorpus,
   claimKeyword,
   claimSource,
+  lockSourceClaim,
   completeKeywordClaim,
   completeSourceClaim,
   failKeywordClaim,
@@ -24,7 +26,7 @@ import {
   finishItemInsert,
   mergeExistingItem,
   SCHEDULER_LEASE_LOST,
-  SCHEDULER_LEASE_MINUTES,
+  selectDueCollections,
 } from "./scheduler-atomic";
 import { ensureRadarSource, ensureSeeded } from "./seed";
 import { keywordRunOutcome } from "./scheduler-outcome.ts";
@@ -59,13 +61,6 @@ function latestPublished(items: NormalizedItem[], externalId: string): string | 
 function errMessage(err: unknown): string {
   if (err instanceof Error) return err.message.slice(0, 400);
   return String(err).slice(0, 400);
-}
-
-async function enabledPhrases(): Promise<{ id: string; phrase: string }[]> {
-  const sql = await getSql();
-  return sql.query<{ id: string; phrase: string }>(
-    "select id, phrase from keywords where enabled = true",
-  );
 }
 
 function mergeKeywords(current: string[], extra: string[]): string[] {
@@ -185,61 +180,83 @@ export async function tagCorpusWithPhrase(
   return atomicTagCorpus(sql, phrase, { platforms: options.platforms ?? [] });
 }
 
-export async function runSourceJob(
-  sourceId: string,
-  kind: "incremental" | "manual" | "reconcile" = "incremental",
-  /** Test seam (see `FetchIo`); production callers omit it. */
-  io: FetchIo = {},
-): Promise<{ items_found: number; items_new: number; error: string }> {
-  const sql = await getSql();
-  const jobId = shortId();
-  const raw = await claimSource(sql, sourceId, jobId);
-  if (!raw) {
-    const [current] = await sql.query<Record<string, unknown>>("select * from sources where id = $1", [sourceId]);
-    if (!current) return { items_found: 0, items_new: 0, error: "信源不存在" };
-    const existing = mapSource(current);
-    if (!existing.enabled) return { items_found: 0, items_new: 0, error: "已停用" };
-    return { items_found: 0, items_new: 0, error: existing.status === "running" ? "正在运行" : "任务不可用" };
-  }
-  const source = mapSource(raw);
-
-  let jobCreated = false;
-  let meta: CollectorMeta = { provider: "", attempts: [], paid_call: false };
-  try {
-    await sql.query(
-      `insert into jobs (id, source_id, platform, status, kind) values ($1,$2,$3,'running',$4)`,
-      [jobId, source.id, source.platform, kind],
-    );
-    jobCreated = true;
-    const record: SourceRecord = {
-      id: source.id,
-      platform: source.platform,
-      name: source.name,
-      handle: source.handle,
-      url: source.url,
-      feed_url: source.feed_url,
-      adapter: source.adapter,
-      last_external_id: source.last_external_id,
-    };
-    const collected = await collectSource(record, io);
+/** One pinned connection: fence before any writes, then commit content and progress together.
+ * Source claims use the job ID as their token, so completion needs no extra job context.
+ */
+export async function persistCollectedBatch(database: Sql, source: SourceRecord, claimToken: string,
+  collected: CollectorBatch): Promise<{items_new: number}> {
+  return database.transaction(async sql => {
+    await lockSourceClaim(sql, source.id, claimToken);
     const fetched = collected.items;
-    meta = collected.meta;
-    const existing = await sql.query<{ id: string; external_id: string; url: string; extra: unknown }>(
-      "select id, external_id, url, extra from items where source_id = $1",
-      [source.id],
-    );
-    const existingByExternalId = new Map(existing.map((row) => [row.external_id, row]));
+    if (collected.not_modified && (fetched.length || !collected.feed_validators ||
+      !source.feed_validator_identity || collected.feed_validator_identity !== source.feed_validator_identity ||
+      !(source.feed_etag || source.feed_last_modified))) throw new Error('invalid_not_modified_batch');
+    const meta = collected.meta;
+    const externalIds = [...new Set(fetched.flatMap(item => [item.external_id.slice(0,320),
+      ...(typeof item.extra.rss_legacy_id === "string" ? [item.extra.rss_legacy_id] : [])]))];
     const normalizedUrl = (url: string) => {
       if (source.platform !== "wechat" || !url) return "";
       try { return normalizeWechatUrl(url); } catch { return ""; }
     };
+    const urls = [...new Set(fetched.map(item=>normalizedUrl(item.url)).filter(Boolean))];
+    if (source.platform === "wechat" && (await sql.query(
+      "select id from items where source_id=$1 and platform='wechat' and normalized_wechat_url is null limit 1", [source.id])).length) {
+      throw new Error("wechat_identity_backfill_required: run reconcile-collection-identities --wechat-url-keys with the source paused");
+    }
+    const telegram = source.platform === "telegram" && !source.feed_url;
+    const existing = await sql.query<{ id: string; external_id: string; url: string; extra: unknown; normalized_wechat_url: string | null }>(
+      `select id, external_id, url, extra, normalized_wechat_url from items where source_id = $1 and
+        (external_id=any($2::text[])${source.platform === "wechat" ? " or normalized_wechat_url=any($3::text[])" : telegram ? ` or
+        (case when external_id ~ '^[0-9]+$' then coalesce(nullif(ltrim(external_id,'0'),''),'0')
+          when external_id ~ '^[^/]+/[0-9]+$' then coalesce(nullif(ltrim(split_part(external_id,'/',2),'0'),''),'0') end)=any($3::text[])` : ""})`,
+      [source.id,externalIds,...(source.platform === "wechat" ? [urls] : telegram ? [externalIds] : [])],
+    );
+    const existingByExternalId = new Map(existing.map((row) => [row.external_id, row]));
+    if (source.platform === "telegram" && !source.feed_url) {
+      const handle = parseTelegramHandle(source.handle) || parseTelegramHandle(source.url);
+      // Numeric and exact channel/ID aliases refer to one message of this source.
+      // Check every group before changing any row, retaining internal IDs.
+      const aliases = new Map<string, (typeof existing)[number]>();
+      for (const row of existing) {
+        const canonical = telegramMessageId(row.external_id, handle);
+        if (!canonical) continue;
+        if (aliases.has(canonical)) {
+          throw Object.assign(new Error("identity_conflict:telegram_duplicate"), {identityConflict: {
+            kind: "telegram_duplicate", evidence: {item_ids: [aliases.get(canonical)!.id, row.id], external_id: canonical} }});
+        }
+        aliases.set(canonical, row);
+      }
+      for (const [canonical, row] of aliases) {
+        if (row.external_id !== canonical) {
+          await sql.query("update items set external_id=$2 where id=$1", [row.id, canonical]);
+          existingByExternalId.delete(row.external_id);
+          row.external_id = canonical;
+        }
+        existingByExternalId.set(canonical, row);
+      }
+    }
+    // Check the whole page before changing any item: legacy XML coercion can
+    // map distinct opaque GUIDs onto the same previously stored key.
+    for (const item of fetched) {
+      const alias = item.extra.rss_legacy_id;
+      const legacy = typeof alias === "string" ? existingByExternalId.get(alias) : undefined;
+      if (legacy && asJson<Record<string, unknown>>(legacy.extra, {}).rss_identity !== "raw-v1") {
+        throw Object.assign(new Error("identity_conflict:rss_legacy_alias"), {identityConflict: {
+          kind: "rss_legacy_alias", evidence: {item_id: legacy.id, legacy_external_id: alias, incoming_external_id: item.external_id} }});
+      }
+    }
     const existingByUrl = new Map<string, (typeof existing)[number]>();
     for (const row of existing) {
-      const url = normalizedUrl(row.url);
-      if (url) existingByUrl.set(url, row);
+      const url = row.normalized_wechat_url;
+      if (source.platform === 'wechat' && url) {
+        const previous = existingByUrl.get(url);
+        if (previous && previous.id !== row.id) throw Object.assign(new Error('identity_conflict:wechat_duplicate_url'), {
+          identityConflict: {kind:'wechat_duplicate_url',evidence:{item_ids:[previous.id,row.id]}} });
+        existingByUrl.set(url, row);
+      }
     }
-    const phrases = await enabledPhrases();
-    let itemsNew = 0;
+    const phrases = await sql.query<{ id: string; phrase: string }>("select id, phrase from keywords where enabled = true");
+    let itemsNew = 0, itemsUpdated = 0, contentProgress = false;
 
     for (const it of fetched.filter((item) => item.external_id)) {
       const published = it.published_at ? new Date(it.published_at) : null;
@@ -248,7 +265,7 @@ export async function runSourceJob(
       const matched = phrases
         .filter((p) => itemMatchesPhrase(it.title, it.body, it.author, p.phrase))
         .map((p) => p.phrase);
-      const existingItem = existingByExternalId.get(it.external_id)
+      const existingItem = existingByExternalId.get(it.external_id.slice(0,320))
         ?? existingByUrl.get(normalizedUrl(it.url));
       const existingExtra = asJson<Record<string, unknown>>(existingItem?.extra, {});
       const providerHistory = mergeProvidersSeen(existingExtra, it.extra.providers_seen);
@@ -258,16 +275,29 @@ export async function runSourceJob(
           : it.extra, it.extra.provider ?? meta.provider)
         : it.extra;
       if (existingItem) {
-        await mergeExistingItem(sql, existingItem.id,
+        // An existing coerced identity is not proven raw merely by an exact-ID
+        // refresh; retain legacy provenance until an operator verifies it.
+        if (it.extra.rss_identity && existingExtra.rss_identity !== "raw-v1") delete itemExtra.rss_identity;
+        const bodyProgress = await mergeExistingItem(sql, existingItem.id,
           { ...it, extra: itemExtra, published_at: publishedIso }, matched);
+        if (bodyProgress) itemsUpdated += 1;
+        contentProgress ||= bodyProgress && source.platform !== 'wechat';
+        if (source.platform === 'wechat' && !existingItem.url) {
+          existingItem.normalized_wechat_url = normalizedUrl(it.url);
+          existingItem.url = it.url.slice(0,1000);
+          await sql.query('update items set normalized_wechat_url=$2 where id=$1', [existingItem.id,existingItem.normalized_wechat_url]);
+          if (existingItem.normalized_wechat_url) existingByUrl.set(existingItem.normalized_wechat_url,existingItem);
+        }
+        existingItem.extra = itemExtra;
+        await enqueueItemMedia(existingItem.id, it.media_urls, it.media_type, sql);
         continue;
       }
       const id = shortId();
       const inserted = await sql.query<{ id: unknown }>(
         `insert into items (
            id, source_id, platform, external_id, title, body, author, url,
-           media_type, media_urls, thumbnail_url, views, likes, published_at, extra, matched_keywords
-         ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12,$13,$14,$15::jsonb,$16::jsonb)
+           media_type, media_urls, thumbnail_url, views, likes, published_at, extra, matched_keywords, normalized_wechat_url
+         ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17)
            on conflict (source_id, external_id) do nothing
            returning id`,
         [
@@ -288,14 +318,16 @@ export async function runSourceJob(
           publishedIso,
           JSON.stringify(itemExtra ?? {}),
           JSON.stringify(matched),
+          normalizedUrl(it.url),
         ],
       );
-      if (await finishItemInsert(inserted, it.media_urls, it.media_type, enqueueItemMedia)) {
+      if (await finishItemInsert(inserted, it.media_urls, it.media_type, (id,urls,type)=>enqueueItemMedia(id,urls,type,sql))) {
         itemsNew += 1;
+        contentProgress ||= source.platform !== 'wechat';
         const saved = { id, external_id: it.external_id.slice(0, 320),
-          url: it.url.slice(0, 1000), extra: itemExtra };
+          url: it.url.slice(0, 1000), extra: itemExtra, normalized_wechat_url: normalizedUrl(it.url) };
         existingByExternalId.set(saved.external_id, saved);
-        const savedUrl = normalizedUrl(saved.url);
+        const savedUrl = saved.normalized_wechat_url;
         if (savedUrl) existingByUrl.set(savedUrl, saved);
       }
     }
@@ -314,29 +346,109 @@ export async function runSourceJob(
         nextCursor = latest.external_id;
       }
     }
+    if (collected.next_cursor) nextCursor = collected.next_cursor;
     const cursorItem = fetched.find((it) => it.external_id === nextCursor);
+    // A feed window can be fully consumed without proving historical coverage.
+    // Quarantined entries/body failures and incomplete pages must fetch a fresh 200 next time.
+    const feedComplete = !collected.rejected_entries && !collected.has_more &&
+      fetched.every(item => item.external_id && item.extra.body_complete !== false) &&
+      (!coverage || coverage.complete || (coverage.window_only && coverage.note === 'feed_window'));
+    const validators = collected.feed_validators && (feedComplete
+      ? collected.feed_validators : { etag: '', last_modified: '' });
+    // A merged provider label does not prove cached body provenance. Reuse T11's
+    // raw-primary observation clock; paid/unknown bodies never create a new clock.
+    const primaryTimes=source.platform==='wechat' ? fetched.map(item=>Date.parse(String(item.extra.primary_content_at ?? '')))
+      .filter(at=>Number.isFinite(at) && at<=Date.now()) : [];
+    const primaryContentAt=primaryTimes.length ? new Date(Math.max(...primaryTimes)).toISOString() : null;
     const completed = await completeSourceClaim(
       sql,
       source.id,
-      jobId,
+      claimToken,
       nextCursor,
       cursorItem?.published_at ?? (nextCursor === previousCursor ? null : latestPublished(fetched, nextCursor)),
+      { scan_state: collected.next_scan_state ?? source.scan_state, has_more: collected.has_more,
+        content_progress: contentProgress,
+        primary_content_at:primaryContentAt,
+        coverage: collected.coverage, rejected_entries: collected.rejected_entries,
+        feed_validators: validators, feed_validator_identity: feedComplete ? collected.feed_validator_identity : '' },
     );
-    if (!completed) {
-      await finishSourceJob(sql, jobId, "error", SCHEDULER_LEASE_LOST, 0, 0, meta);
-      return { items_found: 0, items_new: 0, error: SCHEDULER_LEASE_LOST };
-    }
-    await finishSourceJob(sql, jobId, "ok", "", fetched.length, itemsNew, meta);
-    return { items_found: fetched.length, items_new: itemsNew, error: "" };
+    if (!completed) throw new Error(SCHEDULER_LEASE_LOST);
+    const invalid = (collected.rejected_entries ?? 0) + fetched.filter(item=>!item.external_id).length;
+    await finishSourceJob(sql, claimToken, "ok", "", fetched.length + (collected.rejected_entries ?? 0), itemsNew, meta,
+      {items_updated:itemsUpdated, items_invalid:invalid, bytes:collected.bytes, coverage:collected.coverage});
+    return { items_new: itemsNew };
+  });
+}
+
+export async function runSourceJob(
+  sourceId: string,
+  kind: "incremental" | "manual" | "reconcile" = "incremental",
+  /** Test seam (see `FetchIo`); production callers omit it. */
+  io: FetchIo = {},
+): Promise<{ items_found: number; items_new: number; error: string }> {
+  const sql = await getSql();
+  const jobId = shortId();
+  const raw = await claimSource(sql, sourceId, jobId, kind === "manual" || kind === "reconcile");
+  if (!raw) {
+    const [current] = await sql.query<Record<string, unknown>>("select * from sources where id = $1", [sourceId]);
+    if (!current) return { items_found: 0, items_new: 0, error: "信源不存在" };
+    const existing = mapSource(current);
+    if (!existing.enabled) return { items_found: 0, items_new: 0, error: "已停用" };
+    return { items_found: 0, items_new: 0, error: existing.status === "running" ? "正在运行" : existing.next_attempt_at ? `冷却中，重试时间 ${existing.next_attempt_at}` : "尚未到采集时间" };
+  }
+  const source = mapSource(raw);
+
+  let jobCreated = false;
+  const metrics = {bytes: null as number | null};
+  let meta: CollectorMeta = { provider: "", attempts: [], paid_call: false };
+  let collected: CollectorBatch | undefined;
+  try {
+    await sql.query(
+      `insert into jobs (id, source_id, platform, status, kind, adapter) values ($1,$2,$3,'running',$4,$5)`,
+      [jobId, source.id, source.platform, kind, source.adapter],
+    );
+    jobCreated = true;
+    const record: SourceRecord = {
+      id: source.id,
+      platform: source.platform,
+      name: source.name,
+      handle: source.handle,
+      url: source.url,
+      feed_url: source.feed_url,
+      // Read persisted internal cache fields from the claim, never from client input.
+      // Reconciliation repairs item/media state even when the upstream body is unchanged.
+      feed_etag: kind === 'reconcile' ? '' : String(raw.feed_etag ?? ''),
+      feed_last_modified: kind === 'reconcile' ? '' : String(raw.feed_last_modified ?? ''),
+      feed_validator_identity: String(raw.feed_validator_identity ?? ''),
+      adapter: source.adapter,
+      last_external_id: source.last_external_id,
+      scan_state: asJson<SourceRecord["scan_state"]>(raw.scan_state, { bootstrap: "latest" }),
+    };
+    collected = await collectSource(record, {...io, metrics});
+    collected.bytes = metrics.bytes;
+    meta = collected.meta;
+    const {items_new} = await persistCollectedBatch(sql, record, jobId, collected);
+    return {items_found: collected.items.length, items_new, error: ""};
   } catch (err) {
     const failedMeta = collectorMeta(err);
     if (failedMeta.attempts.length) meta = failedMeta;
     const message = errMessage(err);
-    const released = await failSourceClaim(sql, source.id, jobId, message);
-    const jobError = released ? message : SCHEDULER_LEASE_LOST;
-    if (jobCreated) {
-      await finishSourceJob(sql, jobId, "error", jobError, 0, 0, meta);
-    }
+    const jobError = await sql.transaction(async tx => {
+      try { await lockSourceClaim(tx, source.id, jobId); }
+      catch (failure) {
+        if (failure instanceof Error && failure.message === SCHEDULER_LEASE_LOST) return SCHEDULER_LEASE_LOST;
+        throw failure;
+      }
+      const conflict = (err as {identityConflict?: {kind:string;evidence:unknown}})?.identityConflict;
+      if (conflict) await tx.query(`insert into collection_identity_conflicts(source_id,kind,evidence)
+        values($1,$2,$3::jsonb)`,[source.id,conflict.kind,JSON.stringify(conflict.evidence)]);
+      await failSourceClaim(tx, source.id, jobId, err);
+      if (jobCreated) await finishSourceJob(tx, jobId, "error", message,
+        collected ? collected.items.length+(collected.rejected_entries ?? 0) : null,0,meta,
+        {bytes:metrics.bytes,coverage:collected?.coverage,items_updated:collected ? 0 : undefined,
+          items_invalid:collected ? (collected.rejected_entries ?? 0)+collected.items.filter(item=>!item.external_id).length : undefined});
+      return message;
+    });
     return { items_found: 0, items_new: 0, error: jobError };
   }
 }
@@ -350,31 +462,35 @@ export async function runKeywordJob(
   await ensureRadarSource();
   const sql = await getSql();
   const jobId = shortId();
-  const raw = await claimKeyword(sql, keywordId, jobId);
+  const raw = await claimKeyword(sql, keywordId, jobId, kind === "manual");
   if (!raw) {
     const [current] = await sql.query<Record<string, unknown>>("select * from keywords where id = $1", [keywordId]);
     if (!current) return { items_found: 0, items_new: 0, error: "关键词不存在", phrase: "" };
     const existing = mapKeyword(current);
     if (!existing.enabled) return { items_found: 0, items_new: 0, error: "已停用", phrase: existing.phrase };
     return { items_found: 0, items_new: 0,
-      error: existing.status === "running" ? "正在运行" : "任务不可用", phrase: existing.phrase };
+      error: existing.status === "running" ? "正在运行" : existing.next_attempt_at ? `冷却中，重试时间 ${existing.next_attempt_at}` : "尚未到采集时间", phrase: existing.phrase };
   }
   const kw = mapKeyword(raw);
 
   let jobCreated = false;
+  const metrics = {bytes:null as number | null};
+  let attempts:string[]=[];
   try {
     await sql.query(
-      `insert into jobs (id, source_id, platform, status, kind, keyword_id)
-       values ($1,$2,'rss','running',$3,$4)`,
+      `insert into jobs (id, source_id, platform, status, kind, keyword_id, adapter)
+       values ($1,$2,'rss','running',$3,$4,'keyword_index')`,
       [jobId, RADAR_SOURCE_ID, kind, kw.id],
     );
     jobCreated = true;
-    const batch = await collectKeyword(kw.phrase, kw.platforms, io);
+    const batch = await collectKeyword(kw.phrase, kw.platforms, {...io,metrics});
+    attempts=batch.attempts.map(attempt=>attempt.source);
     const fetched = batch.items;
-    let itemsNew = 0;
+    let itemsNew = 0, itemsUpdated = 0;
     for (const it of fetched) {
       const result = await persistHit(it, kw.phrase, "rss");
       if (result === "new") itemsNew += 1;
+      if (result === 'tagged') itemsUpdated += 1;
     }
     const localTagged = await tagCorpusWithPhrase(kw.phrase, { platforms: kw.platforms });
     const hits = await recountKeywordHits(kw.phrase, false);
@@ -387,28 +503,35 @@ export async function runKeywordJob(
       localTagged,
     });
 
-    const completed = await completeKeywordClaim(sql, kw.id, jobId, note, hits);
-    if (!completed) {
-      await sql.query(
-        `update jobs set status = 'error', finished_at = now(), error = $2 where id = $1`,
-        [jobId, SCHEDULER_LEASE_LOST],
-      );
-      return { items_found: 0, items_new: 0, error: SCHEDULER_LEASE_LOST, phrase: kw.phrase };
-    }
+    const failures = batch.attempts.filter(attempt => attempt.status === 'error');
+    const retryAt = Math.max(0, ...failures.map(attempt => attempt.retryAt ?? 0));
+    const completed = failures.length ? await failKeywordClaim(sql, kw.id, jobId, {
+      message: note, code: failures[0].error_code, status: failures.find(a => a.http_status === 401 || a.http_status === 403)?.http_status,
+      retryAt: retryAt || undefined,
+    }, hits) : await completeKeywordClaim(sql, kw.id, jobId, note, hits);
     await sql.query(
-      `update jobs set status = $5, finished_at = now(), items_found = $2, items_new = $3, error = $4
+      `update jobs set status = $5, finished_at = now(), items_found = $2, items_new = $3, error = $4,
+         duration_ms=greatest(0,floor(extract(epoch from(now()-started_at))*1000))::bigint,
+         items_updated=$6, bytes=$7, attempts=$8::jsonb,
+         error_code=$9,retry_at=$10::timestamptz
        where id = $1`,
-      [jobId, fetched.length + localTagged, itemsNew, note, jobStatus],
+      [jobId, fetched.length + localTagged, itemsNew, completed ? note : SCHEDULER_LEASE_LOST,
+        completed ? jobStatus : 'error',itemsUpdated+localTagged,metrics.bytes,
+        JSON.stringify(attempts),completed?.last_error_code ?? SCHEDULER_LEASE_LOST,
+        completed?.next_attempt_at ?? null],
     );
+    if (!completed) return { items_found:0, items_new:0, error:SCHEDULER_LEASE_LOST, phrase:kw.phrase };
     return { items_found: fetched.length + localTagged, items_new: itemsNew, error: note, phrase: kw.phrase };
   } catch (err) {
     const message = errMessage(err);
-    const released = await failKeywordClaim(sql, kw.id, jobId, message);
+    const released = await failKeywordClaim(sql, kw.id, jobId, err);
     const jobError = released ? message : SCHEDULER_LEASE_LOST;
     if (jobCreated) {
       await sql.query(
-        `update jobs set status = 'error', finished_at = now(), error = $2 where id = $1`,
-        [jobId, jobError],
+        `update jobs set status = 'error', finished_at = now(), error = $2,
+          duration_ms=greatest(0,floor(extract(epoch from(now()-started_at))*1000))::bigint,
+          items_found=null,items_updated=null,bytes=$3,error_code=$4,retry_at=$5::timestamptz,attempts=$6::jsonb where id = $1`,
+        [jobId, jobError,metrics.bytes,released?.last_error_code ?? SCHEDULER_LEASE_LOST,released?.next_attempt_at ?? null,JSON.stringify(attempts)],
       );
     }
     return { items_found: 0, items_new: 0, error: jobError, phrase: kw.phrase };
@@ -423,71 +546,23 @@ export async function tickDueSources(
 ): Promise<TickResult & { deferred: number }> {
   await ensureSeeded();
   const sql = await getSql();
-  const { sources: sourceLimit, keywords: keywordLimit } = cronDueQuotas(limit);
-
-  const due = await sql.query<Record<string, unknown>>(
-    `select * from sources
-     where enabled = true
-       and id <> $2
-       and (
-         (status = 'running' and (
-           claimed_at is null
-           or claimed_at <= now() - ($3::integer * interval '1 minute')
-         ))
-         or (status <> 'running' and (
-           last_scanned_at is null
-           or last_scanned_at < now() - (interval_minutes * interval '1 minute')
-         ))
-       )
-     order by last_scanned_at nulls first
-     limit $1`,
-    [sourceLimit, RADAR_SOURCE_ID, SCHEDULER_LEASE_MINUTES],
-  );
-  const dueKw = await sql.query<Record<string, unknown>>(
-    `select * from keywords
-     where enabled = true
-       and (
-         (status = 'running' and (
-           claimed_at is null
-           or claimed_at <= now() - ($2::integer * interval '1 minute')
-         ))
-         or (status <> 'running' and (
-           last_scanned_at is null
-           or last_scanned_at < now() - (interval_minutes * interval '1 minute')
-         ))
-       )
-     order by last_scanned_at nulls first
-     limit $1`,
-    [keywordLimit, SCHEDULER_LEASE_MINUTES],
-  );
-
-  // Fixed pools let keyword and source work share the same bounded window without either backlog starving.
-  const [keywordBatch, sourceBatch] = await Promise.all([runCronBatch(dueKw, async (row) => {
-    const kw = mapKeyword(row);
-    const result = await runKeywordJob(kw.id, "keyword", io);
-    return {
-      source_id: kw.id,
-      name: `关键词 · ${kw.phrase}`,
-      items_new: result.items_new,
-      error: result.error,
-      kind: "keyword",
-    };
-  }, budget), runCronBatch(due, async (row) => {
+  const count = Math.min(35, Math.max(1, Number.isSafeInteger(limit) ? limit : 5));
+  const due = await selectDueCollections(sql, count);
+  const queue = fairCollectionQueue(due.sources, due.backfill, due.keywords, count);
+  const batch = await runCronBatch(queue, async ({row,kind}) => {
+    if (kind === 'keyword') {
+      const kw = mapKeyword(row);
+      const result = await runKeywordJob(kw.id, 'keyword', io);
+      return { source_id: kw.id, name: `关键词 · ${kw.phrase}`, items_new: result.items_new, error: result.error, kind };
+    }
     const source = mapSource(row);
-    const result = await runSourceJob(source.id, "incremental", io);
-    return {
-      source_id: source.id,
-      name: source.name,
-      items_new: result.items_new,
-      error: result.error,
-      kind: "source",
-    };
-  }, { ...budget, concurrency: CRON_SOURCE_CONCURRENCY })]);
-
-  const jobs: TickResult["jobs"] = [...keywordBatch.results, ...sourceBatch.results];
+    const result = await runSourceJob(source.id, 'incremental', io);
+    return { source_id: source.id, name: source.name, items_new: result.items_new, error: result.error, kind };
+  }, { ...budget, concurrency: Math.min(CRON_SOURCE_CONCURRENCY, budget.concurrency ?? CRON_SOURCE_CONCURRENCY) });
+  const jobs: TickResult['jobs'] = batch.results;
   const items_new = jobs.reduce((total, job) => total + job.items_new, 0);
   const errors = jobs.filter((job) => job.error && (job.kind === "source"
     || (job.items_new === 0 && job.error !== "已停用" && !job.error.includes("本地")))).length;
 
-  return { ran: jobs.length, items_new, errors, jobs, deferred: sourceBatch.deferred + keywordBatch.deferred };
+  return { ran: jobs.length, items_new, errors, jobs, deferred: batch.deferred };
 }

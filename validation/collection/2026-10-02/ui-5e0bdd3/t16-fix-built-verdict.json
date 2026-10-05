@@ -1,0 +1,36 @@
+{
+  "base": "http://127.0.0.1:18174",
+  "source_sha": "5e0bdd31c0b303e1709f62babdcfa8b7d5f99511",
+  "phase": "built",
+  "started_at": "2026-10-04T15:00:52.838Z",
+  "elapsed_ms": 5402,
+  "read_only": true,
+  "checks": [
+    "desktop:sources verified primary observation label/unknown/retry/stale advice/no overflow",
+    "desktop:jobs detailed metrics/unknown/retry advice/no overflow",
+    "mobile:sources verified primary observation label/unknown/retry/stale advice/no overflow",
+    "mobile:jobs detailed metrics/unknown/retry advice/no overflow"
+  ],
+  "screenshots": [
+    "E:\\AI-JIANSHI-20260825\\WeaveSense\\.worktrees\\collection-ui-5e0bdd3\\screenshots\\t16-fix-built-desktop-sources-rate.png",
+    "E:\\AI-JIANSHI-20260825\\WeaveSense\\.worktrees\\collection-ui-5e0bdd3\\screenshots\\t16-fix-built-desktop-sources-stale.png",
+    "E:\\AI-JIANSHI-20260825\\WeaveSense\\.worktrees\\collection-ui-5e0bdd3\\screenshots\\t16-fix-built-desktop-sources-primary.png",
+    "E:\\AI-JIANSHI-20260825\\WeaveSense\\.worktrees\\collection-ui-5e0bdd3\\screenshots\\t16-fix-built-desktop-jobs.png",
+    "E:\\AI-JIANSHI-20260825\\WeaveSense\\.worktrees\\collection-ui-5e0bdd3\\screenshots\\t16-fix-built-mobile-sources-rate.png",
+    "E:\\AI-JIANSHI-20260825\\WeaveSense\\.worktrees\\collection-ui-5e0bdd3\\screenshots\\t16-fix-built-mobile-sources-stale.png",
+    "E:\\AI-JIANSHI-20260825\\WeaveSense\\.worktrees\\collection-ui-5e0bdd3\\screenshots\\t16-fix-built-mobile-sources-primary.png",
+    "E:\\AI-JIANSHI-20260825\\WeaveSense\\.worktrees\\collection-ui-5e0bdd3\\screenshots\\t16-fix-built-mobile-jobs.png"
+  ],
+  "uncaught": [],
+  "consoleErrors": [],
+  "external": [
+    "https://fonts.googleapis.com",
+    "https://grok.com",
+    "https://fonts.googleapis.com",
+    "https://grok.com",
+    "https://fonts.googleapis.com",
+    "https://grok.com",
+    "https://fonts.googleapis.com",
+    "https://grok.com"
+  ]
+}

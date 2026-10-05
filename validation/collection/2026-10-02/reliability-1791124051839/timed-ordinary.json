@@ -1,0 +1,128 @@
+{
+  "type": "ordinary",
+  "source_count": 14,
+  "concurrency": 1,
+  "source_transport_delay_seconds": 45,
+  "telegram_media_transport_delay_seconds": 0,
+  "reservation_seconds": 55,
+  "server_budget_seconds": 720,
+  "loop_budget_seconds": 750,
+  "elapsed_seconds": 587.371,
+  "collection": {
+    "ran": 13,
+    "items_new": 13,
+    "errors": 0,
+    "jobs": [
+      {
+        "source_id": "capacity-ordinary-00",
+        "name": "capacity-ordinary-00",
+        "items_new": 1,
+        "error": "",
+        "kind": "source"
+      },
+      {
+        "source_id": "capacity-ordinary-01",
+        "name": "capacity-ordinary-01",
+        "items_new": 1,
+        "error": "",
+        "kind": "source"
+      },
+      {
+        "source_id": "capacity-ordinary-02",
+        "name": "capacity-ordinary-02",
+        "items_new": 1,
+        "error": "",
+        "kind": "source"
+      },
+      {
+        "source_id": "capacity-ordinary-03",
+        "name": "capacity-ordinary-03",
+        "items_new": 1,
+        "error": "",
+        "kind": "source"
+      },
+      {
+        "source_id": "capacity-ordinary-04",
+        "name": "capacity-ordinary-04",
+        "items_new": 1,
+        "error": "",
+        "kind": "source"
+      },
+      {
+        "source_id": "capacity-ordinary-05",
+        "name": "capacity-ordinary-05",
+        "items_new": 1,
+        "error": "",
+        "kind": "source"
+      },
+      {
+        "source_id": "capacity-ordinary-06",
+        "name": "capacity-ordinary-06",
+        "items_new": 1,
+        "error": "",
+        "kind": "source"
+      },
+      {
+        "source_id": "capacity-ordinary-07",
+        "name": "capacity-ordinary-07",
+        "items_new": 1,
+        "error": "",
+        "kind": "source"
+      },
+      {
+        "source_id": "capacity-ordinary-08",
+        "name": "capacity-ordinary-08",
+        "items_new": 1,
+        "error": "",
+        "kind": "source"
+      },
+      {
+        "source_id": "capacity-ordinary-09",
+        "name": "capacity-ordinary-09",
+        "items_new": 1,
+        "error": "",
+        "kind": "source"
+      },
+      {
+        "source_id": "capacity-ordinary-10",
+        "name": "capacity-ordinary-10",
+        "items_new": 1,
+        "error": "",
+        "kind": "source"
+      },
+      {
+        "source_id": "capacity-ordinary-11",
+        "name": "capacity-ordinary-11",
+        "items_new": 1,
+        "error": "",
+        "kind": "source"
+      },
+      {
+        "source_id": "capacity-ordinary-12",
+        "name": "capacity-ordinary-12",
+        "items_new": 1,
+        "error": "",
+        "kind": "source"
+      }
+    ],
+    "deferred": 1
+  },
+  "production": {
+    "stored": 0,
+    "extracted": 0,
+    "analyzed": 0,
+    "ingest_errors": 0,
+    "extract_errors": 0,
+    "deferred": 0,
+    "stages": {
+      "analyze": "disabled",
+      "ingest": "stored=0 errors=0",
+      "extract": "disabled"
+    }
+  },
+  "delay_p50": 270.322531,
+  "delay_p95": 542.296248,
+  "oldest_deferred_age_seconds": 587.371,
+  "proposed_due_wait_p95_120_seconds": "NOT MET",
+  "scope": "real wall-clock serial fixture; production default concurrency is 9, not a fleet capacity promise"
+}

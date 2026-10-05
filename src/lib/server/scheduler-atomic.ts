@@ -1,3 +1,4 @@
+import { RADAR_SOURCE_ID } from "../keyword.ts";
 type Queryable = {
   query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<T[]>;
 };
@@ -6,21 +7,47 @@ type Queryable = {
 export const SCHEDULER_LEASE_MINUTES = 15;
 export const SCHEDULER_LEASE_LOST = "scheduler_lease_lost";
 
+export async function lockSourceClaim(sql: Queryable, sourceId: string, claimToken: string): Promise<void> {
+  const [source] = await sql.query<{claim_token: string; status: string}>(
+    'select claim_token,status from sources where id=$1 for update', [sourceId]);
+  if (!claimToken || source?.claim_token !== claimToken || source.status !== 'running') {
+    throw new Error(SCHEDULER_LEASE_LOST);
+  }
+}
+
+const available = `(next_attempt_at is null or next_attempt_at <= now()) and
+  (status <> 'running' or claimed_at is null or claimed_at <= now() - (${SCHEDULER_LEASE_MINUTES} * interval '1 minute'))`;
+const due = `(status = 'running' or next_attempt_at is not null or last_scanned_at is null or
+  last_scanned_at <= now() - (interval_minutes * interval '1 minute'))`;
+const sourceDue = `(${due} or (has_more and last_scanned_at <= now() - interval '1 minute'))`;
+
+export async function selectDueCollections(sql: Queryable, limit: number) {
+  const order = `order by coalesce(next_attempt_at, last_scanned_at + interval_minutes * interval '1 minute', '-infinity'::timestamptz), id limit $1`;
+  const sources = await sql.query<Record<string, unknown>>(`select * from sources where enabled and id <> '${RADAR_SOURCE_ID}' and ${available} and ${sourceDue} and not has_more ${order}`, [limit]);
+  const backfill = await sql.query<Record<string, unknown>>(`select * from sources where enabled and id <> '${RADAR_SOURCE_ID}' and ${available} and ${sourceDue} and has_more ${order.replace("interval_minutes * interval '1 minute'", "interval '1 minute'")}`, [limit]);
+  const keywords = await sql.query<Record<string, unknown>>(`select * from keywords where enabled and ${available} and ${due} ${order}`, [limit]);
+  return { sources, backfill, keywords };
+}
+
+/** Only call after a validated configuration change, never an enable/disable toggle. */
+export async function clearConfigurationFailure(sql: Queryable, table: 'sources' | 'keywords', id: string) {
+  await sql.query(`update ${table} set next_attempt_at=null, consecutive_failures=0, last_error_code='', last_error=''
+    where id=$1 and last_error_code='config_error' and status <> 'running'`, [id]);
+}
+
 export async function claimSource(
   sql: Queryable,
   sourceId: string,
   claimToken: string,
+  manual = false,
 ): Promise<Record<string, unknown> | null> {
   const [row] = await sql.query<Record<string, unknown>>(
     `update sources
      set status = 'running', last_error = '', claim_token = $2, claimed_at = now()
-     where id = $1 and enabled = true and (
-       status <> 'running'
-       or claimed_at is null
-       or claimed_at <= now() - ($3::integer * interval '1 minute')
-     )
+     where id = $1 and enabled = true and ${available}
+       and ($3::boolean or ${sourceDue})
      returning *`,
-    [sourceId, claimToken, SCHEDULER_LEASE_MINUTES],
+    [sourceId, claimToken, manual],
   );
   return row ?? null;
 }
@@ -29,17 +56,15 @@ export async function claimKeyword(
   sql: Queryable,
   keywordId: string,
   claimToken: string,
+  manual = false,
 ): Promise<Record<string, unknown> | null> {
   const [row] = await sql.query<Record<string, unknown>>(
     `update keywords
      set status = 'running', last_error = '', claim_token = $2, claimed_at = now()
-     where id = $1 and enabled = true and (
-       status <> 'running'
-       or claimed_at is null
-       or claimed_at <= now() - ($3::integer * interval '1 minute')
-     )
+     where id = $1 and enabled = true and ${available}
+       and ($3::boolean or ${due})
      returning *`,
-    [keywordId, claimToken, SCHEDULER_LEASE_MINUTES],
+    [keywordId, claimToken, manual],
   );
   return row ?? null;
 }
@@ -50,38 +75,64 @@ export async function completeSourceClaim(
   claimToken: string,
   lastExternalId: string,
   lastPublishedAt: string | null,
+  progress?: { scan_state?: unknown; has_more?: boolean; coverage?: unknown; rejected_entries?: number;
+    content_progress?: boolean; primary_content_at?:string | null;
+    feed_validators?: { etag: string; last_modified: string }; feed_validator_identity?: string },
 ): Promise<boolean> {
+  const params=[sourceId, lastExternalId, lastPublishedAt, claimToken, ...(progress ? [
+    JSON.stringify(progress.scan_state ?? { bootstrap: "latest" }), progress.has_more ?? false,
+    JSON.stringify(progress.coverage ?? null), progress.rejected_entries ?? 0,
+    ...(progress.feed_validators ? [progress.feed_validators.etag, progress.feed_validators.last_modified,
+      progress.feed_validator_identity ?? ''] : [])] : [])];
+  const primaryAt=progress?.primary_content_at;
+  const observed=primaryAt ? `$${params.length+1}::timestamptz` : null;
   const rows = await sql.query<{ id: unknown }>(
     `update sources set
-       status = 'ok',
+       status = 'ok', next_attempt_at = null, consecutive_failures = 0, last_success_at = now(), last_error_code = '',
        last_scanned_at = now(),
+       last_content_at = ${observed ? `greatest(last_content_at,case when ${observed}<=clock_timestamp() then ${observed} end)`
+         : `case when ${progress?.content_progress === true ? 'true' : 'false'} then now() else last_content_at end`},
        last_error = '',
        last_external_id = coalesce(nullif($2, ''), last_external_id),
        last_published_at = coalesce($3::timestamptz, last_published_at),
        claim_token = '',
-       claimed_at = null
+       claimed_at = null${progress ? `, scan_state = $5::jsonb, has_more = $6,
+       collection_coverage = $7::jsonb, rejected_entries = $8${progress.feed_validators ? `,
+       feed_etag = $9, feed_last_modified = $10, feed_validator_identity = $11` : ''}` : ''}
      where id = $1 and claim_token = $4
      returning id`,
-    [sourceId, lastExternalId, lastPublishedAt, claimToken],
+    [...params,...(primaryAt ? [primaryAt] : [])],
   );
   return rows.length === 1;
 }
 
-export async function failSourceClaim(
-  sql: Queryable,
-  sourceId: string,
-  claimToken: string,
-  error: string,
-): Promise<boolean> {
-  const rows = await sql.query<{ id: unknown }>(
-    `update sources set
-       status = 'error', last_scanned_at = now(), last_error = $2,
-       claim_token = '', claimed_at = null
-     where id = $1 and claim_token = $3
-     returning id`,
-    [sourceId, error, claimToken],
-  );
-  return rows.length === 1;
+function retryFailure(error: unknown) {
+  const value = error as { code?: string; status?: number; retryAt?: number; message?: string } | null;
+  const message = typeof error === 'string' ? error : value?.message ?? 'collection_failed';
+  const permanent = value?.status === 401 || value?.status === 403 ||
+    /未配置|需要有效|请填写|requires_authorized_worker|membership_required/.test(message) ||
+    ['config_error', 'invalid_url', 'unsupported_protocol', 'url_credentials_not_allowed', 'blocked_host', 'blocked_address'].includes(value?.code ?? '');
+  // A server deadline must never become clearable through configuration repair.
+  const retryAt = Number.isFinite(value?.retryAt) ? value!.retryAt! : null;
+  return { message: (permanent ? `${message}；请检查信源地址、授权或服务配置` : message).slice(0,400), code: retryAt ? 'rate_limited' : permanent ? 'config_error' : /^[a-z][a-z0-9_]{0,79}$/.test(value?.code ?? '') ? value!.code! : 'collection_failed', retryAt, permanent };
+}
+
+type ClaimOutcome = { last_error_code:string; next_attempt_at:string | null };
+
+async function failClaim(sql: Queryable, table: 'sources' | 'keywords', id: string, token: string, error: unknown, hits?: number): Promise<ClaimOutcome | null> {
+  const failure = retryFailure(error);
+  const rows = await sql.query<ClaimOutcome>(`update ${table} set status='error', last_scanned_at=now(), last_error=$2,
+    last_error_code=$4, consecutive_failures=consecutive_failures+1,
+    next_attempt_at=greatest(next_attempt_at, to_timestamp($5::double precision / 1000), now() +
+      (least(360, (case when $6::boolean then 360 when consecutive_failures=0 then 1
+        when consecutive_failures=1 then 5 when consecutive_failures=2 then 15 else 60 end) * (1 + random()*0.2)) * interval '1 minute')),
+    claim_token='', claimed_at=null${table === 'keywords' ? ', hits=coalesce($7::integer,hits)' : ''} where id=$1 and claim_token=$3 returning last_error_code,next_attempt_at`,
+    [id, failure.message, token, failure.code, failure.retryAt, failure.permanent, ...(table === 'keywords' ? [hits ?? null] : [])]);
+  return rows[0] ?? null;
+}
+
+export async function failSourceClaim(sql: Queryable, sourceId: string, claimToken: string, error: unknown): Promise<boolean> {
+  return (await failClaim(sql, 'sources', sourceId, claimToken, error)) !== null;
 }
 
 export async function completeKeywordClaim(
@@ -90,33 +141,20 @@ export async function completeKeywordClaim(
   claimToken: string,
   note: string,
   hits: number,
-): Promise<boolean> {
-  const rows = await sql.query<{ id: unknown }>(
+): Promise<ClaimOutcome | null> {
+  const rows = await sql.query<ClaimOutcome>(
     `update keywords set
-       status = 'ok', last_scanned_at = now(), last_error = $2, hits = $3,
+       status = 'ok', next_attempt_at = null, consecutive_failures = 0, last_success_at = now(), last_error_code = '', last_scanned_at = now(), last_error = $2, hits = $3,
        claim_token = '', claimed_at = null
      where id = $1 and claim_token = $4
-     returning id`,
+     returning last_error_code,next_attempt_at`,
     [keywordId, note, hits, claimToken],
   );
-  return rows.length === 1;
+  return rows[0] ?? null;
 }
 
-export async function failKeywordClaim(
-  sql: Queryable,
-  keywordId: string,
-  claimToken: string,
-  error: string,
-): Promise<boolean> {
-  const rows = await sql.query<{ id: unknown }>(
-    `update keywords set
-       status = 'error', last_scanned_at = now(), last_error = $2,
-       claim_token = '', claimed_at = null
-     where id = $1 and claim_token = $3
-     returning id`,
-    [keywordId, error, claimToken],
-  );
-  return rows.length === 1;
+export async function failKeywordClaim(sql: Queryable, keywordId: string, claimToken: string, error: unknown, hits?: number): Promise<ClaimOutcome | null> {
+  return failClaim(sql, 'keywords', keywordId, claimToken, error, hits);
 }
 
 export async function finishItemInsert(
@@ -136,14 +174,21 @@ export async function finishSourceJob(
   jobId: string,
   status: "ok" | "error",
   error: string,
-  itemsFound: number,
+  itemsFound: number | null,
   itemsNew: number,
   meta: { provider: "" | "primary" | "dajiala" | "mixed"; attempts: string[]; paid_call: boolean },
+  metrics?: { items_updated?: number; items_invalid?: number; bytes?: number | null; coverage?: unknown },
 ): Promise<void> {
-  await sql.query(`update jobs set status = $2, finished_at = now(), error = $3,
-      items_found = $4, items_new = $5, provider = $6, attempts = $7::jsonb, paid_call = $8
+  await sql.query(`update jobs set status = $2, finished_at = clock_timestamp(), error = $3,
+      items_found = $4, items_new = $5, provider = $6, attempts = $7::jsonb, paid_call = $8,
+      duration_ms = greatest(0, floor(extract(epoch from (clock_timestamp()-started_at))*1000))::bigint,
+      items_updated = $9, items_invalid = $10, bytes = $11, coverage = $12::jsonb,
+      error_code = case when $2='ok' then '' else (select last_error_code from sources where id=jobs.source_id) end,
+      retry_at = case when $2='error' then (select next_attempt_at from sources where id=jobs.source_id) else null end
     where id = $1`, [jobId, status, error, itemsFound, itemsNew, meta.provider,
-    JSON.stringify(meta.attempts), meta.paid_call]);
+    JSON.stringify(meta.attempts), meta.paid_call,
+    metrics?.items_updated ?? null, metrics?.items_invalid ?? null, metrics?.bytes ?? null,
+    JSON.stringify(metrics?.coverage ?? null)]);
 }
 
 export async function mergeExistingItem(sql: Queryable, itemId: string, item: {
@@ -158,9 +203,11 @@ export async function mergeExistingItem(sql: Queryable, itemId: string, item: {
   likes: number | null;
   published_at: string | null;
   extra: Record<string, unknown>;
-}, matchedKeywords: string[]): Promise<void> {
+}, matchedKeywords: string[]): Promise<boolean> {
   const incomingComplete = item.extra.body_complete === true;
-  await sql.query(`update items set
+  const rows = await sql.query<{content_progress: boolean}>(`with previous as (
+    select body,extra from items where id=$1
+  ), changed as (update items set
       title=coalesce(nullif(title,''),nullif($2,''),title),
       body=case when $14::boolean and coalesce(extra->>'body_complete','false') <> 'true'
           and nullif($3,'') is not null then $3 || case
@@ -184,9 +231,13 @@ export async function mergeExistingItem(sql: Queryable, itemId: string, item: {
       matched_keywords=(select coalesce(jsonb_agg(keyword order by keyword),'[]'::jsonb)
         from (select distinct value as keyword
           from jsonb_array_elements_text(items.matched_keywords || $13::jsonb)) merged)
-    where id=$1`, [itemId, item.title, item.body, item.author, item.url, item.media_type,
+    where id=$1 returning body,extra)
+    select (changed.body <> previous.body or
+      (coalesce(previous.extra->>'body_complete','false') <> 'true' and changed.extra->>'body_complete'='true'))
+      and nullif($3,'') is not null as content_progress from changed, previous`, [itemId, item.title, item.body, item.author, item.url, item.media_type,
     JSON.stringify(item.media_urls), item.thumbnail_url, item.views, item.likes, item.published_at,
     JSON.stringify(item.extra), JSON.stringify(matchedKeywords), incomingComplete]);
+  return rows[0]?.content_progress === true;
 }
 
 /**

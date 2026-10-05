@@ -21,6 +21,8 @@
  * `offlineEnv` deliberately does not echo dropped values anywhere.
  */
 import { spawnSync } from "node:child_process";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { isMainModule } from "./with-app-env.mjs";
 
 /**
@@ -61,6 +63,9 @@ export const OFFLINE_DEFAULTS = Object.freeze({
   AGENT_WORKER_ENABLED: "false",
   AGENT_ASYNC_RESEARCH_ENABLED: "false",
   XAI_API_KEY: "",
+  LOOM_RUNTIME_MODE: "development",
+  // An explicit missing path prevents with-app-env from finding real settings.
+  LOOM_MODEL_CONFIG: join(tmpdir(), `loom-offline-missing-${process.pid}`, "model.json"),
 });
 
 /**
@@ -77,7 +82,7 @@ export function offlineEnv(parent, overrides = {}) {
     if (value !== undefined) env[key] = value;
   }
   for (const [key, value] of Object.entries(OFFLINE_DEFAULTS)) {
-    if (String(parent[key] ?? "").trim() === "") env[key] = value;
+    env[key] = value;
   }
   for (const [key, value] of Object.entries(overrides)) {
     if (value === undefined) delete env[key];
@@ -107,6 +112,7 @@ function main(argv) {
     stdio: "inherit",
     windowsHide: true,
   });
+  if (result.error) console.error(`offline child failed to start: ${result.error.code ?? "unknown"}`);
   process.exit(result.status ?? 1);
 }
 

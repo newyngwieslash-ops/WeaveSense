@@ -14,6 +14,8 @@ import {
   capFor,
   hostBlocked,
   publicFetch,
+  parseRetryAfter,
+  CollectionHttpError,
   readCapped,
   resolvePublicAddresses,
   type BodyLike,
@@ -34,6 +36,112 @@ function resolverFor(map: Record<string, string[]>): DnsResolver {
     },
   };
 }
+
+test("Retry-After accepts seconds and dates, rejecting invalid values", () => {
+  assert.equal(parseRetryAfter("120", 1000), 121000);
+  assert.equal(parseRetryAfter("not-a-date", 1000), null);
+  assert.equal(parseRetryAfter("Thu, 01 Jan 1970 00:02:00 GMT", 1000), 120000);
+  for (const value of [null, "", "-1", "1.5", "Infinity"]) assert.equal(parseRetryAfter(value, 1000), null);
+});
+
+test("DNS and stalled fake transports obey the total deadline", async () => {
+  for (const dnsStall of [true, false]) {
+    let dialled = false;
+    const started = Date.now();
+    await assert.rejects(() => publicFetch("https://example.com/?token=secret", {
+      timeoutMs: 30,
+      resolver: { lookup: () => dnsStall ? new Promise(() => {}) : Promise.resolve([{ address: "1.1.1.1", family: 4 }]) },
+      transport: async () => { dialled = true; return new Promise(() => {}); },
+    }), (error: unknown) => error instanceof CollectionHttpError && error.code === "timeout" && !error.message.includes("secret"));
+    assert.equal(dialled, !dnsStall);
+    assert.ok(Date.now() - started < 500);
+  }
+});
+
+test("a DNS result arriving after expiry never triggers a request", async () => {
+  let resolveDns: (value: { address: string; family: number }[]) => void;
+  let calls = 0;
+  await assert.rejects(() => publicFetch("https://example.com/", {
+    timeoutMs: 20,
+    resolver: { lookup: () => new Promise((resolve) => { resolveDns = resolve; }) },
+    transport: async () => { calls++; return textResponse("unexpected"); },
+  }), /timeout/);
+  resolveDns!([{ address: "1.1.1.1", family: 4 }]);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(calls, 0);
+});
+
+test("HTTP failures preserve status and Retry-After; successes normalize headers", async () => {
+  const resolver = resolverFor({ "example.com": ["1.1.1.1"] });
+  for (const status of [429, 503]) {
+    const before = Date.now();
+    await assert.rejects(() => publicFetch("https://example.com/?token=secret", {
+      resolver, transport: async () => textResponse("secret", status, { "Retry-After": "120" }),
+    }), (error: unknown) => {
+      assert.ok(error instanceof CollectionHttpError);
+      assert.equal(error.code, status === 429 ? "rate_limited" : "http_error");
+      assert.equal(error.status, status);
+      assert.ok((error.retryAt ?? 0) >= before + 120000);
+      assert.equal(error.message, `HTTP ${status}`);
+      return true;
+    });
+  }
+  const result = await publicFetch("https://example.com/", { resolver,
+    transport: async () => textResponse("ok", 201, { "Content-Type": "text/html", "X-Test": "value" }) });
+  assert.equal(result.status, 201);
+  assert.equal(result.headers["x-test"], "value");
+  assert.equal(result.contentType, "text/html");
+});
+
+test("cross-origin redirects strip sensitive headers and cancel the old body", async () => {
+  let cancelled = false;
+  let calls = 0;
+  await publicFetch("https://example.com/", {
+    resolver: resolverFor({ "example.com": ["1.1.1.1"], "other.example": ["8.8.8.8"] }),
+    headers: { Authorization: "secret", Cookie: "secret", "Proxy-Authorization": "secret", "X-Api-Key": "secret", Referer: "https://example.com/?token=secret", Accept: "text/plain" },
+    transport: async (_url, options) => {
+      if (++calls === 1) return { status: 302, headers: { location: "https://other.example/" }, body: bodyOf([], { onCancel: () => { cancelled = true; } }) };
+      assert.deepEqual(options.headers, { Accept: "text/plain" });
+      return textResponse("ok");
+    },
+  });
+  assert.equal(cancelled, true);
+});
+
+test("caller cancellation drops a stalled body and generic errors omit secrets", async () => {
+  const resolver = resolverFor({ "example.com": ["1.1.1.1"] });
+  const controller = new AbortController();
+  let cancelled = false;
+  const request = publicFetch("https://example.com/?token=secret", { signal: controller.signal, resolver,
+    transport: async () => ({ status: 200, headers: {}, body: { getReader: () => ({
+      read: () => new Promise(() => {}), cancel: async () => { cancelled = true; }, releaseLock() {},
+    }) } }),
+  });
+  setTimeout(() => controller.abort(new Error("secret caller reason")), 20);
+  await assert.rejects(() => request, (error: unknown) => error instanceof CollectionHttpError && error.code === "aborted" && !error.message.includes("secret"));
+  assert.equal(cancelled, true);
+  await assert.rejects(() => publicFetch("https://example.com/?token=secret", { resolver,
+    transport: async () => { throw new Error("request failed https://example.com/?token=secret"); },
+  }), (error: unknown) => error instanceof CollectionHttpError && error.code === "network_error" && !error.message.includes("secret"));
+});
+
+test("redirects share DNS and body time; each transport gets remaining budget", async (t) => {
+  const budgets: number[] = [];
+  let now = 0;
+  t.mock.method(Date, "now", () => now);
+  const started = performance.now();
+  await assert.rejects(() => publicFetch("https://example.com/", { timeoutMs: 90,
+    resolver: { async lookup() { now += 25; return [{ address: "1.1.1.1", family: 4 }]; } },
+    transport: async (_url, options) => {
+      budgets.push(options.timeoutMs!);
+      assert.ok(options.signals?.abortSignal);
+      if (budgets.length === 1) return { status: 302, headers: { location: "/next" }, body: bodyOf([]) };
+      return { status: 200, headers: {}, body: { getReader: () => ({ read: () => new Promise(() => {}), cancel: async () => {}, releaseLock() {} }) } };
+    },
+  }), (error: unknown) => error instanceof CollectionHttpError && error.code === "timeout");
+  assert.deepEqual(budgets, [65, 40]);
+  assert.ok(performance.now() - started < 500);
+});
 
 test("protocol and credential boundaries", () => {
   assert.ok(assertPublicUrl("https://example.com/feed.xml"));

@@ -15,6 +15,9 @@ services:
   # 因为下面已改为必填从 env_file 取值）。
   # ---------------------------------------------------------------------------
   postgres:
+    labels:
+      loom.backup.group: loom-local
+      loom.backup.role: postgres
     # Pinned by digest (from the image actually in use, 2026-09-16) so a
     # redeploy cannot silently change the database engine version.
     image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
@@ -34,6 +37,9 @@ services:
     restart: unless-stopped
 
   minio:
+    labels:
+      loom.backup.group: loom-local
+      loom.backup.role: minio
     image: minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     command: server /data --console-address ":9001"
     env_file:
@@ -81,17 +87,20 @@ services:
 
 
   telethon:
+    image: ${LOOM_TELETHON_IMAGE:?set_a_verified_fixed_release_tag}
+    labels:
+      loom.backup.group: loom-local
+      loom.backup.role: telethon
+    stop_grace_period: 180s
     build:
       context: ./workers/telethon
+      args:
+        SOURCE_SHA: ${LOOM_RELEASE_SHA:?set_the_tested_commit}
     env_file:
       - F:/loom-backups/env/telethon.env
     environment:
-      TELEGRAM_API_ID: ${TELEGRAM_API_ID:-}
-      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH:-}
-      TELEGRAM_SESSION: ${TELEGRAM_SESSION:-}
       TELEGRAM_SESSION_PATH: /data/loom.session
       MINIO_ENDPOINT: minio:9000
-      TELETHON_CONCURRENCY: ${TELETHON_CONCURRENCY:-3}
       PORT: "8787"
     volumes:
       - telethon-session:/data
@@ -104,7 +113,7 @@ services:
           "CMD",
           "python",
           "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/health', timeout=3)",
+          "import json, urllib.request; h=json.load(urllib.request.urlopen('http://127.0.0.1:8787/health', timeout=3)); assert h['state'] in ('ready', 'cooldown')",
         ]
       interval: 15s
       timeout: 5s
@@ -113,18 +122,17 @@ services:
     restart: unless-stopped
 
   wechat-gateway:
-    build: .
+    image: ${LOOM_RELEASE_IMAGE:?set_a_verified_fixed_release_tag}
+    labels:
+      loom.backup.group: loom-local
+      loom.backup.role: gateway
+    stop_grace_period: 180s
     command: ["npm", "run", "gateway:start"]
     deploy:
       replicas: 1
     env_file:
       - F:/loom-backups/env/wechat-gateway.env
     environment:
-      DAJIALA_KEY: ${DAJIALA_KEY:-}
-      DAJIALA_VERIFYCODE: ${DAJIALA_VERIFYCODE:-}
-      DAJIALA_BASE_URL: ${DAJIALA_BASE_URL:-https://www.dajiala.com/fbmain/monitor/v3}
-      DAJIALA_DAILY_BUDGET_RMB: ${DAJIALA_DAILY_BUDGET_RMB:-20}
-      DAJIALA_DAILY_CALL_LIMIT: ${DAJIALA_DAILY_CALL_LIMIT:-250}
       GATEWAY_DB_PATH: /data/wechat-gateway.sqlite
       PORT: "8790"
     volumes:
@@ -137,6 +145,9 @@ services:
     command: ["node", "workers/wechat-gateway/fixture-server.mjs"]
 
   agent:
+    labels:
+      loom.backup.group: loom-local
+      loom.backup.role: agent
     # Optional service, not started by default.
     #
     # Why: it refuses to start without AGENT_SERVICE_TOKEN (the app's default is
@@ -159,7 +170,8 @@ services:
       AGENT_SERVICE_TOKEN: ${AGENT_SERVICE_TOKEN:-}
       AGENT_MODEL_BASE_URL: ${AGENT_MODEL_BASE_URL:-https://api.x.ai/v1}
       AGENT_MODEL_NAME: ${AGENT_MODEL_NAME:-grok-4.5}
-      AGENT_MODEL_API_KEY: ${AGENT_MODEL_API_KEY:-${XAI_API_KEY:-}}
+      # Optional agent profile requires its own explicit model credential.
+      AGENT_MODEL_API_KEY: ${AGENT_MODEL_API_KEY:-}
       AGENT_DATA_URL: ${AGENT_DATA_URL:-http://app:8080/api/internal/agent-data}
       AGENT_DATA_TOKEN: ${AGENT_DATA_TOKEN:-}
       AGENT_SKILLS_DIR: /app/skills
@@ -176,12 +188,17 @@ services:
     restart: unless-stopped
 
   app:
-    # 2026-09-30 merge: comet/local-model-settings is merged into main, so the
-    # root tree now IS the production source. `build: .` is safe again (T24's
-    # "root tree holds pre-fix code" no longer applies). Image tag kept as the
-    # friendly local cache name; compose builds it when absent.
-    build: .
-    image: loom-app:readiness-20260930-merged
+    # Fixed tags/SHA come from the reviewed release manifest, never inferred
+    # from an old production tag. Scheduler and gateway reuse this exact image.
+    build:
+      context: .
+      args:
+        SOURCE_SHA: ${LOOM_RELEASE_SHA:?set_the_tested_commit}
+    image: ${LOOM_RELEASE_IMAGE:?set_a_verified_fixed_release_tag}
+    labels:
+      loom.backup.group: loom-local
+      loom.backup.role: app
+    stop_grace_period: 180s
     # 凭据从工作树外的文件读入，不经命令行、不进仓库（见文件头注释）。
     env_file:
       - F:/loom-backups/env/app.env
@@ -216,7 +233,6 @@ services:
       LOOM_MODEL_MANAGE_ALLOWED: "true"
       TELEGRAM_WORKER_URL: http://telethon:8787
       MINIO_ENDPOINT: http://minio:9000
-      XAI_API_KEY: ${XAI_API_KEY:-}
       TICK_LIMIT: ${TICK_LIMIT:-20}
       CRON_TICK_LIMIT: ${CRON_TICK_LIMIT:-200}
       EXTRACT_AUTO: ${EXTRACT_AUTO:-false}
@@ -243,12 +259,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      telethon:
-        condition: service_started
-      minio:
-        condition: service_started
-      wechat-gateway:
-        condition: service_started
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
@@ -259,7 +269,11 @@ services:
 
   scheduler:
     # Same image as app — it runs the readiness scheduler code.
-    image: loom-app:readiness-20260930-merged
+    image: ${LOOM_RELEASE_IMAGE:?set_a_verified_fixed_release_tag}
+    labels:
+      loom.backup.group: loom-local
+      loom.backup.role: scheduler
+    stop_grace_period: 180s
     command: ["npm", "run", "cron:start"]
     deploy:
       replicas: 1

@@ -18,7 +18,7 @@ const err = (source: KeywordAttempt["source"], code: KeywordAttempt["error_code"
 test("a local-only scope is a normal run, not a failure", () => {
   const outcome = keywordRunOutcome([], { externalItems: 0, localTagged: 0 });
   assert.equal(outcome.status, "ok");
-  assert.equal(outcome.note, "");
+  assert.match(outcome.note, /仅匹配已采集内容.*未执行原生关键词检索/);
 });
 
 test("all sources failing is an error, and local tags are still reported", () => {

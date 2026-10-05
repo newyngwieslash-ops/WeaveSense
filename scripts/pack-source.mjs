@@ -10,13 +10,17 @@
  * The exclusion decision is imported from `deployment-policy.mjs`, so the pack
  * and the tests can never disagree about what "excluded" means.
  */
-import { cpSync, copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
+import { cpSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, lstatSync, realpathSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { packExcluded } from "./deployment-policy.mjs";
 import { zipDirectory } from "./zip.mjs";
 
 const root = process.cwd();
-const staging = resolve(root, "artifacts", ".pack-staging");
+const artifactRoot = resolve(root, "artifacts");
+mkdirSync(artifactRoot, { recursive: true });
+if (lstatSync(artifactRoot).isSymbolicLink() || realpathSync(artifactRoot) !== join(realpathSync(root), "artifacts")) throw new Error("pack_unsafe_artifacts_path");
+// Each build owns a fresh staging directory; never recursively delete prior user state.
+const staging = mkdtempSync(join(artifactRoot, ".pack-staging-"));
 const zipName = "zhishi-loom-source.zip";
 const destArtifacts = join(root, "artifacts", zipName);
 // The in-app "download source" link serves this from public/ (src/routes/guide.tsx),
@@ -31,6 +35,7 @@ const INCLUDE = [
   ".dockerignore",
   "docker-compose.yml",
   "env.example",
+  "env-templates",
   "config/model.example.json",
   "package.json",
   "package-lock.json",
@@ -48,10 +53,12 @@ const INCLUDE = [
   "public/hero-area.mp4",
   "public/og.jpg",
   ".grok/app-env.json",
+  "validation/agent/review-2026-09-08/repro.test.ts",
+  "validation/agent/review-followup-2026-09-08/spec-repro.test.ts",
+  "validation/agent/review-followup-2026-09-08/material-repro.test.ts",
+  "validation/agent/review-third-2026-09-08/spec-repro.test.ts",
+  "validation/agent/contracts/analyze-valid.json",
 ];
-
-rmSync(staging, { recursive: true, force: true });
-mkdirSync(staging, { recursive: true });
 
 const skipped = [];
 for (const rel of INCLUDE) {
@@ -62,7 +69,7 @@ for (const rel of INCLUDE) {
     filter: (source) => {
       const relPath = relative(root, source).replaceAll("\\", "/");
       if (!relPath) return true;
-      if (packExcluded(relPath)) {
+      if (packExcluded(relPath) || lstatSync(source).isSymbolicLink()) {
         skipped.push(relPath);
         return false;
       }
@@ -90,7 +97,9 @@ if (leaked.length) {
   process.exit(1);
 }
 
-rmSync(destArtifacts, { force: true });
+for (const path of [destArtifacts, destPublic, join(root, "public")]) {
+  if (existsSync(path) && lstatSync(path).isSymbolicLink()) throw new Error("pack_unsafe_output_path");
+}
 const bytes = zipDirectory(staging, destArtifacts);
 mkdirSync(join(root, "public"), { recursive: true });
 copyFileSync(destArtifacts, destPublic);

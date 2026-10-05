@@ -4,7 +4,6 @@ import {
   cronHasBudget,
   CRON_GATEWAY_RESERVE_MS,
   CRON_EXTRACT_RESERVE_MS,
-  CRON_INGEST_RESERVE_MS,
   CRON_SERVER_BUDGET_MS,
   CRON_SOURCE_RESERVE_MS,
   reconciliationDue,
@@ -17,6 +16,7 @@ import { prod } from "@/lib/server/config";
 import { runStageOnce } from "@/lib/server/stage-windows.ts";
 import { getSql } from "@/lib/db";
 import { runProductionTick } from "@/lib/server/nodes";
+import { mediaIngestPlan } from "@/lib/server/media";
 import { runSourceJob, tickDueSources } from "@/lib/server/scheduler";
 import {
   enqueueReconciliationSources,
@@ -40,6 +40,7 @@ export const Route = createFileRoute("/api/cron/tick")({
         const allowExtract = !(gatewayConfigured && reconciliationWindow)
           && cronWorkSlot(new Date(startedAt)) === "extract";
         const extractReserve = allowExtract ? CRON_EXTRACT_RESERVE_MS : 0;
+        const ingestReserve = (await mediaIngestPlan(await getSql(), startedAt, !allowExtract)).reserveMs;
         const queue = { processed: 0, succeeded: 0, failed: 0, deferred: 0,
           results: [] as Array<{ source_id: string; items_found: number; items_new: number; error: string }> };
         let queueError = false;
@@ -73,13 +74,13 @@ export const Route = createFileRoute("/api/cron/tick")({
 
         const stages = await runCronStages({
           collection: async () => {
-            await drainQueue(deadlineMs - gatewayReserve - CRON_INGEST_RESERVE_MS - extractReserve);
+            await drainQueue(deadlineMs - gatewayReserve - ingestReserve - extractReserve);
             return tickDueSources(prod.cronTickLimit, {
-              deadlineMs: deadlineMs - CRON_INGEST_RESERVE_MS - gatewayReserve - extractReserve,
+              deadlineMs: deadlineMs - ingestReserve - gatewayReserve - extractReserve,
               reserveMs: CRON_SOURCE_RESERVE_MS,
             });
           },
-          production: () => runProductionTick({ deadlineMs: deadlineMs - gatewayReserve, allowExtract }),
+          production: () => runProductionTick({ deadlineMs: deadlineMs - gatewayReserve, allowExtract, allowTelegram: !allowExtract }),
           reconciliation: async () => {
             if (!gatewayConfigured) return null;
             if (!reconciliationAllowed) {

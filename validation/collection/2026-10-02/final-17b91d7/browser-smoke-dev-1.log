@@ -1,0 +1,39 @@
+{
+  "url": "http://127.0.0.1:18173",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "织识 Loom",
+      "hasCanvas": false,
+      "bodyTextLen": 491,
+      "bodyTextHash": "4621fe455df758bb944520fd92f568d9decf703b90db44fe9ca18d11088abbad",
+      "bodyTextPrefix": "织识Loom 总览关键词信源内容知识库任务节点模型设置管道指南规格 关键词 · 增量采集 织识 行业媒体矩阵 行业媒体矩阵 织识",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "E:\\AI-JIANSHI-20260825\\WeaveSense\\.worktrees\\collection-ui-17b91d7\\screenshots\\final-dev-1.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "织识 Loom",
+      "hasCanvas": false,
+      "bodyTextLen": 1055,
+      "bodyTextHash": "cf64c99abe17af36a39c50f089ba1b06c2fccf00d19d794243b8fc0c7263726a",
+      "bodyTextPrefix": "织识 行业媒体矩阵 扫描到期 MEDIA MATRIX · INCREMENTAL 织识 把频道、关键词与时间织进同一条增量管道",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "E:\\AI-JIANSHI-20260825\\WeaveSense\\.worktrees\\collection-ui-17b91d7\\screenshots\\final-dev-1-mobile.png"
+    }
+  },
+  "brandWarnings": [
+    "BRAND NOTE: no custom public/og.jpg — the platform will serve the og.grok.me placeholder. Custom cards are the default for games of every kind (DOM board/word games included), whimsical apps, creative tools, and brand-forward pages — only plain utilities (converters, CRUD trackers, admin dashboards) keep the placeholder. If this app is not a plain utility, finish the brand-asset pass per \\workspace\\.grok\\skills\\og\\SKILL.md."
+  ],
+  "authWarnings": [],
+  "verdictFile": "E:\\AI-JIANSHI-20260825\\WeaveSense\\.worktrees\\collection-ui-17b91d7\\screenshots\\final-dev-1.json"
+}
+BRAND NOTE: no custom public/og.jpg — the platform will serve the og.grok.me placeholder. Custom cards are the default for games of every kind (DOM board/word games included), whimsical apps, creative tools, and brand-forward pages — only plain utilities (converters, CRUD trackers, admin dashboards) keep the placeholder. If this app is not a plain utility, finish the brand-asset pass per \workspace\.grok\skills\og\SKILL.md.

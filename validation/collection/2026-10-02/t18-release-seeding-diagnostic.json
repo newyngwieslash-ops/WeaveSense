@@ -1,0 +1,95 @@
+{
+  "ok": false,
+  "sourceSha": "7cf37b75b21010fa87b293d2135a3644e940f9d7",
+  "scope": "isolated-Linux-image-release-candidate",
+  "productionActivated": false,
+  "roles": {
+    "postgres": {
+      "containerId": "5d094b0d76e7cf92bcad7f91b9fecc83588f259a777e5f2c5e4b8c590dab5ea9",
+      "imageId": "sha256:75f5a96988cdf694a215073c3e9c001b706b371e2f94df3967f2efdec2787f6b",
+      "command": [
+        "postgres"
+      ],
+      "revision": null
+    },
+    "app": {
+      "containerId": "476f0ef0a781abf066719f303e3fd04b2d2f9b01289d524958f12ca1f69d85eb",
+      "imageId": "sha256:2248ccc7f16fe11f7ef9e5b405a1a50a01683e703c405a2b495a79e4a3830e10",
+      "command": [
+        "npm",
+        "run",
+        "start"
+      ],
+      "revision": "7cf37b75b21010fa87b293d2135a3644e940f9d7"
+    },
+    "scheduler": {
+      "containerId": "6b0844345a5830476f9e4585884e74e2642691686c6ada2473382f99f09ac2a8",
+      "imageId": "sha256:2248ccc7f16fe11f7ef9e5b405a1a50a01683e703c405a2b495a79e4a3830e10",
+      "command": [
+        "npm",
+        "run",
+        "cron:start"
+      ],
+      "revision": "7cf37b75b21010fa87b293d2135a3644e940f9d7"
+    }
+  },
+  "rollback": {
+    "production": "not-surveyed; no-production-deployment",
+    "isolated": {}
+  },
+  "checks": {
+    "appImage": {
+      "id": "sha256:2248ccc7f16fe11f7ef9e5b405a1a50a01683e703c405a2b495a79e4a3830e10",
+      "tags": [
+        "loom-collection:7cf37b75b21010fa87b293d2135a3644e940f9d7"
+      ],
+      "revision": "7cf37b75b21010fa87b293d2135a3644e940f9d7"
+    },
+    "telethonImage": {
+      "id": "sha256:51aeacb29b6ba780e8548565041a468e2c73905787341eb4977a8ed7b4982646",
+      "tags": [
+        "loom-telethon:7cf37b75b21010fa87b293d2135a3644e940f9d7"
+      ],
+      "revision": "7cf37b75b21010fa87b293d2135a3644e940f9d7"
+    },
+    "appHttp": {
+      "status": 200,
+      "bytes": 30719
+    },
+    "download": {
+      "entries": 413,
+      "sha256": "b697149a3f73e098b50eba27b6254752c7f596795775fae2662d4f7492296bb6",
+      "registeredTests": 64,
+      "privateStateExcluded": true
+    }
+  },
+  "cleanup": [
+    {
+      "id": "6b0844345a5830476f9e4585884e74e2642691686c6ada2473382f99f09ac2a8",
+      "removed": true,
+      "exitCode": 0,
+      "logs": "> cron:start\n> node scripts/cron-loop.mjs\n\n{\"timestamp\":\"2026-10-05T02:19:05.649Z\",\"status\":200,\"item_count\":0,\"error_count\":16,\"stages\":{\"collection\":\"partial\",\"production\":\"ok\",\"reconciliation\":\"skipped\",\"queue\":\"ok\",\"delivery_ack\":\"skipped\"},\"duration_ms\":343,\"deferred\":0,\"error_code\":\"\"}"
+    },
+    {
+      "id": "476f0ef0a781abf066719f303e3fd04b2d2f9b01289d524958f12ca1f69d85eb",
+      "removed": true,
+      "exitCode": 0,
+      "logs": "> start\n> node scripts/migrate.mjs && node scripts/with-app-env.mjs vite preview --host 0.0.0.0 --port 8080\n\n[migrate] applied 0002_schema.sql\n[migrate] applied 0003_keywords.sql\n[migrate] applied 0004_production.sql\n[migrate] applied 0005_scheduler_leases.sql\n[migrate] applied 0006_reconciliation_queue.sql\n[migrate] applied 0007_extract_target_state.sql\n[migrate] applied 0008_reconciliation_queue_retry.sql\n[migrate] applied 0009_extract_claim_fencing.sql\n[migrate] applied 0010_wechat_job_provider.sql\n[migrate] applied 0011_ai_runs.sql\n[migrate] applied 0012_ai_jobs.sql\n[migrate] applied 0013_agent_checkpoints.sql\n[migrate] applied 0014_agent_integrity.sql\n[migrate] applied 0015_agent_budget_reservations.sql\n[migrate] applied 0016_agent_terminal_states.sql\n[migrate] applied 0017_agent_call_receipts.sql\n[migrate] applied 0018_agent_checkpoint_facts.sql\n[migrate] applied 0019_agent_material_revision.sql\n[migrate] applied 0020_agent_daily_admission.sql\n[migrate] applied 0021_stage_windows.sql\n[migrate] applied 0022_collection_progress.sql\n[migrate] applied 0023_collection_retry.sql\n[migrate] applied 0024_media_identity.sql\n[migrate] applied 0025_media_retry.sql\n[migrate] applied 0026_feed_validators.sql\n[migrate] applied 0027_collection_observability.sql\n[migrate] done — 26 migration(s) applied.\n\n ╭────────── [Build Info] ─────────────╮\n │                                     │\n │  - Build Directory: .vercel/output  │\n │  - Date: 10/5/2026, 2:16:24 AM      │\n │  - Nitro Version: 3.0.260610-beta   │\n │  - Nitro Preset: vercel             │\n │                                     │\n ╰─────────────────────────────────────╯\n\n  ➜  Local:   http://localhost:8080/\n  ➜  Network: http://192.168.96.3:8080/  eth0"
+    },
+    {
+      "id": "5d094b0d76e7cf92bcad7f91b9fecc83588f259a777e5f2c5e4b8c590dab5ea9",
+      "removed": true,
+      "exitCode": 0,
+      "logs": "The files belonging to this database system will be owned by user \"postgres\".\nThis user must also own the server process.\n\nThe database cluster will be initialized with locale \"en_US.utf8\".\nThe default database encoding has accordingly been set to \"UTF8\".\nThe default text search configuration will be set to \"english\".\n\nData page checksums are disabled.\n\nfixing permissions on existing directory /var/lib/postgresql/data ... ok\ncreating subdirectories ... ok\nselecting dynamic shared memory implementation ... posix\nselecting default max_connections ... 100\nselecting default shared_buffers ... 128MB\nselecting default time zone ... UTC\ncreating configuration files ... ok\nrunning bootstrap script ... ok\nperforming post-bootstrap initialization ... ok\nsyncing data to disk ... ok\n\n\nSuccess. You can now start the database server using:\n\n    pg_ctl -D /var/lib/postgresql/data -l logfile start\n\nwaiting for server to start....2026-10-05 02:19:00.965 UTC [60] LOG:  starting PostgreSQL 16.15 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit\n2026-10-05 02:19:00.969 UTC [60] LOG:  listening on Unix socket \"/var/run/postgresql/.s.PGSQL.5432\"\n2026-10-05 02:19:00.979 UTC [63] LOG:  database system was shut down at 2026-10-05 02:19:00 UTC\n2026-10-05 02:19:00.987 UTC [60] LOG:  database system is ready to accept connections\n done\nserver started\nCREATE DATABASE\n\n\n/usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*\n\nwaiting for server to shut down...2026-10-05 02:19:01.142 UTC [60] LOG:  received fast shutdown request\n.2026-10-05 02:19:01.145 UTC [60] LOG:  aborting any active transactions\n2026-10-05 02:19:01.147 UTC [60] LOG:  background worker \"logical replication launcher\" (PID 66) exited with exit code 1\n2026-10-05 02:19:01.148 UTC [61] LOG:  shutting down\n2026-10-05 02:19:01.151 UTC [61] LOG:  checkpoint starting: shutdown immediate\n2026-10-05 02:19:01.186 UTC [79] FATAL:  the database system is shutting down\n2026-10-05 02:19:01.394 UTC [61] LOG:  checkpoint complete: wrote 926 buffers (5.7%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.027 s, sync=0.207 s, total=0.246 s; sync files=301, longest=0.006 s, average=0.001 s; distance=4283 kB, estimate=4283 kB; lsn=0/1925D68, redo lsn=0/1925D68\n2026-10-05 02:19:01.403 UTC [60] LOG:  database system is shut down\n done\nserver stopped\n\nPostgreSQL init process complete; ready for start up."
+    },
+    {
+      "network": "f2f72f50231fe5fe7775010ca5573ff39ddfe6534c4613ff07923e0d88dfc066",
+      "removed": true
+    }
+  ],
+  "network": {
+    "scope": "owned fixture bridge; loopback app publication; masquerade disabled",
+    "externalProviders": "none configured; zero source rows; auto/paid disabled; browser external requests stubbed"
+  },
+  "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n16 !== 0\n\n    at file:///C:/Users/yi'da'dui/.codex/worktrees/collection-reliability/WeaveSense/.superpowers/sdd/t18-release-check.mjs:55:82"
+}

@@ -1,0 +1,27 @@
+minio unavailable
+minio unavailable
+minio unavailable
+......................F.....
+======================================================================
+FAIL: test_storage_absent_configuration_and_persistent_failure_are_bounded_and_safe (test_history.HistoryPaginationTests.test_storage_absent_configuration_and_persistent_failure_are_bounded_and_safe)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\yi'da'dui\.codex\worktrees\collection-reliability\WeaveSense\workers\telethon\test_history.py", line 292, in test_storage_absent_configuration_and_persistent_failure_are_bounded_and_safe
+    asyncio.run(run())
+  File "C:\Users\yi'da'dui\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\runners.py", line 195, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "C:\Users\yi'da'dui\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\yi'da'dui\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\yi'da'dui\.codex\worktrees\collection-reliability\WeaveSense\workers\telethon\test_history.py", line 283, in run
+    self.assertFalse(http.connection_pool_kw["retries"])
+AssertionError: Retry(total=False, connect=None, read=None, redirect=0, status=None) is not false
+
+----------------------------------------------------------------------
+Ran 28 tests in 1.693s
+
+FAILED (failures=1)

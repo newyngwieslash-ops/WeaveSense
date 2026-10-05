@@ -1,0 +1,22 @@
+{
+  "git_sha": "6acbd26fc2a80dcf3dc286ddc972fc86d6178d0d",
+  "source_state": "clean-commit",
+  "runtime": {
+    "node": "v24.16.0",
+    "platform": "win32",
+    "arch": "x64"
+  },
+  "environment_boundary": "offlineEnv allowlist",
+  "started_at": "2026-10-05T01:37:13.219Z",
+  "finished_at": "2026-10-05T01:37:14.448Z",
+  "command": [
+    "node",
+    "--test",
+    "workers/wechat-gateway/dajiala.test.mjs",
+    "workers/wechat-gateway/gateway.test.mjs",
+    "workers/wechat-gateway/state-machine.test.mjs",
+    "workers/wechat-gateway/t13-spend.test.mjs"
+  ],
+  "exit_code": 0,
+  "duration_ms": 1229
+}

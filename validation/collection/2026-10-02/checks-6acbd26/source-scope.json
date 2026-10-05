@@ -1,0 +1,9 @@
+{
+  "historical_timed_sha": "52a16ea23d7af683b57faf5d1f1fd45670ab09dc",
+  "correction_sha": "6acbd26fc2a80dcf3dc286ddc972fc86d6178d0d",
+  "timed_function_sha256": "d39308b56a001b3b2144bf086011d862c266296cb93613ef76f25226c79c1da6",
+  "timed_function_identical": true,
+  "comparison": "Git blob text (avoids Windows checkout CRLF differences)",
+  "source_diff_from_timed": "scripts/collection-load-check.mjs\nscripts/collection-reliability-check.mjs\nscripts/readiness-offline.test.mjs\nsrc/lib/server/outbound-policy.test.ts\nworkers/wechat-gateway/gateway.test.mjs\n",
+  "scope": "Correction changes harness assertions/cleanup and one gateway test; business source and timedScenarios are unchanged. Full timed run not repeated; old result remains bound to its original SHA."
+}

@@ -13,11 +13,20 @@ export type SourceRow = {
   last_published_at: string | null;
   last_scanned_at: string | null;
   last_error: string;
+  next_attempt_at?: string | null;
+  consecutive_failures?: number;
+  last_success_at?: string | null;
+  last_content_at?: string | null;
+  last_error_code?: string;
   status: "idle" | "running" | "ok" | "error";
   adapter: AdapterId;
   notes: string;
   created_at: string;
   item_count?: number;
+  scan_state?: { bootstrap: "latest" | "backfill"; page?: number; boundary?: string };
+  has_more?: boolean;
+  collection_coverage?: { complete: boolean; window_only?: boolean; note?: string };
+  rejected_entries?: number;
 };
 
 export type KeywordRow = {
@@ -28,6 +37,10 @@ export type KeywordRow = {
   enabled: boolean;
   last_scanned_at: string | null;
   last_error: string;
+  next_attempt_at?: string | null;
+  consecutive_failures?: number;
+  last_success_at?: string | null;
+  last_error_code?: string;
   status: "idle" | "running" | "ok" | "error";
   hits: number;
   notes: string;
@@ -66,13 +79,21 @@ export type JobRow = {
   started_at: string;
   finished_at: string | null;
   status: "running" | "ok" | "error" | "skipped";
-  items_found: number;
+  items_found: number | null;
   items_new: number;
   error: string;
   kind: string;
   provider: "" | "primary" | "dajiala" | "mixed";
   attempts: string[];
   paid_call: boolean;
+  adapter?: string | null;
+  error_code?: string | null;
+  duration_ms?: number | null;
+  items_updated?: number | null;
+  items_invalid?: number | null;
+  bytes?: number | null;
+  coverage?: SourceRow['collection_coverage'] | null;
+  retry_at?: string | null;
   keyword_id?: string;
   source_name?: string;
 };
@@ -81,12 +102,12 @@ export type WechatHealthRow = {
   source_id: string;
   last_primary_ok_at: string | null;
   consecutive_primary_failures: number;
-  recent_error_type: "" | "primary_feed_failed" | "technical_error" | "mapping_error";
+  recent_error_type: "" | "primary_feed_failed" | "technical_error" | "mapping_error" | "risk_control";
   last_paid_check_at: string | null;
   last_paid_result: "" | "ok" | "technical_error" | "mapping_error";
   alert_state: "normal" | "degraded" | "paid_fallback" | "alert";
   next_retry_at: string | null;
-};
+} & Partial<import("./server/wechat-meta.ts").WechatFreshnessMetadata>;
 
 export type WechatHealthUsage = {
   today: string;
@@ -136,6 +157,9 @@ export type MediaObjectRow = {
   kind: string;
   status: string;
   error: string;
+  attempts: number;
+  next_attempt_at: string | null;
+  claimed_at: string | null;
 };
 
 export type ExtractJobView = {

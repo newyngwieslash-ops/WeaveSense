@@ -1,0 +1,218 @@
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 761B done
+#1 DONE 0.1s
+
+#2 [internal] load metadata for docker.io/library/node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c
+#2 DONE 0.0s
+
+#3 [internal] load .dockerignore
+#3 transferring context:
+#3 transferring context: 841B done
+#3 DONE 0.1s
+
+#4 [1/6] FROM docker.io/library/node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 22.78MB 1.0s done
+#5 DONE 1.1s
+
+#6 [2/6] WORKDIR /app
+#6 CACHED
+
+#7 [3/6] COPY package.json package-lock.json ./
+#7 CACHED
+
+#8 [4/6] RUN npm ci
+#8 16.04 npm warn deprecated recharts@2.15.4: 1.x and 2.x branches are no longer active. Bump to Recharts v3 to receive latest features and bugfixes. See https://github.com/recharts/recharts/wiki/3.0-migration-guide
+#8 17.27 npm warn deprecated eslint@9.39.5: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+#8 23.38 
+#8 23.38 added 433 packages, and audited 434 packages in 23s
+#8 23.38 
+#8 23.38 102 packages are looking for funding
+#8 23.38   run `npm fund` for details
+#8 23.38 
+#8 23.38 2 high severity vulnerabilities
+#8 23.38 
+#8 23.38 To address all issues, run:
+#8 23.38   npm audit fix
+#8 23.38 
+#8 23.38 Run `npm audit` for details.
+#8 23.38 npm notice
+#8 23.38 npm notice New major version of npm available! 10.9.9 -> 12.2.0
+#8 23.38 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+#8 23.38 npm notice To update run: npm install -g npm@12.2.0
+#8 23.38 npm notice
+#8 DONE 24.6s
+
+#9 [5/6] COPY . .
+#9 DONE 0.3s
+
+#10 [6/6] RUN node scripts/readiness-offline.mjs -- npm run pack:source && node scripts/readiness-offline.mjs -- npm run build
+#10 0.437 
+#10 0.437 > pack:source
+#10 0.437 > node scripts/pack-source.mjs
+#10 0.437 
+#10 1.093 [pack] zhishi-loom-source.zip 3718 KB → artifacts/ 和 public/ (7 个被排除路径已跳过)
+#10 1.346 
+#10 1.346 > build
+#10 1.346 > node scripts/with-app-env.mjs vite build && npm run db:migrate && node scripts/copy-pglite-assets.mjs
+#10 1.346 
+#10 3.124 [nitro:vercel] ℹ Using nodejs22.x runtime.
+#10 3.125 [nitro:vercel] ℹ Using web entry format.
+#10 3.425 vite v8.2.2 building client environment for production...
+#10 3.456 transforming...
+#10 5.316 ✓ 1964 modules transformed.
+#10 5.466 rendering chunks...
+#10 5.649 computing gzip size...
+#10 5.657 .vercel/output/static/assets/styles-4dkvFU5I.css            38.04 kB │ gzip:   7.75 kB
+#10 5.657 .vercel/output/static/assets/refresh-cw-DUjW9hfr.js          0.32 kB │ gzip:   0.22 kB
+#10 5.657 .vercel/output/static/assets/platform-chip-DSpUDQ2M.js       0.42 kB │ gzip:   0.31 kB
+#10 5.657 .vercel/output/static/assets/agent-request-DKvbOBNW.js       0.59 kB │ gzip:   0.44 kB
+#10 5.657 .vercel/output/static/assets/format-CP7WHQpR.js              0.79 kB │ gzip:   0.46 kB
+#10 5.657 .vercel/output/static/assets/keyword-ByMp4RCD.js             0.82 kB │ gzip:   0.53 kB
+#10 5.657 .vercel/output/static/assets/input-BQRt8nxP.js               0.94 kB │ gzip:   0.35 kB
+#10 5.657 .vercel/output/static/assets/button-BQKG81Cn.js              1.58 kB │ gzip:   0.84 kB
+#10 5.657 .vercel/output/static/assets/useMutation-9m7Pivcu.js         2.34 kB │ gzip:   0.97 kB
+#10 5.657 .vercel/output/static/assets/inbox-CMbH8aUT.js               4.17 kB │ gzip:   1.81 kB
+#10 5.657 .vercel/output/static/assets/pipeline-C2P064ue.js            4.40 kB │ gzip:   1.92 kB
+#10 5.657 .vercel/output/static/assets/jobs-CG3pXgxv.js                4.57 kB │ gzip:   2.07 kB
+#10 5.657 .vercel/output/static/assets/platforms-B4iOkVkw.js           5.53 kB │ gzip:   2.51 kB
+#10 5.657 .vercel/output/static/assets/model-settings-BTl2F8KY.js      6.79 kB │ gzip:   2.69 kB
+#10 5.657 .vercel/output/static/assets/inbox._itemId-BLOfX60f.js       7.45 kB │ gzip:   2.82 kB
+#10 5.657 .vercel/output/static/assets/knowledge-rTykMj8_.js           7.65 kB │ gzip:   3.07 kB
+#10 5.657 .vercel/output/static/assets/fns-RbUVCWED.js                 7.69 kB │ gzip:   3.52 kB
+#10 5.657 .vercel/output/static/assets/useQuery-Bg80cTxg.js            8.12 kB │ gzip:   2.98 kB
+#10 5.657 .vercel/output/static/assets/keywords-Dw9FMuqw.js            8.31 kB │ gzip:   3.47 kB
+#10 5.657 .vercel/output/static/assets/nodes-BWNKhynj.js               8.65 kB │ gzip:   3.49 kB
+#10 5.657 .vercel/output/static/assets/routes-DM8Qjeap.js              9.67 kB │ gzip:   3.42 kB
+#10 5.657 .vercel/output/static/assets/prd-DsFmT72i.js                11.67 kB │ gzip:   4.90 kB
+#10 5.657 .vercel/output/static/assets/guide-RjIiAYPb.js              20.20 kB │ gzip:   7.12 kB
+#10 5.657 .vercel/output/static/assets/createLucideIcon-CxH52fSw.js   31.52 kB │ gzip:  11.82 kB
+#10 5.657 .vercel/output/static/assets/createClientRpc-C3RXqOwO.js    34.44 kB │ gzip:  10.63 kB
+#10 5.657 .vercel/output/static/assets/badge-CSeT6h_V.js              35.50 kB │ gzip:  11.67 kB
+#10 5.657 .vercel/output/static/assets/sources-CtJ2bZz-.js            56.51 kB │ gzip:  19.46 kB
+#10 5.657 .vercel/output/static/assets/index-CKjgnw16.js             382.13 kB │ gzip: 116.42 kB
+#10 5.657 
+#10 5.658 ✓ built in 2.23s
+#10 5.659 vite v8.2.2 building ssr environment for production...
+#10 5.674 transforming...
+#10 7.087 ✓ 183 modules transformed.
+#10 7.145 rendering chunks...
+#10 7.187 computing gzip size...
+#10 7.194 node_modules/.nitro/vite/services/ssr/assets/styles-4dkvFU5I.css                      38.04 kB │ gzip:  7.75 kB
+#10 7.194 node_modules/.nitro/vite/services/ssr/assets/start-5Z2QO8AU.js                         0.14 kB │ gzip:  0.13 kB
+#10 7.194 node_modules/.nitro/vite/services/ssr/assets/empty-plugin-adapters-D9UWiqvJ.js         0.22 kB │ gzip:  0.16 kB
+#10 7.194 node_modules/.nitro/vite/services/ssr/assets/platform-chip-C6sfsAss.js                 0.61 kB │ gzip:  0.40 kB
+#10 7.194 node_modules/.nitro/vite/services/ssr/assets/agent-request-Bscn8ark.js                 0.94 kB │ gzip:  0.57 kB
+#10 7.194 node_modules/.nitro/vite/services/ssr/assets/input-EGcXCw2K.js                         1.18 kB │ gzip:  0.42 kB
+#10 7.194 node_modules/.nitro/vite/services/ssr/assets/button-Brj73RLh.js                        1.28 kB │ gzip:  0.67 kB
+#10 7.194 node_modules/.nitro/vite/services/ssr/assets/_tanstack-start-manifest_v-Ddr63T6o.js    4.66 kB │ gzip:  0.92 kB
+#10 7.194 node_modules/.nitro/vite/services/ssr/assets/platforms-DoZn5Nc-.js                     5.36 kB │ gzip:  2.07 kB
+#10 7.194 node_modules/.nitro/vite/services/ssr/assets/pipeline-CB0whivK.js                      6.39 kB │ gzip:  2.22 kB
+#10 7.194 node_modules/.nitro/vite/services/ssr/assets/inbox-D3yPqnmC.js                         6.83 kB │ gzip:  2.33 kB
+#10 7.194 node_modules/.nitro/vite/services/ssr/assets/jobs-aA078bgq.js                          7.24 kB │ gzip:  2.53 kB
+#10 7.194 node_modules/.nitro/vite/services/ssr/assets/badge-BPzx6mIR.js                         7.42 kB │ gzip:  2.28 kB
+#10 7.194 node_modules/.nitro/vite/services/ssr/assets/fns-DloDtQmA.js                           7.88 kB │ gzip:  2.77 kB
+#10 7.194 node_modules/.nitro/vite/services/ssr/assets/inbox._itemId-B7KlAfI1.js                10.69 kB │ gzip:  3.07 kB
+#10 7.194 node_modules/.nitro/vite/services/ssr/assets/model-settings-B_fa00Rl.js               10.91 kB │ gzip:  3.30 kB
+#10 7.194 node_modules/.nitro/vite/services/ssr/assets/nodes-BrVKrMsb.js                        11.69 kB │ gzip:  3.96 kB
+#10 7.194 node_modules/.nitro/vite/services/ssr/assets/knowledge-ChmUwRd5.js                    11.92 kB │ gzip:  3.71 kB
+#10 7.194 node_modules/.nitro/vite/services/ssr/assets/keywords-4lQARkbW.js                     12.38 kB │ gzip:  4.12 kB
+#10 7.194 node_modules/.nitro/vite/services/ssr/assets/routes-BztQ2LML.js                       14.18 kB │ gzip:  4.07 kB
+#10 7.194 node_modules/.nitro/vite/services/ssr/assets/prd-DPGHuidc.js                          15.70 kB │ gzip:  5.36 kB
+#10 7.194 node_modules/.nitro/vite/services/ssr/assets/guide-BYsw6px9.js                        27.51 kB │ gzip:  7.70 kB
+#10 7.194 node_modules/.nitro/vite/services/ssr/assets/sources-BmalhFyj.js                      33.89 kB │ gzip:  8.69 kB
+#10 7.194 node_modules/.nitro/vite/services/ssr/assets/router-qRRKQbNM.js                       43.24 kB │ gzip: 12.39 kB
+#10 7.194 node_modules/.nitro/vite/services/ssr/assets/fns-CaZ_XvSu.js                          50.57 kB │ gzip: 13.31 kB
+#10 7.194 node_modules/.nitro/vite/services/ssr/index.js                                        74.63 kB │ gzip: 19.49 kB
+#10 7.194 node_modules/.nitro/vite/services/ssr/assets/scheduler-Pnd4AkbC.js                   353.21 kB │ gzip: 99.64 kB
+#10 7.194 
+#10 7.195 ✓ built in 1.53s
+#10 7.196 
+#10 7.197 [nitro] ◐ Building [Nitro] (preset: vercel, compatibility: 2026-10-05)
+#10 7.212 [nitro] ✔ Generated public .vercel/output/static
+#10 7.214 vite v8.2.2 building nitro environment for production...
+#10 7.229 transforming...
+#10 7.527 ✓ 2064 modules transformed.
+#10 7.646 ℹ Tracing dependencies:
+#10 7.646 - tslib (2.8.1)
+#10 7.653 ✔ Traced 1 dependencies (4 files) in 61ms.
+#10 7.654 ℹ Ensure your production environment matches the builder OS and architecture (linux-x64) to avoid native module issues.
+#10 7.854 rendering chunks...
+#10 7.953 computing gzip size...
+#10 7.968 .vercel/output/functions/__server.func/_ssr/start-5Z2QO8AU.mjs                         0.14 kB │ gzip:   0.13 kB
+#10 7.968 .vercel/output/functions/__server.func/_ssr/empty-plugin-adapters-D9UWiqvJ.mjs         0.23 kB │ gzip:   0.16 kB
+#10 7.968 .vercel/output/functions/__server.func/_ssr/platform-chip-C6sfsAss.mjs                 0.75 kB │ gzip:   0.46 kB
+#10 7.968 .vercel/output/functions/__server.func/_chunks/ssr-renderer.mjs                        0.96 kB │ gzip:   0.49 kB
+#10 7.968 .vercel/output/functions/__server.func/_ssr/agent-request-Bscn8ark.mjs                 0.99 kB │ gzip:   0.61 kB
+#10 7.968 .vercel/output/functions/__server.func/_ssr/input-EGcXCw2K.mjs                         1.42 kB │ gzip:   0.48 kB
+#10 7.968 .vercel/output/functions/__server.func/_ssr/button-Brj73RLh.mjs                        1.49 kB │ gzip:   0.73 kB
+#10 7.968 .vercel/output/functions/__server.func/_libs/radix-ui__primitive.mjs                   1.83 kB │ gzip:   0.72 kB
+#10 7.968 .vercel/output/functions/__server.func/_runtime.mjs                                    1.92 kB │ gzip:   0.87 kB
+#10 7.968 .vercel/output/functions/__server.func/_libs/class-variance-authority+clsx.mjs         3.17 kB │ gzip:   1.24 kB
+#10 7.968 .vercel/output/functions/__server.func/_libs/anynum.mjs                                3.85 kB │ gzip:   1.69 kB
+#10 7.968 .vercel/output/functions/__server.func/_tanstack-start-manifest_v-Ddr63T6o.mjs         4.72 kB │ gzip:   0.96 kB
+#10 7.968 .vercel/output/functions/__server.func/_libs/radix-ui__react-context+react.mjs         5.74 kB │ gzip:   1.67 kB
+#10 7.968 .vercel/output/functions/__server.func/_libs/tanstack__react-query.mjs                 6.64 kB │ gzip:   1.77 kB
+#10 7.968 .vercel/output/functions/__server.func/_ssr/pipeline-CB0whivK.mjs                      7.53 kB │ gzip:   2.31 kB
+#10 7.968 .vercel/output/functions/__server.func/_ssr/fns-DloDtQmA.mjs                           7.82 kB │ gzip:   2.76 kB
+#10 7.968 .vercel/output/functions/__server.func/_ssr/inbox-D3yPqnmC.mjs                         7.85 kB │ gzip:   2.48 kB
+#10 7.968 .vercel/output/functions/__server.func/_ssr/jobs-aA078bgq.mjs                          8.02 kB │ gzip:   2.61 kB
+#10 7.968 .vercel/output/functions/__server.func/_ssr/badge-BPzx6mIR.mjs                         8.43 kB │ gzip:   2.39 kB
+#10 7.968 .vercel/output/functions/__server.func/_libs/h3-v2+rou3.mjs                           10.17 kB │ gzip:   3.18 kB
+#10 7.968 .vercel/output/functions/__server.func/_libs/tanstack__history.mjs                    12.05 kB │ gzip:   3.46 kB
+#10 7.968 .vercel/output/functions/__server.func/_ssr/inbox._itemId-B7KlAfI1.mjs                12.54 kB │ gzip:   3.24 kB
+#10 7.968 .vercel/output/functions/__server.func/_ssr/model-settings-B_fa00Rl.mjs               12.61 kB │ gzip:   3.47 kB
+#10 7.968 .vercel/output/functions/__server.func/_ssr/nodes-BrVKrMsb.mjs                        12.98 kB │ gzip:   4.06 kB
+#10 7.968 .vercel/output/functions/__server.func/_ssr/knowledge-ChmUwRd5.mjs                    13.60 kB │ gzip:   3.89 kB
+#10 7.968 .vercel/output/functions/__server.func/_ssr/keywords-4lQARkbW.mjs                     14.19 kB │ gzip:   4.30 kB
+#10 7.968 .vercel/output/functions/__server.func/_ssr/routes-BztQ2LML.mjs                       16.47 kB │ gzip:   4.25 kB
+#10 7.968 .vercel/output/functions/__server.func/_libs/lucide-react.mjs                         16.52 kB │ gzip:   3.83 kB
+#10 7.968 .vercel/output/functions/__server.func/_libs/@radix-ui/react-compose-refs+[...].mjs   16.79 kB │ gzip:   4.66 kB
+#10 7.968 .vercel/output/functions/__server.func/_ssr/prd-DPGHuidc.mjs                          17.78 kB │ gzip:   5.49 kB
+#10 7.968 .vercel/output/functions/__server.func/_libs/nodable__entities.mjs                    19.14 kB │ gzip:   6.39 kB
+#10 7.968 .vercel/output/functions/__server.func/_libs/h3+rou3+srvx.mjs                         22.57 kB │ gzip:   6.12 kB
+#10 7.968 .vercel/output/functions/__server.func/_ssr/guide-BYsw6px9.mjs                        31.64 kB │ gzip:   7.83 kB
+#10 7.968 .vercel/output/functions/__server.func/index.mjs                                      32.11 kB │ gzip:  10.06 kB
+#10 7.968 .vercel/output/functions/__server.func/_ssr/sources-BmalhFyj.mjs                      37.79 kB │ gzip:   8.88 kB
+#10 7.968 .vercel/output/functions/__server.func/_ssr/router-qRRKQbNM.mjs                       42.76 kB │ gzip:  12.36 kB
+#10 7.968 .vercel/output/functions/__server.func/_ssr/fns-CaZ_XvSu.mjs                          50.36 kB │ gzip:  13.27 kB
+#10 7.968 .vercel/output/functions/__server.func/_libs/sonner.mjs                               53.69 kB │ gzip:  12.12 kB
+#10 7.968 .vercel/output/functions/__server.func/_libs/tanstack__query-core.mjs                 67.59 kB │ gzip:  14.37 kB
+#10 7.968 .vercel/output/functions/__server.func/_ssr/ssr.mjs                                   72.78 kB │ gzip:  19.46 kB
+#10 7.968 .vercel/output/functions/__server.func/_libs/@radix-ui/react-dialog+[...].mjs         84.62 kB │ gzip:  19.92 kB
+#10 7.968 .vercel/output/functions/__server.func/_libs/tailwind-merge.mjs                       88.13 kB │ gzip:  15.66 kB
+#10 7.968 .vercel/output/functions/__server.func/_libs/fast-xml-parser+[...].mjs               114.77 kB │ gzip:  29.93 kB
+#10 7.968 .vercel/output/functions/__server.func/_libs/@tanstack/router-core+[...].mjs         122.94 kB │ gzip:  25.89 kB
+#10 7.968 .vercel/output/functions/__server.func/_libs/zod.mjs                                 134.10 kB │ gzip:  26.04 kB
+#10 7.968 .vercel/output/functions/__server.func/_libs/pg.mjs                                  148.63 kB │ gzip:  34.39 kB
+#10 7.968 .vercel/output/functions/__server.func/_ssr/scheduler-Pnd4AkbC.mjs                   357.01 kB │ gzip: 102.23 kB
+#10 7.968 .vercel/output/functions/__server.func/_libs/@tanstack/react-router+[...].mjs        654.17 kB │ gzip: 137.29 kB
+#10 7.968 .vercel/output/functions/__server.func/_libs/electric-sql__pglite.mjs                752.04 kB │ gzip: 153.30 kB
+#10 7.968 
+#10 7.973 ✓ built in 758ms
+#10 7.978 ℹ Generated .vercel/output/nitro.json
+#10 7.979 
+#10 7.979 [nitro] ✔ You can preview this build using npx vite preview
+#10 7.980 [nitro] ✔ You can deploy this build using npx nitro deploy --prebuilt
+#10 8.255 
+#10 8.255 > db:migrate
+#10 8.255 > node scripts/migrate.mjs
+#10 8.255 
+#10 8.315 [migrate] DATABASE_URL not set — skipping (the PGLite fallback migrates itself).
+#10 DONE 8.4s
+
+#11 exporting to image
+#11 exporting layers
+#11 exporting layers 6.2s done
+#11 writing image sha256:fcb70d08562daab8a0c150916778f2411fa1bcb2c134cccec7749493c2627a17 done
+#11 naming to docker.io/library/loom-collection:1e260c4fe435d6b2cdf0d8d70c8b7e6f40bfe664 done
+#11 DONE 6.2s
+
+View build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/zfxa7606muemh4kuyo43rg7kp
+
+ 1 warning found (use docker --debug to expand):
+ - SecretsUsedInArgOrEnv: Do not use ARG or ENV instructions for sensitive data (ENV "VITE_AUTH_ENABLED") (line 8)

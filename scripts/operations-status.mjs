@@ -19,14 +19,17 @@
  *   node scripts/operations-status.mjs                # JSON to stdout
  *   node scripts/operations-status.mjs --pglite       # isolated demo DB
  *   node scripts/operations-status.mjs --alerts <dir> # also write alert events
+ * Serialize all invocations using the same alerts directory: one operator writer,
+ * never overlapping cron/manual commands. This command does not provide a lock.
  *   node scripts/operations-status.mjs --backup-dir <dir>
  *
  * Exit code: 0 when nothing is alarming, 1 when any alert is raised. That makes
  * it usable from cron/systemd without inventing a notification channel the user
  * has not chosen.
  */
-import { mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, statSync, writeFileSync, readFileSync, renameSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { collectionHealth } from "../src/lib/server/collection-health.mjs";
 import { isMainModule } from "./with-app-env.mjs";
 
 /** How long a stage may go without a successful run before it is alarming. */
@@ -47,11 +50,24 @@ const minutesBetween = (now, then) => Math.round((now - then) / 60_000);
  * without a database or a filesystem.
  *
  * @param {{ now: number, stages: Record<string, number|null>, oldestQueueMinutes: number|null,
- *           unknownSpend: {count: number, amount: number}, backupAgeHours: number|null }} facts
+ *           unknownSpend: {count: number|null, amount: number|null}, backupAgeHours: number|null,
+ *           sources?: Record<string,any>[], collection?: any }} facts
  * @returns {{ level: "alert"|"warning", code: string, detail: string }[]}
  */
 export function evaluateAlerts(facts) {
   const alerts = [];
+  for (const source of facts.sources ?? []) {
+    if (!/^[A-Za-z0-9_-]{1,100}$/.test(source.id)) continue;
+    const code = /^[a-z][a-z0-9_]{0,79}$/.test(source.last_error_code ?? '') ? source.last_error_code : '';
+    if (code) alerts.push({level:'alert',code:`${code}:${source.id}`,detail:'source requires attention'});
+    const content = Date.parse(source.last_content_at ?? '');
+    // ponytail: a 24h-or-three-scan silence heuristic flags investigation, not proof of a publishing outage.
+    if (Number.isFinite(content) && content <= facts.now && facts.now-content > Math.max(1440,source.interval_minutes*3)*60000) {
+      alerts.push({level:'warning',code:`content_stale:${source.id}`,detail:'no observed content progress; inspect feed publishing and body completeness'});
+    }
+  }
+  if (facts.collection?.oldest_due_age_minutes > 5) alerts.push({level:'alert',code:'source_due_backlog',detail:'eligible source is overdue; inspect scheduler and egress'});
+  if (facts.collection?.pending_media_age_minutes > 60) alerts.push({level:'warning',code:'media_backlog',detail:'media has waited over one hour; inspect storage, authorization and retry deadline'});
   for (const [stage, maxAge] of Object.entries(STAGE_MAX_AGE_MINUTES)) {
     const age = facts.stages[stage];
     if (age === undefined) continue; // stage not reported by this deployment
@@ -68,7 +84,7 @@ export function evaluateAlerts(facts) {
       detail: `oldest queued item is ${facts.oldestQueueMinutes} min old`,
     });
   }
-  if (facts.unknownSpend.count > 0) {
+  if (facts.unknownSpend.count != null && facts.unknownSpend.count > 0) {
     // Money that may have left the account. Reported, never released to zero.
     alerts.push({
       level: "warning",
@@ -87,6 +103,39 @@ export function evaluateAlerts(facts) {
     });
   }
   return alerts;
+}
+
+/** @param {string} dir @param {{code:string,level:string}[]} alerts @param {number} now @param {any} facts */
+export function writeAlertEvents(dir, alerts, now, facts) {
+  mkdirSync(dir, {recursive:true});
+  const file = join(dir,'events.jsonl');
+  // ponytail: one operator writer; serialize cron/manual runs for this directory. Add an exclusive guard before supporting overlap; rotate history beyond memory.
+  const previous = existsSync(file) ? readFileSync(file,'utf8') : '';
+  const active = new Map();
+  for (const line of previous.trim().split('\n').filter(Boolean)) {
+    const event = JSON.parse(line);
+    if (event.status==='resolved') active.delete(event.code); else active.set(event.code,event.level);
+  }
+  const current = new Map(alerts.filter(a=>/^[a-z][a-z0-9_]*(?::[A-Za-z0-9_-]{1,100})?$/.test(a.code)).map(a=>[a.code,a.level]));
+  const events = [];
+  for (const [code,level] of current) if (!active.has(code)) events.push({at:new Date(now).toISOString(),code,level,status:'open'});
+  for (const [code,level] of active) {
+    const stage=code.startsWith('stage_') ? code.split(':')[1] : null;
+    const age=stage ? facts?.stages?.[stage] : null;
+    const verified=stage ? Number.isFinite(age) && age<=STAGE_MAX_AGE_MINUTES[stage]
+      : code==='queue_backlog' ? facts?.queue_observed===true
+      : code==='unknown_spend' ? facts?.unknownSpend?.count===0
+      : code==='backup_missing' ? Number.isFinite(facts?.backupAgeHours)
+      : code==='backup_stale' ? Number.isFinite(facts?.backupAgeHours) && facts.backupAgeHours<=BACKUP_MAX_AGE_HOURS
+      : code.includes(':') ? Array.isArray(facts?.sources)
+      : ['source_due_backlog','media_backlog'].includes(code) ? facts?.collection!=null : false;
+    if (!current.has(code) && verified) events.push({at:new Date(now).toISOString(),code,level,status:'resolved'});
+  }
+  if (events.length || !existsSync(file)) {
+    writeFileSync(`${file}.tmp`,previous + events.map(e=>JSON.stringify(e)+'\n').join(''));
+    renameSync(`${file}.tmp`,file);
+  }
+  return file;
 }
 
 /** Newest file mtime under `dir` (non-recursive), or null when none/absent. */
@@ -125,11 +174,13 @@ async function collectFacts(sql, { backupDir, now }) {
   }
   // Collection queue: the oldest job still running tells us about stuck work.
   let oldestQueueMinutes = null;
+  let queue_observed = false;
   try {
     const [row] = await sql.query(
       `select min(started_at) as oldest from jobs where status = 'running'`,
     );
     oldestQueueMinutes = row?.oldest ? minutesBetween(now, new Date(row.oldest).getTime()) : null;
+    queue_observed = true;
   } catch {
     // No jobs table (fresh/isolated database).
   }
@@ -138,13 +189,18 @@ async function collectFacts(sql, { backupDir, now }) {
   // reports only what Postgres knows, so it states that rather than inventing a
   // zero: a hardcoded 0 here would read as "no unconfirmed spend", which is a
   // claim this data source cannot make.
-  const unknownSpend = { count: 0, amount: 0, source: "not_queried_gateway_sqlite" };
+  const unknownSpend = { count: null, amount: null, source: "not_queried_gateway_sqlite" };
+  let collection = null;
+  try { collection = await collectionHealth(sql,now); } catch { /* legacy schema: unknown, never healthy zero */ }
   return {
     now,
     stages,
     oldestQueueMinutes,
+    queue_observed,
     unknownSpend,
     backupAgeHours: backupDir ? newestFileAgeHours(backupDir, now) : null,
+    sources: collection?.sources,
+    collection,
   };
 }
 
@@ -193,15 +249,14 @@ async function main() {
       oldest_queue_minutes: facts.oldestQueueMinutes,
       unknown_spend: facts.unknownSpend,
       backup_age_hours: facts.backupAgeHours,
+      collection: facts.collection,
       alerts,
     };
     if (alertDir) {
       // Local sink only: the plan requires no external notification until the user
-      // names a channel. One JSON file per run, timestamped, so a later channel
-      // adapter can replay them.
-      mkdirSync(alertDir, { recursive: true });
-      const file = join(alertDir, `${new Date(now).toISOString().replace(/[:.]/g, "-")}.json`);
-      writeFileSync(file, JSON.stringify(report, null, 2));
+      // names a channel. One event per open/resolved transition; polling a
+      // cooling source does not append a fresh failure each minute.
+      const file = writeAlertEvents(alertDir,alerts,now,facts);
       report.alerts_file = file;
     }
     console.log(JSON.stringify(report, null, 2));

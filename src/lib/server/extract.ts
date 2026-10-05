@@ -1,7 +1,8 @@
 import { getSql } from "@/lib/db";
 import { publicFetch } from "./outbound-policy.ts";
 import { getObject } from "./storage";
-import { runExtractTargets, type ExtractTarget } from "./extract-targets";
+import { runExtractTargets, EXTRACT_TARGET_LIMIT, EXTRACT_LEASE_MINUTES, type ExtractTarget } from "./extract-targets";
+import type { FetchIo } from "./http.ts";
 
 const VISION_MODEL = "grok-4.5";
 const STT_MODEL = "grok-stt";
@@ -14,10 +15,10 @@ export function xaiReady(): boolean {
   return Boolean(xaiKey());
 }
 
-async function fetchBytes(url: string): Promise<{ bytes: Buffer; contentType: string }> {
+async function fetchBytes(url: string, io: Pick<FetchIo, "resolver" | "transport">): Promise<{ bytes: Buffer; contentType: string }> {
   // Public media only: private/metadata targets and oversized payloads are
   // refused by the outbound policy before any bytes are held in memory.
-  const fetched = await publicFetch(url, { timeoutMs: 20000, kind: "media", as: "bytes" });
+  const fetched = await publicFetch(url, { timeoutMs: 20000, kind: "media", as: "bytes", resolver: io.resolver, transport: io.transport });
   return {
     bytes: Buffer.from(fetched.bytes ?? new Uint8Array()),
     contentType: fetched.contentType || "application/octet-stream",
@@ -29,14 +30,14 @@ async function loadMedia(row: {
   source_url: string;
   public_url: string;
   content_type: string;
-}): Promise<{ bytes: Buffer; contentType: string }> {
+}, io: Pick<FetchIo, "resolver" | "transport">): Promise<{ bytes: Buffer; contentType: string }> {
   if (row.object_key) {
     const stored = await getObject(row.object_key);
     if (stored.ok) return { bytes: stored.bytes, contentType: row.content_type || "application/octet-stream" };
   }
   const url = row.public_url || row.source_url;
   if (!url.startsWith("http")) throw new Error("没有可读取的媒体地址");
-  return fetchBytes(url);
+  return fetchBytes(url, io);
 }
 
 /**
@@ -99,7 +100,7 @@ export async function transcribeBytes(bytes: Buffer, filename: string): Promise<
   return { text: (body.text ?? "").trim(), model: STT_MODEL };
 }
 
-export async function extractItem(itemId: string): Promise<{
+export async function extractItem(itemId: string, io: Pick<FetchIo, "resolver" | "transport"> = {}): Promise<{
   ok: boolean;
   ran: number;
   error?: string;
@@ -113,7 +114,8 @@ export async function extractItem(itemId: string): Promise<{
     public_url: string;
     content_type: string;
     kind: string;
-  }>("select * from media_objects where item_id = $1 order by created_at", [itemId]);
+    status: string;
+  }>("select * from media_objects where item_id = $1 order by created_at,id", [itemId]);
 
   let targets: ExtractTarget[] = media;
   if (!targets.length) {
@@ -128,31 +130,44 @@ export async function extractItem(itemId: string): Promise<{
       object_key: "",
       public_url: u,
       content_type: "",
-      kind: item?.media_type === "image" ? "image" : item?.media_type === "video" ? "video" : "file",
+      kind: ["image", "video", "audio"].includes(item?.media_type) ? item.media_type : "file",
     }));
   }
 
   if (!targets.length) return { ok: false, ran: 0, error: "这条没有可提取的图片或音视频" };
 
-  return runExtractTargets({ sql, itemId, targets, load: loadMedia, ocr: ocrBytes, asr: transcribeBytes });
+  return runExtractTargets({ sql, itemId, targets, load: target => loadMedia(target, io), ocr: ocrBytes, asr: transcribeBytes });
 }
 
-export async function extractPending(limit = 3): Promise<{ ran: number; errors: number }> {
+export async function extractPending(limit = 3, io: Pick<FetchIo, "resolver" | "transport"> = {}): Promise<{ ran: number; errors: number }> {
   const sql = await getSql();
   const rows = await sql.query<{ id: string }>(
-    `select id from items
-     where pipeline_status = 'ingested'
-       and (media_urls <> '[]'::jsonb or exists (
-         select 1 from media_objects where media_objects.item_id = items.id
-       ))
-     order by collected_at desc
+    // Inspect the same first target window as the runner, before spending the batch limit.
+    `select i.id from items i where i.pipeline_status='ingested' and exists (
+       select 1 from (
+         (select m.id as target_key,
+           ((m.object_key='' and m.source_url !~* '^telegram:') or
+             (m.object_key<>'' and m.status='stored' and m.content_type<>'')) as ready
+          from media_objects m where m.item_id=i.id order by m.created_at,m.id limit $2)
+         union all
+         (select 'url:' || encode(sha256(convert_to(u.url,'UTF8')),'hex') as target_key,true as ready
+          from jsonb_array_elements_text(i.media_urls) with ordinality u(url,ord)
+          where u.url like 'http%' and not exists (select 1 from media_objects m where m.item_id=i.id)
+          order by u.ord limit $2)
+       ) t left join extract_jobs e on e.item_id=i.id and e.target_key=t.target_key
+       having bool_or(t.ready and (e.id is null or (e.attempts<3 and (
+         e.status in ('pending','error') or (e.status='running' and
+           (e.started_at is null or e.started_at <= now()-($3::integer * interval '1 minute')))))))
+         or bool_and(t.ready and coalesce(e.status='ok' or e.attempts>=3,false)
+           and not (e.status='running' and coalesce(e.started_at > now()-($3::integer * interval '1 minute'),false)))
+     ) order by i.collected_at desc,i.id
      limit $1`,
-    [Math.min(5, Math.max(1, limit))],
+    [Math.min(5, Math.max(1, limit)), EXTRACT_TARGET_LIMIT, EXTRACT_LEASE_MINUTES],
   );
   let ran = 0;
   let errors = 0;
   for (const row of rows) {
-    const result = await extractItem(row.id);
+    const result = await extractItem(row.id, io);
     if (result.ok) ran += result.ran;
     else errors += 1;
   }

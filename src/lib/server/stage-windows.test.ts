@@ -195,5 +195,17 @@ test("the stage intervals keep their documented values", () => {
   // A regression here is the 30× frequency change the plan forbids.
   assert.equal(STAGE_INTERVAL_MINUTES.ingest, 30);
   assert.equal(STAGE_INTERVAL_MINUTES.extract, 30);
+  assert.equal(STAGE_INTERVAL_MINUTES.analyze, 30);
   assert.ok(STAGE_INTERVAL_MINUTES.reconcile >= 1440, "the paid reconciliation window is daily at most");
+});
+
+test('twenty minute collection ticks admit ingest/extract/reconciliation only in their existing windows', async()=>{
+ const {pg,sql}=await db();
+ const base=Date.parse('2026-10-03T15:30:00Z');
+ const counts={ingest:0,extract:0,reconcile:0};
+ for(let minute=0;minute<20;minute++) for(const stage of ['ingest','extract','reconcile'] as const) {
+   await runStageOnce(sql,stage,async()=>{counts[stage]++;return {ok:true};},base+minute*60_000);
+ }
+ assert.deepEqual(counts,{ingest:1,extract:1,reconcile:1});
+ await pg.close();
 });

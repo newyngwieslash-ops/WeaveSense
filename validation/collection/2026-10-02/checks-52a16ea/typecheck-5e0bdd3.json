@@ -1,0 +1,7 @@
+{
+  "command": "node scripts/readiness-offline.mjs -- node F:/nodejs/node_modules/npm/bin/npm-cli.js run typecheck",
+  "git_sha": "5e0bdd31c0b303e1709f62babdcfa8b7d5f99511",
+  "exit": 0,
+  "started_at": "2026-10-04T14:46:27.3629958Z",
+  "duration_seconds": 10.1192557
+}

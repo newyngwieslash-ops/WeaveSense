@@ -1,0 +1,7 @@
+# Independent context: allow only runtime source and the pinned dependency list.
+*
+!Dockerfile
+!.dockerignore
+!requirements.txt
+!server.py
+!login.py

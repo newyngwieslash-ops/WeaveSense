@@ -28,7 +28,8 @@ export function classifyFailure(error: unknown): NonNullable<KeywordAttempt["err
   if (/^HTTP /.test(message)) return "http_error";
   if (/timeout|aborted|ETIMEDOUT|TimeoutError/i.test(message)) return "timeout";
   // A body that arrived but could not be parsed, or was refused for size.
-  if (message === "response_too_large" || /JSON|Unexpected token|invalid json/i.test(message)) {
+  if (explicit === "invalid_response" || message === "response_too_large" ||
+    /^feed_(invalid_xml|unknown_root|entry_limit|no_usable_entries)$/.test(message) || /JSON|Unexpected token|invalid json/i.test(message)) {
     return "invalid_response";
   }
   return "network_error";
@@ -59,9 +60,12 @@ async function attempt(
     const items = await run();
     return { items, attempt: { source, status: "ok", count: items.length } };
   } catch (error) {
+    const failure = error as { retryAt?: number; status?: number } | null;
     return {
       items: [],
-      attempt: { source, status: "error", count: 0, error_code: classifyFailure(error) },
+      attempt: { source, status: "error", count: 0, error_code: classifyFailure(error),
+        ...(Number.isFinite(failure?.retryAt) ? { retryAt: failure!.retryAt } : {}),
+        ...(Number.isFinite(failure?.status) ? { http_status: failure!.status } : {}) },
     };
   }
 }

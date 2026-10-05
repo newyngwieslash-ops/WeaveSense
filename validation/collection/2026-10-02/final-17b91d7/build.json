@@ -1,0 +1,25 @@
+{
+  "sourceSha": "17b91d79e3397dae88d7dd816d0cb667570ce99d",
+  "phase": "build",
+  "runtime": "v24.16.0",
+  "startedAt": "2026-10-05T03:02:10.848Z",
+  "scope": "offline committed source; isolated or in-memory fixture databases; no production or real provider",
+  "checks": [
+    {
+      "name": "build",
+      "command": "F:\\nodejs\\node.exe",
+      "args": [
+        "F:/nodejs/node_modules/npm/bin/npm-cli.js",
+        "run",
+        "build"
+      ],
+      "cwd": "E:\\AI-JIANSHI-20260825\\WeaveSense\\.worktrees\\collection-ui-17b91d7",
+      "exit": 0,
+      "error": null,
+      "elapsedMs": 31098,
+      "log": "C:\\Users\\yi'da'dui\\.codex\\worktrees\\collection-reliability\\WeaveSense\\.superpowers\\sdd\\final-checks-17b91d7\\build.log"
+    }
+  ],
+  "ok": true,
+  "finishedAt": "2026-10-05T03:02:41.951Z"
+}

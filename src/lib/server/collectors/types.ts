@@ -1,5 +1,6 @@
 import type { MediaType, PlatformId } from "@/lib/platforms";
 import type { FetchIo } from "../http.ts";
+import { CollectionHttpError } from "../outbound-policy.ts";
 
 export type SourceRecord = {
   id: string;
@@ -9,7 +10,11 @@ export type SourceRecord = {
   url: string;
   feed_url: string;
   adapter: string;
+  feed_etag?: string;
+  feed_last_modified?: string;
+  feed_validator_identity?: string;
   last_external_id?: string;
+  scan_state?: { bootstrap: "latest" | "backfill"; page?: number; boundary?: string };
 };
 
 export type NormalizedItem = {
@@ -24,7 +29,9 @@ export type NormalizedItem = {
   views: number | null;
   likes: number | null;
   published_at: string | null;
-  extra: Record<string, unknown>;
+  extra: Record<string, unknown> & {
+    telegram_media?: { channel: string; message_id: string; kind: string; size: number | null };
+  };
 };
 
 export type CollectorMeta = {
@@ -52,9 +59,18 @@ export type CollectorCoverage = {
 };
 
 export type CollectorBatch = {
+  bytes?: number | null;
   items: NormalizedItem[];
+  not_modified?: boolean;
+  feed_validators?: { etag: string; last_modified: string };
+  feed_validator_identity?: string;
   meta: CollectorMeta;
   coverage?: CollectorCoverage;
+  next_scan_state?: SourceRecord["scan_state"];
+  has_more?: boolean;
+  next_cursor?: string;
+  /** Entries rejected by feed normalization; never counted as collected items. */
+  rejected_entries?: number;
 };
 
 /**
@@ -80,15 +96,20 @@ export type KeywordAttempt = {
   source: KeywordAttemptSource;
   status: "ok" | "error";
   count: number;
+  retryAt?: number;
+  http_status?: number;
   error_code?: "timeout" | "rate_limited" | "http_error" | "invalid_response" | "network_error";
 };
 
 export type KeywordBatch = { items: NormalizedItem[]; attempts: KeywordAttempt[] };
 
-export class CollectorBatchError extends Error {
-  constructor(message: string, readonly meta: CollectorMeta) {
-    super(message);
+export class CollectorBatchError extends CollectionHttpError {
+  readonly meta: CollectorMeta;
+  constructor(message: string, meta: CollectorMeta, cause?: unknown) {
+    const failure = cause as { code?: string; status?: number; retryAt?: number } | undefined;
+    super(failure?.code ?? message, message, { status: failure?.status, retryAt: failure?.retryAt });
     this.name = "CollectorBatchError";
+    this.meta = meta;
   }
 }
 

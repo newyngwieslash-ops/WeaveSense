@@ -41,6 +41,7 @@ ${item.cover_url ? `    <media:thumbnail url="${escapeAttr(item.cover_url)}"/>\n
   <id>urn:loom:wechat:${escapeText(sourceId)}</id>
   <title>${escapeText(sourceName)}</title>
   <updated>${escapeText(updated)}</updated>
+${items[0]?.primary_content_at ? `  <loom:primary_content_at>${escapeText(items[0].primary_content_at)}</loom:primary_content_at>\n` : ''}
 ${entries}
 </feed>`;
 }

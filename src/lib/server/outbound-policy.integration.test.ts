@@ -13,7 +13,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { test } from "node:test";
-import { createPinnedLookup, pinnedTransport } from "./outbound-policy.ts";
+import { CollectionHttpError, createPinnedLookup, pinnedTransport, publicFetch, readCapped } from "./outbound-policy.ts";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 /** Start an HTTP server on an ephemeral loopback port. */
@@ -97,7 +97,70 @@ test("a redirect response surfaces its Location for the caller to re-validate", 
     const response = await pinnedTransport()(url, { lookup, timeoutMs: 5000 });
     assert.equal(response.status, 302);
     assert.equal(response.headers.location, "http://169.254.169.254/latest/meta-data/");
+    await readCapped(response.body, 1024);
   } finally {
     await close();
+  }
+});
+
+test("continuously flowing chunks cannot evade a total deadline and the socket closes", async () => {
+  let closed = false;
+  const { port, close } = await loopbackServer((_req, res) => {
+    res.writeHead(200);
+    res.write("start");
+    const timer = setInterval(() => res.write("tick"), 10);
+    res.once("close", () => { clearInterval(timer); closed = true; });
+  });
+  try {
+    // Only the transport seam connects to loopback; production validation stays strict.
+    const real = pinnedTransport({ lookup: createPinnedLookup(["127.0.0.1"]) });
+    const started = Date.now();
+    await assert.rejects(() => publicFetch(`http://public.example:${port}/`, {
+      timeoutMs: 100,
+      resolver: { async lookup() { return [{ address: "1.1.1.1", family: 4 }]; } },
+      transport: (url, options) => real(url, { ...options, lookup: createPinnedLookup(["127.0.0.1"]) }),
+    }), (error: unknown) => error instanceof CollectionHttpError && error.code === "timeout");
+    assert.ok(Date.now() - started < 750);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.equal(closed, true);
+  } finally { await close(); }
+});
+
+test("oversized chunked bodies are destroyed before the server finishes", async () => {
+  let closed = false;
+  const { port, close } = await loopbackServer((_req, res) => {
+    res.writeHead(200);
+    const timer = setInterval(() => res.write(Buffer.alloc(8192)), 10);
+    res.once("close", () => { clearInterval(timer); closed = true; });
+  });
+  try {
+    const response = await pinnedTransport()(new URL(`http://size.example:${port}/`), {
+      lookup: createPinnedLookup(["127.0.0.1"]), timeoutMs: 1000,
+    });
+    await assert.rejects(() => readCapped(response.body, 1024), /response_too_large/);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.equal(closed, true);
+  } finally { await close(); }
+});
+
+test("constructor and per-call abort signals each close a real slow socket", async () => {
+  for (const staticAbort of [true, false]) {
+    let closed = false;
+    const { port, close } = await loopbackServer((_req, res) => {
+      res.once("close", () => { closed = true; });
+    });
+    const controller = new AbortController();
+    const other = new AbortController();
+    try {
+      const transport = pinnedTransport({ signals: { abortSignal: staticAbort ? controller.signal : other.signal } });
+      const pending = transport(new URL(`http://abort.example:${port}/`), {
+        lookup: createPinnedLookup(["127.0.0.1"]), timeoutMs: 1000,
+        signals: { abortSignal: staticAbort ? other.signal : controller.signal },
+      });
+      setTimeout(() => controller.abort(), 40);
+      await assert.rejects(() => pending, (error: unknown) => (error as Error).name === "AbortError");
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      assert.equal(closed, true);
+    } finally { await close(); }
   }
 });

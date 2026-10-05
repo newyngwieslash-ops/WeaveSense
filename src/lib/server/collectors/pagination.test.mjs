@@ -62,7 +62,7 @@ function biliPages(allBvids, { pageSize = 20 } = {}) {
 
 /**
  * @typedef {{ external_id: string }} Item
- * @typedef {{ items: Item[]; coverage?: { complete: boolean; note?: string } }} Batch
+ * @typedef {{ items: Item[]; coverage?: { complete: boolean; note?: string }; has_more?:boolean; next_cursor?:string; next_scan_state?:{bootstrap:string;page?:number;boundary?:string} }} Batch
  * @typedef {(source: Record<string, unknown>, io?: unknown) => Promise<Batch>} CollectSource
  */
 
@@ -72,7 +72,7 @@ async function withCollector(fn) {
     configFile: false,
     logLevel: "silent",
     resolve: { alias: { "@": path.resolve("src") } },
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, watch: null },
   });
   try {
     const mod = await vite.ssrLoadModule("/src/lib/server/collectors/index.ts");
@@ -219,5 +219,46 @@ test("an ordinary business error is NOT classified as rate limiting", async () =
     assert.ok(error);
     assert.ok(!/rate_limited/.test(String(error.message)),
       "a not-found must not be misreported as throttling");
+  });
+});
+
+
+test("Bilibili resumes capped scans with overlap, eventually reaching the old boundary", async () => {
+  await withCollector(async collectSource => {
+    const source = { ...biliSource(channel[299]), scan_state: /** @type {Batch["next_scan_state"]} */(undefined) };
+    const savedIds = new Set();
+    const driftingChannel = [...channel];
+    let previousPage = 0;
+    for (let round = 0; round < 5; round++) {
+      const { transport, calls } = biliPages(driftingChannel);
+      const batch = await collectSource(source, { resolver, transport });
+      for (const item of batch.items) savedIds.add(item.external_id);
+      if (batch.coverage?.complete) {
+        assert.equal(batch.next_cursor, channel[0]);
+        break;
+      }
+      assert.equal(batch.has_more, true);
+      assert.ok(batch.next_scan_state?.page);
+      assert.ok(batch.next_scan_state.page > previousPage);
+      previousPage = batch.next_scan_state.page;
+      source.scan_state = batch.next_scan_state;
+      if (round === 0) driftingChannel.unshift(...Array.from({length:10},(_,i)=>`BV${510-i}`));
+      assert.ok(calls.length <= 5);
+    }
+    assert.ok(channel.slice(0, 300).every(id => savedIds.has(id)));
+  });
+});
+
+
+test("a validated empty terminal Bilibili page completes the saved scan", async () => {
+  await withCollector(async collectSource => {
+    const source = {...biliSource('BV001'),scan_state:{bootstrap:'backfill',page:6,boundary:'BV500'}};
+    const {transport} = biliPages(channel.slice(0,100));
+    const result = await collectSource(source,{resolver,transport});
+    assert.equal(result.items.length,0);
+    assert.equal(result.has_more,false);
+    assert.equal(result.next_cursor,'BV500');
+    await assert.rejects(()=>collectSource(source,{resolver,transport:async()=>({status:200,headers:{},body:bodyOf('{"code":0,"data":{}}')})}));
+    await assert.rejects(()=>collectSource({...source,handle:'prefix123garbage456'}, {resolver,transport}),/mid/);
   });
 });

@@ -1,0 +1,53 @@
+▶ media queue: actual ingest, SQL leases/retries and fixed storage boundary
+  ✔ Telegram waits without storage/token, then actual worker handoff and extraction recover (64.0076ms)
+  ✖ Telegram production reserves its bounded path without consuming deferred/extract-slot windows (132.4717ms)
+  ✔ Telegram node keeps text live while attachment configuration is unavailable (44.2778ms)
+  ✔ Telegram stable keys, worker/read cooling, integrity and audio/video extraction (121.965ms)
+  ✔ received worker cooldown survives body reset/cap/timeout, exhaustion and replay (151.1513ms)
+  ✔ received GET cooldown survives body reset/cap/timeout, exhaustion and replay (129.1773ms)
+  ✔ received PUT cooldown survives body reset/cap/timeout, exhaustion and replay (161.3763ms)
+  ✔ single atomic winner, expiry replaces token and consumes an attempt (16.3286ms)
+  ✔ 503 recovers after persisted one-minute backoff; three retries mean four attempts (52.0295ms)
+  ✔ permanent URL, missing object and size failures dead-letter; historical errors need explicit replay (81.986ms)
+  ✔ upload succeeds but item DB write rolls back, then overwrites the same key (54.3645ms)
+  ✔ actual extractItem defers uploaded/uncommitted MIME then extracts each target once after recovery (66.6327ms)
+  ✔ actual extractPending limit1 skips dead/cooling-only newest work and revisits recovered media (115.2051ms)
+  ✔ fallback window identity, duplicate convergence and lease admission match actual runner (114.8159ms)
+  ✔ expired completion and stale owner cannot change media or display URLs (34.4678ms)
+  ✔ complete DB outage after upload leaves a recoverable lease and same persisted object key (12.7964ms)
+  ✔ overlapping workers preserve both display replacements and MIME classifies cover for OCR (32.2783ms)
+  ✔ storage HTTP 503 schedules retry and a redirect never becomes another target (22.2415ms)
+  ✔ 48-hour Retry-After survives manual replay, including exhausted dead rows (31.5947ms)
+  ✔ storage Retry-After also survives explicit replay (9.1689ms)
+  ✔ actual production entry cannot steal manual ingest; media retries retain 30-minute admission (20.2326ms)
+  ✔ unique enqueue preserves failed rows; signed storage reads enforce the media cap (44.0312ms)
+✖ media queue: actual ingest, SQL leases/retries and fixed storage boundary (3985.5387ms)
+ℹ tests 23
+ℹ suites 0
+ℹ pass 21
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4327.3951
+
+✖ failing tests:
+
+test at src\lib\server\media.test.ts:173:13
+✖ Telegram production reserves its bounded path without consuming deferred/extract-slot windows (132.4717ms)
+  AssertionError [ERR_ASSERTION]: route fixture must never admit demo collection
+  
+  26 !== 0
+  
+      at TestContext.<anonymous> (file:///C:/Users/yi'da'dui/.codex/worktrees/collection-reliability/WeaveSense/src/lib/server/media.test.ts:249:16)
+      at async Test.run (node:internal/test_runner/test:1313:7)
+      at async TestContext.<anonymous> (file:///C:/Users/yi'da'dui/.codex/worktrees/collection-reliability/WeaveSense/src/lib/server/media.test.ts:173:5)
+      at async Test.run (node:internal/test_runner/test:1313:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:385:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 26,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

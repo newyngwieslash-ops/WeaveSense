@@ -1,5 +1,5 @@
 import type { PlatformId } from "@/lib/platforms";
-import { fetchRss } from "../rss";
+import { fetchRssBatch } from "../rss";
 import { fetchTelegramChannel } from "../telegram";
 import { fetchTelethonHistory, parseTelegramHandle, telethonHealth } from "../telethon";
 import { prod, wechatGatewayConfigured } from "../config";
@@ -7,6 +7,7 @@ import { fetchJson, type FetchIo } from "../http";
 import { parseFeedXml } from "../rss-parser";
 import { WECHAT_GATEWAY_FEED_TIMEOUT_MS } from "../cron";
 import { providerFromItems } from "../wechat-meta.ts";
+import { collectionFetch, abortable, CollectionHttpError, collectionHttpError, parseRetryAfter, readCapped } from "../outbound-policy.ts";
 import { CollectorBatchError, collectorMeta,
   type CollectorAdapter, type CollectorBatch, type CollectorMeta, type NormalizedItem,
   type SourceRecord } from "./types";
@@ -15,9 +16,15 @@ const batch = (items: NormalizedItem[], adapter: string): CollectorBatch => ({
   items, meta: { provider: "", attempts: [adapter], paid_call: false },
 });
 
+async function feedBatch(url: string, source: SourceRecord, adapter: string, io: FetchIo): Promise<CollectorBatch> {
+  const feed = await fetchRssBatch(url, source, io);
+  return { ...batch(feed.items, adapter), ...feed,
+    coverage: { complete: false, window_only: true, note: "feed_window" } };
+}
+
 // Gateway feed ceiling: generous for a WeChat Atom feed (bodies included), but
 // far below "unbounded". Kept next to the caller it guards.
-const WECHAT_GATEWAY_FEED_MAX_CHARS = 8 * 1024 * 1024;
+const WECHAT_GATEWAY_FEED_MAX_BYTES = 8 * 1024 * 1024;
 
 function gatewayMeta(headers: Headers): CollectorMeta {
   const provider = headers.get("x-loom-provider");
@@ -50,11 +57,10 @@ function youtubeFeedUrl(source: SourceRecord): string {
   if (source.feed_url) return source.feed_url;
   const handle = source.handle.trim();
   if (handle.startsWith("http") && handle.includes("feeds/videos.xml")) return handle;
-  const idMatch = handle.match(/UCU[A-Za-z0-9_-]{22}|UC[A-Za-z0-9_-]{22}/);
-  const fromUrl = source.url.match(/channel\/(UC[A-Za-z0-9_-]{22})/);
-  const id = idMatch?.[0] ?? fromUrl?.[1] ?? handle;
-  if (id.startsWith("UC")) return `https://www.youtube.com/feeds/videos.xml?channel_id=${id}`;
-  return `https://www.youtube.com/feeds/videos.xml?user=${encodeURIComponent(id)}`;
+  const fromUrl = source.url.match(/^https:\/\/(?:www\.)?youtube\.com\/channel\/(UC[A-Za-z0-9_-]{22})\/?$/);
+  const id = /^UC[A-Za-z0-9_-]{22}$/.test(handle) ? handle : fromUrl?.[1];
+  if (!id) throw new CollectionHttpError("config_error", "invalid_youtube_id");
+  return `https://www.youtube.com/feeds/videos.xml?channel_id=${id}`;
 }
 
 const rssAdapter: CollectorAdapter = {
@@ -62,13 +68,13 @@ const rssAdapter: CollectorAdapter = {
   async fetch(source, io = {}) {
     const url = source.feed_url || source.handle || source.url;
     if (!url.startsWith("http")) throw new Error("需要有效的 RSS / Atom 地址");
-    return batch(await fetchRss(url, source.id, source.platform, io), "rss");
+    return feedBatch(url, source, "rss", io);
   },
 };
 
 const wechatGatewayAdapter: CollectorAdapter = {
   id: "wechat_gateway",
-  async fetch(source) {
+  async fetch(source, io = {}) {
     if (!wechatGatewayConfigured()) throw new Error("微信公众号源网关未配置");
     // The WeChat gateway is an operator-configured INTERNAL service (compose
     // network / loopback), so it deliberately does NOT go through the public
@@ -76,33 +82,46 @@ const wechatGatewayAdapter: CollectorAdapter = {
     // carries a bearer token, so following a redirect would hand that token to
     // whatever host the redirect names.
     let response: Response;
+    const deadline = AbortSignal.timeout(WECHAT_GATEWAY_FEED_TIMEOUT_MS);
+    const signal = io.signal ? AbortSignal.any([io.signal, deadline]) : deadline;
     try {
-      response = await fetch(gatewayFeedUrl(source.id), {
+      response = await abortable(collectionFetch(gatewayFeedUrl(source.id), {
         headers: { Accept: "application/atom+xml", Authorization: `Bearer ${prod.wechatGatewayToken}` },
-        signal: AbortSignal.timeout(WECHAT_GATEWAY_FEED_TIMEOUT_MS),
+        signal,
         redirect: "error",
-      });
-    } catch {
+      }), signal);
+    } catch (error) {
       throw new CollectorBatchError("wechat_gateway_unavailable",
-        { provider: "", attempts: ["primary"], paid_call: false });
+        { provider: "", attempts: ["primary"], paid_call: false }, collectionHttpError(error, signal));
     }
-    const meta = gatewayMeta(response.headers);
+    let meta: CollectorMeta;
+    try { meta = gatewayMeta(response.headers); }
+    catch (error) { void response.body?.cancel().catch(() => {}); throw error; }
     if (!response.ok) {
-      try { await response.body?.cancel(); } catch { /* fixed error below */ }
-      throw new CollectorBatchError(`wechat_gateway_http_${response.status}`, meta);
+      void response.body?.cancel().catch(() => {});
+      throw new CollectorBatchError(`wechat_gateway_http_${response.status}`, meta,
+        new CollectionHttpError(response.status === 429 ? "rate_limited" : "http_error", `HTTP ${response.status}`,
+          { status: response.status, retryAt: parseRetryAfter(response.headers.get("retry-after"), Date.now()) ?? undefined }));
     }
-    if (!meta.provider) throw new CollectorBatchError("wechat_gateway_invalid_metadata", meta);
+    if (!meta.provider) {
+      void response.body?.cancel().catch(() => {});
+      throw new CollectorBatchError("wechat_gateway_invalid_metadata", meta);
+    }
     let items: NormalizedItem[];
+    const stats = { rejected_entries: 0 };
     try {
       // A gateway feed is text; an explicit ceiling keeps a wedged gateway from
       // streaming an unbounded body into memory before the parse.
-      const text = await response.text();
-      if (text.length > WECHAT_GATEWAY_FEED_MAX_CHARS) throw new Error("wechat_gateway_feed_too_large");
-      items = parseFeedXml(text, source.id, "wechat");
-    } catch {
-      throw new CollectorBatchError("wechat_gateway_invalid_feed", meta);
+      const bytes = await readCapped(response.body, WECHAT_GATEWAY_FEED_MAX_BYTES, signal);
+      if (io.metrics) io.metrics.bytes = (io.metrics.bytes ?? 0) + bytes.byteLength;
+      const text = new TextDecoder().decode(bytes);
+      items = parseFeedXml(text, source.id, "wechat", { feedUrl: response.url || gatewayFeedUrl(source.id), stats });
+    } catch (error) {
+      throw new CollectorBatchError("wechat_gateway_invalid_feed", meta,
+        error instanceof CollectionHttpError || signal.aborted ? collectionHttpError(error, signal) : new CollectionHttpError("invalid_response"));
     }
-    return { items, meta: { ...meta, provider: meta.provider || providerFromItems(items) } };
+    return { items, ...stats, meta: { ...meta, provider: meta.provider || providerFromItems(items) },
+      coverage: { complete: false, window_only: true, note: "feed_window" } };
   },
 };
 
@@ -110,34 +129,50 @@ const telegramAdapter: CollectorAdapter = {
   id: "telegram_web",
   async fetch(source, io = {}) {
     if (source.feed_url.startsWith("http")) {
-      return batch(await fetchRss(source.feed_url, source.id, "telegram", io), "rss");
+      if (source.scan_state?.bootstrap === "backfill") throw new Error("telegram_backfill_requires_authorized_worker");
+      return feedBatch(source.feed_url, source, "rss", io);
     }
     const handle = parseTelegramHandle(source.handle) || parseTelegramHandle(source.url);
     if (!handle) throw new Error("请填写频道用户名，或 t.me/用户名 链接");
     const minId = source.last_external_id ?? "";
-    const health = await telethonHealth();
+    const health = await telethonHealth(io.signal);
+    if (["connecting", "unavailable"].includes(health.state)) {
+      throw new CollectorBatchError("Telethon unavailable", {
+        provider: "", attempts: ["telethon"], paid_call: false,
+      }, new CollectionHttpError("http_error", "Telethon unavailable", {
+        status: health.status, retryAt: health.retry_after_seconds > 0 ? Date.now() + health.retry_after_seconds * 1000 : undefined,
+      }));
+    }
     if (health.authorized) {
-      if (health.paused_until && health.paused_until > 0) {
-        throw new CollectorBatchError(`Telethon FloodWait ${health.paused_until}s`, {
+      const wait = health.retry_after_seconds || health.paused_until || 0;
+      if (health.state === "cooldown" || wait > 0) {
+        throw new CollectorBatchError(`Telethon FloodWait ${wait}s`, {
           provider: "", attempts: ["telethon"], paid_call: false,
-        });
+        }, new CollectionHttpError("rate_limited", "rate_limited", { retryAt: Date.now() + wait * 1000 }));
       }
       try {
-        return batch(await fetchTelethonHistory(handle, minId, 80), "telethon");
+        const page = await fetchTelethonHistory(handle, source.scan_state?.boundary ?? minId, 80, io.signal, source.scan_state);
+        const latestWindow = (!minId || /^0+$/.test(minId)) && source.scan_state?.bootstrap !== "backfill";
+        return { ...batch(page, "telethon"), next_cursor: page.next_cursor, has_more: page.has_more,
+          next_scan_state: { bootstrap: source.scan_state?.bootstrap ?? "latest" },
+          coverage: latestWindow ? { complete: false, window_only: true, note: "latest_80" }
+            : { complete: !page.has_more, note: page.has_more ? "page_cap" : "incremental" } };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         throw new CollectorBatchError(msg, {
           provider: "", attempts: ["telethon"], paid_call: false,
-        });
+        }, err);
       }
     }
+    if (source.scan_state?.bootstrap === "backfill") throw new Error("telegram_backfill_requires_authorized_worker");
     try {
-      return batch(await fetchTelegramChannel(handle, io), "t.me/s");
+      return { ...batch(await fetchTelegramChannel(handle, io), "t.me/s"),
+        coverage: { complete: false, window_only: true, note: "web_window" } };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       throw new CollectorBatchError(msg, {
         provider: "", attempts: ["t.me/s"], paid_call: false,
-      });
+      }, err);
     }
   },
 };
@@ -145,7 +180,7 @@ const telegramAdapter: CollectorAdapter = {
 const youtubeAdapter: CollectorAdapter = {
   id: "youtube",
   async fetch(source, io = {}) {
-    return batch(await fetchRss(youtubeFeedUrl(source), source.id, "youtube", io), "youtube");
+    return feedBatch(youtubeFeedUrl(source), source, "youtube", io);
   },
 };
 
@@ -202,10 +237,17 @@ const biliAdapter: CollectorAdapter = {
   id: "bilibili",
   async fetch(source, io = {}) {
     if (source.feed_url.startsWith("http")) {
-      return batch(await fetchRss(source.feed_url, source.id, "bilibili", io), "bilibili");
+      return feedBatch(source.feed_url, source, "bilibili", io);
     }
-    const mid = (source.handle || source.url).replace(/\D/g, "");
-    if (!mid) throw new Error("需要 B 站 mid");
+    const candidate = (source.handle || source.url).trim();
+    let mid = /^\d+$/.test(candidate) ? candidate : "";
+    if (!mid) {
+      try {
+        const url = new URL(candidate);
+        if (url.hostname === "space.bilibili.com" && !url.username && !url.password) mid = url.pathname.match(/^\/(\d+)\/?$/)?.[1] ?? "";
+      } catch { /* Not an exact channel ID or channel URL. */ }
+    }
+    if (!mid) throw new CollectionHttpError("config_error", "需要 B 站 mid");
 
     // Walk pages until a known item is reached (or the page cap). Previously only
     // page 1 was read; the cursor then advanced to the newest item in it, so any
@@ -217,14 +259,19 @@ const biliAdapter: CollectorAdapter = {
     let complete = false;
     let note = "";
 
-    for (let page = 1; page <= BILI_MAX_PAGES; page += 1) {
+    const startPage = source.scan_state?.page ?? 1;
+    if (!Number.isSafeInteger(startPage) || startPage < 1) throw new Error("invalid_scan_page");
+    let nextPage = startPage;
+    for (let page = startPage; page < startPage + BILI_MAX_PAGES; page += 1) {
+      nextPage = page;
       const json = await fetchJson<BiliList>(
         `https://api.bilibili.com/x/space/arc/search?mid=${mid}&ps=${BILI_PAGE_SIZE}&pn=${page}`,
         10000,
         io,
       );
       if (json.code && json.code !== 0) throw biliError(json.code, json.message ?? "");
-      const list = json.data?.list?.vlist ?? [];
+      const list = json.data?.list?.vlist;
+      if (!Array.isArray(list)) throw new CollectionHttpError("invalid_response");
       if (!list.length) {
         // Ran out of items: the boundary is reached (or the channel is empty).
         complete = true;
@@ -245,7 +292,6 @@ const biliAdapter: CollectorAdapter = {
       }
     }
     if (!complete) note = "page_cap";
-    if (!rows.length) throw new Error("B站接口未返回视频（可能被风控）");
     const result = batch(rows.map((v) => ({
       external_id: v.bvid,
       title: v.title,
@@ -260,7 +306,13 @@ const biliAdapter: CollectorAdapter = {
       published_at: v.created ? new Date(v.created * 1000).toISOString() : null,
       extra: { bvid: v.bvid, mid: v.mid },
     })), "bilibili");
-    return { ...result, coverage: { complete, note } };
+    // ponytail: one page overlap absorbs up to 20 inserts/deletions between rounds;
+    // a stable upstream cursor is required for arbitrary concurrent feed reordering.
+    const boundary = source.scan_state?.boundary ?? rows[0]?.bvid;
+    return { ...result, coverage: { complete, note }, has_more: !complete,
+      next_cursor: complete ? boundary : undefined,
+      next_scan_state: complete ? { bootstrap: source.scan_state?.bootstrap ?? "latest" }
+        : { bootstrap: source.scan_state?.bootstrap ?? "latest", page: nextPage, boundary } };
   },
 };
 
@@ -269,9 +321,9 @@ const rsshubAdapter: CollectorAdapter = {
   async fetch(source, io = {}) {
     const url = source.feed_url || source.handle;
     if (!url.startsWith("http")) {
-      throw new Error("该平台需要 RSSHub / WeWe 订阅地址，或等待浏览器采集节点");
+      throw new CollectionHttpError("config_error", "该平台需要 RSSHub / WeWe 订阅地址，或等待浏览器采集节点");
     }
-    return batch(await fetchRss(url, source.id, source.platform, io), "rsshub");
+    return feedBatch(url, source, "rsshub", io);
   },
 };
 
@@ -292,29 +344,17 @@ const ADAPTERS: Record<string, CollectorAdapter> = {
  * consume it — the WeChat gateway keeps its own internal transport.
  */
 export async function collectSource(source: SourceRecord, io: FetchIo = {}): Promise<CollectorBatch> {
-  const adapter = ADAPTERS[source.adapter] ?? rssAdapter;
+  const adapter = Object.hasOwn(ADAPTERS, source.adapter) ? ADAPTERS[source.adapter] : undefined;
+  if (!adapter) throw new CollectionHttpError("config_error", "unsupported_adapter");
   try {
     return await adapter.fetch(source, io);
   } catch (err) {
     const failed = collectorMeta(err);
     const attempted = failed.attempts.length ? failed.attempts : [adapter.id];
-    if (source.feed_url.startsWith("http") && adapter.id !== "rss") {
-      const attempts = [...new Set([...attempted, "rss"])];
-      try {
-        const fallback = await rssAdapter.fetch({ ...source, adapter: "rss" }, io);
-        return { ...fallback, meta: { ...fallback.meta,
-          attempts,
-          paid_call: failed.paid_call || fallback.meta.paid_call } };
-      } catch {
-        throw new CollectorBatchError("collector_fallback_failed", {
-          provider: failed.provider, attempts, paid_call: failed.paid_call,
-        });
-      }
-    }
     throw err instanceof CollectorBatchError ? err
       : new CollectorBatchError(err instanceof Error ? err.message : "collector_failed", {
         provider: failed.provider, attempts: attempted, paid_call: failed.paid_call,
-      });
+      }, err);
   }
 }
 

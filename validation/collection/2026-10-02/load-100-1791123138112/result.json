@@ -1,0 +1,119 @@
+{
+  "ok": true,
+  "evidence_scope": "offline",
+  "git_sha": "bd7798a16e5059acb86d633ef27e02aaaf303fc9",
+  "source_state": "dirty-development-only",
+  "started_at": "2026-10-04T14:12:18.112Z",
+  "sources": 100,
+  "expected": 2000,
+  "collected": 2000,
+  "missing": 0,
+  "duplicates": 0,
+  "delay_p50": 0.445487,
+  "delay_p95": 0.748337,
+  "retry_recovery_seconds": {
+    "status": "unknown",
+    "reason": "no injected failures in capacity burst"
+  },
+  "max_rss_bytes": 187584512,
+  "max_queue_age_seconds": 1.13621,
+  "paid_calls": 0,
+  "runtime": {
+    "node": "v24.16.0",
+    "platform": "win32",
+    "arch": "x64",
+    "logical_cpus": 16,
+    "host_ram_bytes": 68564348928
+  },
+  "note": "Accelerated due-set burst; SQL due-time aged explicitly. Delay is observed due-to-job-start, not real minute cron cadence.",
+  "pending": [
+    "live 72h / 7d",
+    "24h endurance",
+    "70% application container RSS: native Node has no enforced container budget"
+  ],
+  "postgres": {
+    "name": "weave-t17-load-100-55028-mutwgymv",
+    "id": "15faac8b34f3e00d2b1f39f552f16ac555b90c6069b313572e3d502f7c461c79",
+    "image": "sha256:75f5a96988cdf694a215073c3e9c001b706b371e2f94df3967f2efdec2787f6b",
+    "digest": "postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685",
+    "memory_budget_bytes": 536870912,
+    "cpu_nanoseconds": 2000000000,
+    "migrations": [
+      "0002_schema.sql",
+      "0003_keywords.sql",
+      "0004_production.sql",
+      "0005_scheduler_leases.sql",
+      "0006_reconciliation_queue.sql",
+      "0007_extract_target_state.sql",
+      "0008_reconciliation_queue_retry.sql",
+      "0009_extract_claim_fencing.sql",
+      "0010_wechat_job_provider.sql",
+      "0011_ai_runs.sql",
+      "0012_ai_jobs.sql",
+      "0013_agent_checkpoints.sql",
+      "0014_agent_integrity.sql",
+      "0015_agent_budget_reservations.sql",
+      "0016_agent_terminal_states.sql",
+      "0017_agent_call_receipts.sql",
+      "0018_agent_checkpoint_facts.sql",
+      "0019_agent_material_revision.sql",
+      "0020_agent_daily_admission.sql",
+      "0021_stage_windows.sql",
+      "0022_collection_progress.sql",
+      "0023_collection_retry.sql",
+      "0024_media_identity.sql",
+      "0025_media_retry.sql",
+      "0026_feed_validators.sql",
+      "0027_collection_observability.sql"
+    ],
+    "cgroup_memory_bytes": [
+      109047808,
+      111140864
+    ]
+  },
+  "passes": [
+    {
+      "label": "round1",
+      "ticks": 4,
+      "ran": 100,
+      "items_new": 1000,
+      "errors": 0,
+      "deferred": 0,
+      "elapsed_seconds": 0.939,
+      "delay_p50": 0.445487,
+      "delay_p95": 0.748337,
+      "max_queue_age_seconds": 0.791525,
+      "exact_reference_ids": 1000
+    },
+    {
+      "label": "round2",
+      "ticks": 4,
+      "ran": 100,
+      "items_new": 1000,
+      "errors": 0,
+      "deferred": 0,
+      "elapsed_seconds": 0.785,
+      "delay_p50": 0.303549,
+      "delay_p95": 0.572844,
+      "max_queue_age_seconds": 0.614853,
+      "exact_reference_ids": 2000
+    },
+    {
+      "label": "replay",
+      "ticks": 4,
+      "ran": 100,
+      "items_new": 0,
+      "errors": 0,
+      "deferred": 0,
+      "elapsed_seconds": 1.22,
+      "delay_p50": 0.541627,
+      "delay_p95": 1.047393,
+      "max_queue_age_seconds": 1.13621,
+      "exact_reference_ids": 2000
+    }
+  ],
+  "transport_calls": 300,
+  "database_bytes": 10484759,
+  "finished_at": "2026-10-04T14:12:26.434Z",
+  "duration_seconds": 8.322
+}

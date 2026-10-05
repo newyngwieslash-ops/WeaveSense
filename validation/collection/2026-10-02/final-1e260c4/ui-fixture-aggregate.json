@@ -1,0 +1,15 @@
+{
+  "containerId": "a0917771d98f117965e9fa502233312beaa90502b59c48f10a8d7c48814806a3",
+  "sourceSha": "1e260c4fe435d6b2cdf0d8d70c8b7e6f40bfe664",
+  "scope": "parent actual before/after readonly aggregate, synthetic UI fixture",
+  "before": "1|0|0|3|8",
+  "productionTouched": false,
+  "columns": [
+    "seeded",
+    "enabled_sources",
+    "enabled_keywords",
+    "items",
+    "jobs"
+  ],
+  "after": "1|0|0|3|8"
+}

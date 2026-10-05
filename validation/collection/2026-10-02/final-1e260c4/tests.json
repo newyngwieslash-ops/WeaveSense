@@ -1,0 +1,86 @@
+{
+  "sourceSha": "1e260c4fe435d6b2cdf0d8d70c8b7e6f40bfe664",
+  "phase": "tests",
+  "runtime": "v24.16.0",
+  "startedAt": "2026-10-05T04:19:25.406Z",
+  "scope": "offline committed source; isolated or in-memory fixture databases; no production or real provider",
+  "checks": [
+    {
+      "name": "npm-test",
+      "command": "F:\\nodejs\\node.exe",
+      "args": [
+        "F:/nodejs/node_modules/npm/bin/npm-cli.js",
+        "test"
+      ],
+      "cwd": "C:\\Users\\yi'da'dui\\.codex\\worktrees\\collection-reliability\\WeaveSense",
+      "exit": 0,
+      "error": null,
+      "elapsedMs": 116009,
+      "log": "C:\\Users\\yi'da'dui\\.codex\\worktrees\\collection-reliability\\WeaveSense\\.superpowers\\sdd\\final-checks-1e260c4\\npm-test.log"
+    },
+    {
+      "name": "gateway-test",
+      "command": "F:\\nodejs\\node.exe",
+      "args": [
+        "F:/nodejs/node_modules/npm/bin/npm-cli.js",
+        "run",
+        "gateway:test"
+      ],
+      "cwd": "C:\\Users\\yi'da'dui\\.codex\\worktrees\\collection-reliability\\WeaveSense",
+      "exit": 0,
+      "error": null,
+      "elapsedMs": 1861,
+      "log": "C:\\Users\\yi'da'dui\\.codex\\worktrees\\collection-reliability\\WeaveSense\\.superpowers\\sdd\\final-checks-1e260c4\\gateway-test.log"
+    },
+    {
+      "name": "telethon-test",
+      "command": "C:\\Users\\yi'da'dui\\.codex\\worktrees\\collection-reliability\\WeaveSense\\.venv\\Scripts\\python.exe",
+      "args": [
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "workers/telethon",
+        "-p",
+        "test_history.py"
+      ],
+      "cwd": "C:\\Users\\yi'da'dui\\.codex\\worktrees\\collection-reliability\\WeaveSense",
+      "exit": 0,
+      "error": null,
+      "elapsedMs": 2002,
+      "log": "C:\\Users\\yi'da'dui\\.codex\\worktrees\\collection-reliability\\WeaveSense\\.superpowers\\sdd\\final-checks-1e260c4\\telethon-test.log"
+    },
+    {
+      "name": "typecheck",
+      "command": "F:\\nodejs\\node.exe",
+      "args": [
+        "F:/nodejs/node_modules/npm/bin/npm-cli.js",
+        "run",
+        "typecheck"
+      ],
+      "cwd": "C:\\Users\\yi'da'dui\\.codex\\worktrees\\collection-reliability\\WeaveSense",
+      "exit": 0,
+      "error": null,
+      "elapsedMs": 7464,
+      "log": "C:\\Users\\yi'da'dui\\.codex\\worktrees\\collection-reliability\\WeaveSense\\.superpowers\\sdd\\final-checks-1e260c4\\typecheck.log"
+    },
+    {
+      "name": "agent-go",
+      "command": "go",
+      "args": [
+        "-C",
+        "workers/agent",
+        "test",
+        "./...",
+        "-count=1"
+      ],
+      "cwd": "C:\\Users\\yi'da'dui\\.codex\\worktrees\\collection-reliability\\WeaveSense",
+      "exit": 0,
+      "error": null,
+      "elapsedMs": 11143,
+      "log": "C:\\Users\\yi'da'dui\\.codex\\worktrees\\collection-reliability\\WeaveSense\\.superpowers\\sdd\\final-checks-1e260c4\\agent-go.log"
+    }
+  ],
+  "ok": true,
+  "finishedAt": "2026-10-05T04:21:43.896Z"
+}

@@ -128,7 +128,7 @@ test("detail outbox rescan merges the existing canonical row before deleting its
     .rows[0];
   assert.equal(row?.body, "付费详情完整正文\n\n[OCR:image-1]\n已有识别结果");
   assert.deepEqual(row?.extra, { kept: true, platform: "wechat", provider: "dajiala",
-    body_complete: true });
+    body_complete: true, rss_identity: 'raw-v1' });
   assert.deepEqual(row?.matched_keywords, ["已有词", "新词"]);
   assert.equal((await pg.query<{ n: number }>("select count(*)::int as n from items where external_id='wx:canonical'"))
     .rows[0]?.n, 1);

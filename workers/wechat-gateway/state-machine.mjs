@@ -73,6 +73,14 @@ export function paidDecision(source, now) {
   return { allowed: false, reason: "primary_healthy" };
 }
 
+export function freshnessState(source, now) {
+  const nowMs = nowTime(now);
+  const contentAt = eventTime(source.last_primary_content_at, nowMs);
+  const hours = source.expected_update_hours;
+  if (contentAt === null || typeof hours !== "number" || !Number.isFinite(hours) || hours <= 0) return "unknown";
+  return nowMs - contentAt > 3 * hours * 3_600_000 ? "suspected_stale" : "fresh";
+}
+
 export function nextPaidRetry(now, failedAttemptCount) {
   const nowMs = nowTime(now);
   const attempt = Math.max(1, Math.trunc(Number(failedAttemptCount)) || 1);

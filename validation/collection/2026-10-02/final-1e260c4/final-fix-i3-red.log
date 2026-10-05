@@ -1,0 +1,29 @@
+FFF
+======================================================================
+FAIL: test_storage_recovery_rechecks_shared_cooldown_and_account_readiness (test_history.HistoryPaginationTests.test_storage_recovery_rechecks_shared_cooldown_and_account_readiness) (state='flood_wait')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\yi'da'dui\.codex\worktrees\collection-reliability\WeaveSense\workers\telethon\test_history.py", line 265, in run
+    self.assertEqual(response.status, 429 if state == "flood_wait" else 503)
+AssertionError: 200 != 429
+
+======================================================================
+FAIL: test_storage_recovery_rechecks_shared_cooldown_and_account_readiness (test_history.HistoryPaginationTests.test_storage_recovery_rechecks_shared_cooldown_and_account_readiness) (state='unavailable')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\yi'da'dui\.codex\worktrees\collection-reliability\WeaveSense\workers\telethon\test_history.py", line 265, in run
+    self.assertEqual(response.status, 429 if state == "flood_wait" else 503)
+AssertionError: 200 != 503
+
+======================================================================
+FAIL: test_storage_recovery_rechecks_shared_cooldown_and_account_readiness (test_history.HistoryPaginationTests.test_storage_recovery_rechecks_shared_cooldown_and_account_readiness) (state='disconnected')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\yi'da'dui\.codex\worktrees\collection-reliability\WeaveSense\workers\telethon\test_history.py", line 265, in run
+    self.assertEqual(response.status, 429 if state == "flood_wait" else 503)
+AssertionError: 200 != 503
+
+----------------------------------------------------------------------
+Ran 1 test in 1.073s
+
+FAILED (failures=3)

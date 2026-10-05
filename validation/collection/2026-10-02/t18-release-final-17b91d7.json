@@ -1,0 +1,309 @@
+{
+  "ok": true,
+  "sourceSha": "17b91d79e3397dae88d7dd816d0cb667570ce99d",
+  "scope": "isolated-Linux-image-release-candidate",
+  "productionActivated": false,
+  "roles": {
+    "postgres": {
+      "containerId": "744620b044a72473636722ee7abfb4ace9ff332f59b52f632b2f764f62d36694",
+      "imageId": "sha256:75f5a96988cdf694a215073c3e9c001b706b371e2f94df3967f2efdec2787f6b",
+      "command": [
+        "postgres"
+      ],
+      "revision": null
+    },
+    "migration": {
+      "containerId": "c2f07495e1e128ea692330dd39f97ccd692c786ffd24b200ea81657edc61eadd",
+      "imageId": "sha256:44c19ee6dd3fa4659d53ddac0ac1c624217ea8301ac759e4121d0a63d071d3c8",
+      "command": [
+        "node",
+        "scripts/migrate.mjs"
+      ],
+      "revision": "17b91d79e3397dae88d7dd816d0cb667570ce99d"
+    },
+    "app": {
+      "containerId": "69b5e31f46227b147ae5ccb311170ee327e2cec4dc368830007c3b8b2bced3f0",
+      "imageId": "sha256:44c19ee6dd3fa4659d53ddac0ac1c624217ea8301ac759e4121d0a63d071d3c8",
+      "command": [
+        "npm",
+        "run",
+        "start"
+      ],
+      "revision": "17b91d79e3397dae88d7dd816d0cb667570ce99d"
+    },
+    "scheduler": {
+      "containerId": "f7548b51152da8c6149e7d0ff40446644287dfa24eb6fade720f14eeb776d97d",
+      "imageId": "sha256:44c19ee6dd3fa4659d53ddac0ac1c624217ea8301ac759e4121d0a63d071d3c8",
+      "command": [
+        "npm",
+        "run",
+        "cron:start"
+      ],
+      "revision": "17b91d79e3397dae88d7dd816d0cb667570ce99d"
+    },
+    "gateway": {
+      "containerId": "cfb1626e4dc8f5b5e77c7244b44ef7420fc30785afd99080263b0ac86d538f6c",
+      "imageId": "sha256:44c19ee6dd3fa4659d53ddac0ac1c624217ea8301ac759e4121d0a63d071d3c8",
+      "command": [
+        "npm",
+        "run",
+        "gateway:start"
+      ],
+      "revision": "17b91d79e3397dae88d7dd816d0cb667570ce99d"
+    },
+    "telethon": {
+      "containerId": "7007156feefe2d80ff54b553689755a63d92629bb6e23e8daae4c70fdb1260d8",
+      "imageId": "sha256:2ca43a6c165d1d7d20a668193ae2e01578469e15eefe6a0ceb86dd0a2e4db855",
+      "command": [
+        "python",
+        "server.py"
+      ],
+      "revision": "17b91d79e3397dae88d7dd816d0cb667570ce99d"
+    }
+  },
+  "rollback": {
+    "production": "not-surveyed; no-production-deployment",
+    "isolated": {
+      "app": "sha256:44c19ee6dd3fa4659d53ddac0ac1c624217ea8301ac759e4121d0a63d071d3c8",
+      "scheduler": "sha256:44c19ee6dd3fa4659d53ddac0ac1c624217ea8301ac759e4121d0a63d071d3c8",
+      "gateway": "sha256:44c19ee6dd3fa4659d53ddac0ac1c624217ea8301ac759e4121d0a63d071d3c8",
+      "telethon": "sha256:2ca43a6c165d1d7d20a668193ae2e01578469e15eefe6a0ceb86dd0a2e4db855"
+    },
+    "note": "These are verified candidate artifact IDs that can be restarted in this isolated lab; production pre-switch IDs require separate approved inventory."
+  },
+  "checks": {
+    "appImage": {
+      "id": "sha256:44c19ee6dd3fa4659d53ddac0ac1c624217ea8301ac759e4121d0a63d071d3c8",
+      "tags": [
+        "loom-collection:17b91d79e3397dae88d7dd816d0cb667570ce99d"
+      ],
+      "revision": "17b91d79e3397dae88d7dd816d0cb667570ce99d"
+    },
+    "telethonImage": {
+      "id": "sha256:2ca43a6c165d1d7d20a668193ae2e01578469e15eefe6a0ceb86dd0a2e4db855",
+      "tags": [
+        "loom-telethon:17b91d79e3397dae88d7dd816d0cb667570ce99d"
+      ],
+      "revision": "17b91d79e3397dae88d7dd816d0cb667570ce99d"
+    },
+    "migrationLog": "[migrate] applied 0002_schema.sql\n[migrate] applied 0003_keywords.sql\n[migrate] applied 0004_production.sql\n[migrate] applied 0005_scheduler_leases.sql\n[migrate] applied 0006_reconciliation_queue.sql\n[migrate] applied 0007_extract_target_state.sql\n[migrate] applied 0008_reconciliation_queue_retry.sql\n[migrate] applied 0009_extract_claim_fencing.sql\n[migrate] applied 0010_wechat_job_provider.sql\n[migrate] applied 0011_ai_runs.sql\n[migrate] applied 0012_ai_jobs.sql\n[migrate] applied 0013_agent_checkpoints.sql\n[migrate] applied 0014_agent_integrity.sql\n[migrate] applied 0015_agent_budget_reservations.sql\n[migrate] applied 0016_agent_terminal_states.sql\n[migrate] applied 0017_agent_call_receipts.sql\n[migrate] applied 0018_agent_checkpoint_facts.sql\n[migrate] applied 0019_agent_material_revision.sql\n[migrate] applied 0020_agent_daily_admission.sql\n[migrate] applied 0021_stage_windows.sql\n[migrate] applied 0022_collection_progress.sql\n[migrate] applied 0023_collection_retry.sql\n[migrate] applied 0024_media_identity.sql\n[migrate] applied 0025_media_retry.sql\n[migrate] applied 0026_feed_validators.sql\n[migrate] applied 0027_collection_observability.sql\n[migrate] done — 26 migration(s) applied.",
+    "disabledFixtureInputs": "0",
+    "appHttp": {
+      "status": 200,
+      "bytes": 30719
+    },
+    "download": {
+      "entries": 414,
+      "sha256": "53681eb04a667903d887912ea7a4a89273a6e44902a20f4094a9684727ef1df4",
+      "registeredTests": 64,
+      "privateStateExcluded": true
+    },
+    "schedulerTick": {
+      "timestamp": "2026-10-05T03:00:08.621Z",
+      "status": 200,
+      "item_count": 0,
+      "error_count": 0,
+      "stages": {
+        "collection": "ok",
+        "production": "ok",
+        "reconciliation": "skipped",
+        "queue": "ok",
+        "delivery_ack": "skipped"
+      },
+      "duration_ms": 93,
+      "deferred": 0,
+      "error_code": ""
+    },
+    "enabledInputsAfterTick": "0",
+    "gatewayHealth": {
+      "as_of": "2026-10-05T03:00:32.106Z",
+      "sources": [],
+      "usage": {
+        "today": "2026-10-05",
+        "day": "2026-10-05",
+        "calls": 0,
+        "amount": 0,
+        "days": [
+          {
+            "day": "2026-10-05",
+            "calls": 0,
+            "amount": 0
+          }
+        ]
+      },
+      "limits": {
+        "daily_calls": 0,
+        "daily_rmb": 0,
+        "paid_configured": false
+      }
+    },
+    "telethonHealth": {
+      "ok": true,
+      "authorized": false,
+      "me": "",
+      "minio": false,
+      "media_available": false,
+      "media_error": "media_unavailable",
+      "paused_until": 0,
+      "state": "unconfigured",
+      "retry_after_seconds": 0,
+      "error": "unconfigured"
+    },
+    "nodeRuntime": "v22.23.3",
+    "pythonRuntime": "Python 3.12.15",
+    "pythonPackages": [
+      "aiohappyeyeballs==2.7.1",
+      "aiohttp==3.14.3",
+      "aiosignal==1.4.0",
+      "argon2-cffi==25.1.0",
+      "argon2-cffi-bindings==26.1.0",
+      "attrs==26.1.0",
+      "certifi==2026.7.22",
+      "cffi==2.1.1",
+      "frozenlist==1.8.0",
+      "idna==3.20",
+      "minio==7.2.20",
+      "multidict==6.9.1",
+      "propcache==0.5.4",
+      "pyaes==1.6.1",
+      "pyasn1==0.6.4",
+      "pycparser==3.0",
+      "pycryptodome==3.23.0",
+      "rsa==4.9.1",
+      "Telethon==1.45.0",
+      "typing_extensions==4.16.0",
+      "urllib3==2.8.0",
+      "yarl==1.25.1"
+    ],
+    "nodeTests": {
+      "exit": 0,
+      "log": ".superpowers\\sdd\\t18-release-17b91d7-muunw8ft-node-tests.log"
+    },
+    "pythonTests": {
+      "exit": 0,
+      "log": ".superpowers\\sdd\\t18-release-17b91d7-muunw8ft-python-tests.log"
+    },
+    "browser": {
+      "url": "http://127.0.0.1:5939",
+      "viewports": {
+        "desktop": {
+          "width": 1280,
+          "height": 800,
+          "status": 200,
+          "title": "织识 Loom",
+          "hasCanvas": false,
+          "bodyTextLen": 484,
+          "bodyTextHash": "2e0d985c5b4dd0b9fa3306d9053690602f7d58dfbaa6a603c827d98f5aa56d05",
+          "bodyTextPrefix": "织识 LOOM 总览 关键词 信源 内容 知识库 任务 节点 模型设置 管道 指南 规格 关键词 · 增量采集 扫描到期 MED",
+          "horizontalOverflow": false,
+          "consoleErrors": [],
+          "pageErrors": [],
+          "screenshot": "C:\\Users\\yi'da'dui\\.codex\\worktrees\\collection-reliability\\WeaveSense\\screenshots\\t18-release-17b91d7-muunw8ft.png"
+        },
+        "mobile": {
+          "width": 390,
+          "height": 844,
+          "status": 200,
+          "title": "织识 Loom",
+          "hasCanvas": false,
+          "bodyTextLen": 449,
+          "bodyTextHash": "daa5442748c62827bbc78179a444650cd29f57b634fb301e0f5f487d4b01929f",
+          "bodyTextPrefix": "织识 行业媒体矩阵 扫描到期 MEDIA MATRIX · INCREMENTAL 织识 把频道、关键词与时间织进同一条增量管道",
+          "horizontalOverflow": false,
+          "consoleErrors": [],
+          "pageErrors": [],
+          "screenshot": "C:\\Users\\yi'da'dui\\.codex\\worktrees\\collection-reliability\\WeaveSense\\screenshots\\t18-release-17b91d7-muunw8ft-mobile.png"
+        }
+      },
+      "brandWarnings": [
+        "BRAND NOTE: no custom public/og.jpg — the platform will serve the og.grok.me placeholder. Custom cards are the default for games of every kind (DOM board/word games included), whimsical apps, creative tools, and brand-forward pages — only plain utilities (converters, CRUD trackers, admin dashboards) keep the placeholder. If this app is not a plain utility, finish the brand-asset pass per \\workspace\\.grok\\skills\\og\\SKILL.md."
+      ],
+      "authWarnings": [],
+      "verdictFile": "C:\\Users\\yi'da'dui\\.codex\\worktrees\\collection-reliability\\WeaveSense\\screenshots\\t18-release-17b91d7-muunw8ft.json"
+    },
+    "screenshots": [
+      "C:\\Users\\yi'da'dui\\.codex\\worktrees\\collection-reliability\\WeaveSense\\screenshots\\t18-release-17b91d7-muunw8ft.png",
+      "C:\\Users\\yi'da'dui\\.codex\\worktrees\\collection-reliability\\WeaveSense\\screenshots\\t18-release-17b91d7-muunw8ft-mobile.png"
+    ],
+    "migrations": [
+      "0002_schema.sql",
+      "0003_keywords.sql",
+      "0004_production.sql",
+      "0005_scheduler_leases.sql",
+      "0006_reconciliation_queue.sql",
+      "0007_extract_target_state.sql",
+      "0008_reconciliation_queue_retry.sql",
+      "0009_extract_claim_fencing.sql",
+      "0010_wechat_job_provider.sql",
+      "0011_ai_runs.sql",
+      "0012_ai_jobs.sql",
+      "0013_agent_checkpoints.sql",
+      "0014_agent_integrity.sql",
+      "0015_agent_budget_reservations.sql",
+      "0016_agent_terminal_states.sql",
+      "0017_agent_call_receipts.sql",
+      "0018_agent_checkpoint_facts.sql",
+      "0019_agent_material_revision.sql",
+      "0020_agent_daily_admission.sql",
+      "0021_stage_windows.sql",
+      "0022_collection_progress.sql",
+      "0023_collection_retry.sql",
+      "0024_media_identity.sql",
+      "0025_media_retry.sql",
+      "0026_feed_validators.sql",
+      "0027_collection_observability.sql"
+    ]
+  },
+  "cleanup": [
+    {
+      "id": "bb26b6f35a7a104dc4d6fa591dde1d8a69f6fc092bba27a8861426bb4227d4c0",
+      "removed": true,
+      "exitCode": 0,
+      "logs": ""
+    },
+    {
+      "id": "7007156feefe2d80ff54b553689755a63d92629bb6e23e8daae4c70fdb1260d8",
+      "removed": true,
+      "exitCode": 0,
+      "logs": "======== Running on http://0.0.0.0:8787 ========\n(Press CTRL+C to quit)"
+    },
+    {
+      "id": "cfb1626e4dc8f5b5e77c7244b44ef7420fc30785afd99080263b0ac86d538f6c",
+      "removed": true,
+      "exitCode": 0,
+      "logs": "> gateway:start\n> node workers/wechat-gateway/server.mjs"
+    },
+    {
+      "id": "f7548b51152da8c6149e7d0ff40446644287dfa24eb6fade720f14eeb776d97d",
+      "removed": true,
+      "exitCode": 0,
+      "logs": "> cron:start\n> node scripts/cron-loop.mjs\n\n{\"timestamp\":\"2026-10-05T03:00:08.621Z\",\"status\":200,\"item_count\":0,\"error_count\":0,\"stages\":{\"collection\":\"ok\",\"production\":\"ok\",\"reconciliation\":\"skipped\",\"queue\":\"ok\",\"delivery_ack\":\"skipped\"},\"duration_ms\":93,\"deferred\":0,\"error_code\":\"\"}"
+    },
+    {
+      "id": "69b5e31f46227b147ae5ccb311170ee327e2cec4dc368830007c3b8b2bced3f0",
+      "removed": true,
+      "exitCode": 0,
+      "logs": "> start\n> node scripts/migrate.mjs && node scripts/with-app-env.mjs vite preview --host 0.0.0.0 --port 8080\n\n[migrate] up to date.\n\n ╭────────── [Build Info] ─────────────╮\n │                                     │\n │  - Build Directory: .vercel/output  │\n │  - Date: 10/5/2026, 2:58:16 AM      │\n │  - Nitro Version: 3.0.260610-beta   │\n │  - Nitro Preset: vercel             │\n │                                     │\n ╰─────────────────────────────────────╯\n\n  ➜  Local:   http://localhost:8080/\n  ➜  Network: http://192.168.96.3:8080/  eth0"
+    },
+    {
+      "id": "c2f07495e1e128ea692330dd39f97ccd692c786ffd24b200ea81657edc61eadd",
+      "removed": true,
+      "exitCode": 0,
+      "logs": "[migrate] applied 0002_schema.sql\n[migrate] applied 0003_keywords.sql\n[migrate] applied 0004_production.sql\n[migrate] applied 0005_scheduler_leases.sql\n[migrate] applied 0006_reconciliation_queue.sql\n[migrate] applied 0007_extract_target_state.sql\n[migrate] applied 0008_reconciliation_queue_retry.sql\n[migrate] applied 0009_extract_claim_fencing.sql\n[migrate] applied 0010_wechat_job_provider.sql\n[migrate] applied 0011_ai_runs.sql\n[migrate] applied 0012_ai_jobs.sql\n[migrate] applied 0013_agent_checkpoints.sql\n[migrate] applied 0014_agent_integrity.sql\n[migrate] applied 0015_agent_budget_reservations.sql\n[migrate] applied 0016_agent_terminal_states.sql\n[migrate] applied 0017_agent_call_receipts.sql\n[migrate] applied 0018_agent_checkpoint_facts.sql\n[migrate] applied 0019_agent_material_revision.sql\n[migrate] applied 0020_agent_daily_admission.sql\n[migrate] applied 0021_stage_windows.sql\n[migrate] applied 0022_collection_progress.sql\n[migrate] applied 0023_collection_retry.sql\n[migrate] applied 0024_media_identity.sql\n[migrate] applied 0025_media_retry.sql\n[migrate] applied 0026_feed_validators.sql\n[migrate] applied 0027_collection_observability.sql\n[migrate] done — 26 migration(s) applied."
+    },
+    {
+      "id": "744620b044a72473636722ee7abfb4ace9ff332f59b52f632b2f764f62d36694",
+      "removed": true,
+      "exitCode": 0,
+      "logs": "The files belonging to this database system will be owned by user \"postgres\".\nThis user must also own the server process.\n\nThe database cluster will be initialized with locale \"en_US.utf8\".\nThe default database encoding has accordingly been set to \"UTF8\".\nThe default text search configuration will be set to \"english\".\n\nData page checksums are disabled.\n\nfixing permissions on existing directory /var/lib/postgresql/data ... ok\ncreating subdirectories ... ok\nselecting dynamic shared memory implementation ... posix\nselecting default max_connections ... 100\nselecting default shared_buffers ... 128MB\nselecting default time zone ... UTC\ncreating configuration files ... ok\nrunning bootstrap script ... ok\nperforming post-bootstrap initialization ... ok\nsyncing data to disk ... ok\n\n\nSuccess. You can now start the database server using:\n\n    pg_ctl -D /var/lib/postgresql/data -l logfile start\n\nwaiting for server to start....2026-10-05 03:00:02.835 UTC [59] LOG:  starting PostgreSQL 16.15 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit\n2026-10-05 03:00:02.839 UTC [59] LOG:  listening on Unix socket \"/var/run/postgresql/.s.PGSQL.5432\"\n2026-10-05 03:00:02.850 UTC [62] LOG:  database system was shut down at 2026-10-05 03:00:02 UTC\n2026-10-05 03:00:02.857 UTC [59] LOG:  database system is ready to accept connections\n done\nserver started\nCREATE DATABASE\n\n\n/usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*\n\nwaiting for server to shut down....2026-10-05 03:00:02.993 UTC [59] LOG:  received fast shutdown request\n2026-10-05 03:00:02.996 UTC [59] LOG:  aborting any active transactions\n2026-10-05 03:00:02.998 UTC [59] LOG:  background worker \"logical replication launcher\" (PID 65) exited with exit code 1\n2026-10-05 03:00:02.998 UTC [60] LOG:  shutting down\n2026-10-05 03:00:03.001 UTC [60] LOG:  checkpoint starting: shutdown immediate\n2026-10-05 03:00:03.096 UTC [60] LOG:  checkpoint complete: wrote 926 buffers (5.7%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.027 s, sync=0.058 s, total=0.098 s; sync files=301, longest=0.005 s, average=0.001 s; distance=4283 kB, estimate=4283 kB; lsn=0/1925D68, redo lsn=0/1925D68\n2026-10-05 03:00:03.107 UTC [59] LOG:  database system is shut down\n done\nserver stopped\n\nPostgreSQL init process complete; ready for start up."
+    },
+    {
+      "network": "63dd408403558a5d78e5913603ad3aef6f2d2f28daf6526c5edebe3dce0e7d59",
+      "removed": true
+    }
+  ],
+  "network": {
+    "scope": "owned fixture bridge; loopback app publication; masquerade disabled",
+    "externalProviders": "none configured; zero source rows; auto/paid disabled; browser external requests stubbed"
+  }
+}

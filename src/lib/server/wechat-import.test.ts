@@ -8,6 +8,23 @@ import {
 } from "./wechat-import.ts";
 
 const HEADER = "name,wechat_id,sample_url,primary_feed_url,interval_minutes,priority";
+
+it("optional expected-update CSV config reaches gateway provisioning without changing legacy headers", async () => {
+  const csv = `${HEADER},expected_update_hours\n示例,gh_expected,https://mp.weixin.qq.com/s/example,https://feeds.example.com/example.atom,60,normal,24`;
+  assert.equal(previewWechatImport(csv, new Set()).rows[0]?.value?.expected_update_hours, 24);
+  assert.equal(previewWechatImport(csv.replace(/,24$/, ","), new Set()).rows[0]?.value?.expected_update_hours, null);
+  for (const value of ["0", "-1", "NaN", "Infinity", "abc"]) {
+    assert.equal(previewWechatImport(csv.replace(/,24$/, `,${value}`), new Set()).error, 1);
+  }
+  let configured: number | null | undefined;
+  const result = await importWechatSources({ csv, confirmed_lines: [2] }, {
+    existingWechatIds: new Set(), findExisting: async () => false,
+    putSource: async (value) => { configured = value.expected_update_hours; },
+    insertSource: async () => {},
+  });
+  assert.equal(result.created, 1);
+  assert.equal(configured, 24);
+});
 const row = (
   name: string,
   id: string,

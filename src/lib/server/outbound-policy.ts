@@ -26,11 +26,68 @@
  */
 import { isIP } from "node:net";
 import dns from "node:dns/promises";
+import { acquireCollectionPermit } from "./collection-limits.ts";
 
 /** First-release caps, as code constants (documented, not auto-expanding). */
 export const TEXT_MAX_BYTES = 4 * 1024 * 1024;
 export const MEDIA_MAX_BYTES = 25 * 1024 * 1024;
 export const MAX_REDIRECTS = 5;
+
+export class CollectionHttpError extends Error {
+  code: string;
+  status?: number;
+  retryAt?: number;
+  constructor(code: string, message = code, details: { status?: number; retryAt?: number } = {}) {
+    super(message);
+    this.name = "CollectionHttpError";
+    this.code = code;
+    this.status = details.status;
+    this.retryAt = details.retryAt;
+  }
+}
+
+export function parseRetryAfter(value: string | null, nowMs: number): number | null {
+  if (!value?.trim()) return null;
+  const text = value.trim();
+  const retryAt = /^\d+$/.test(text) ? nowMs + Number(text) * 1000
+    : /^[A-Za-z]{3},/.test(text) ? Date.parse(text) : NaN;
+  return Number.isFinite(retryAt) ? Math.max(nowMs, retryAt) : null;
+}
+
+/** Discard upstream messages: they can include credentials, URLs or headers. */
+export function collectionHttpError(error: unknown, signal?: AbortSignal): CollectionHttpError {
+  if (signal?.aborted) return new CollectionHttpError(signal.reason?.name === "TimeoutError" || signal.reason?.code === "timeout" ? "timeout" : "aborted");
+  if (error instanceof CollectionHttpError) return error;
+  if (error instanceof Error && error.name === "AbortError") return new CollectionHttpError("aborted");
+  if (error instanceof Error && error.name === "TimeoutError") return new CollectionHttpError("timeout");
+  const message = error instanceof Error ? error.message : "";
+  const safeCodes = ["invalid_url", "unsupported_protocol", "url_credentials_not_allowed", "blocked_host", "blocked_address", "dns_no_answer", "redirect_without_location", "too_many_redirects", "response_too_large", "timeout"];
+  return new CollectionHttpError(safeCodes.includes(message) ? message : "network_error");
+}
+
+/** Race even injected transports/resolvers which do not implement signals. */
+export async function abortable<T>(work: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return work;
+  if (signal.aborted) { void work.catch(() => {}); throw collectionHttpError(null, signal); }
+  let abort: () => void;
+  const stopped = new Promise<never>((_resolve, reject) => {
+    abort = () => reject(collectionHttpError(null, signal));
+    signal.addEventListener("abort", abort, { once: true });
+  });
+  try { return await Promise.race([work, stopped]); }
+  finally { signal.removeEventListener("abort", abort!); }
+}
+
+function cancelBody(body: BodyLike | null): void {
+  if (!body) return;
+  if (typeof (body as { destroy?: unknown }).destroy === "function") (body as BodyLike & { destroy(): void }).destroy();
+  else if (typeof (body as ReadableStreamLike).getReader === "function") {
+    try {
+      const reader = (body as ReadableStreamLike).getReader();
+      void reader.cancel().catch(() => {}).finally(() => { try { reader.releaseLock(); } catch { /* already released */ } });
+    } catch { /* a readCapped reader may already have cancelled this stream */ }
+  }
+}
 
 /** Addresses that must never be dialled by a public-fetch caller. */
 export function addressBlocked(address: string): boolean {
@@ -136,12 +193,14 @@ export async function resolvePublicAddresses(
  * make `publicFetch` crash on its real transport. `destroy`/`cancel` both map to
  * "drop the connection now".
  */
-export async function readCapped(body: BodyLike, maxBytes: number): Promise<Uint8Array> {
+export async function readCapped(body: BodyLike | null, maxBytes: number, signal?: AbortSignal): Promise<Uint8Array> {
+  if (signal?.aborted) throw collectionHttpError(null, signal);
+  if (!body) return new Uint8Array();
   const chunks: Uint8Array[] = [];
   let total = 0;
 
   const overLimit = () => {
-    const error = new Error("response_too_large") as Error & { bytes?: number; limit?: number };
+    const error = new CollectionHttpError("response_too_large") as CollectionHttpError & { bytes?: number; limit?: number };
     error.bytes = total;
     error.limit = maxBytes;
     return error;
@@ -157,14 +216,14 @@ export async function readCapped(body: BodyLike, maxBytes: number): Promise<Uint
     const reader = (body as ReadableStreamLike).getReader();
     try {
       for (;;) {
-        const { done, value } = await reader.read();
+        const { done, value } = await abortable(reader.read(), signal);
         if (done) break;
         if (!value) continue;
         push(value);
       }
     } catch (error) {
       try {
-        await reader.cancel();
+        void reader.cancel().catch(() => {});
       } catch {
         // Already torn down; the original error is the one that matters.
       }
@@ -177,8 +236,17 @@ export async function readCapped(body: BodyLike, maxBytes: number): Promise<Uint
       }
     }
   } else {
-    for await (const chunk of body as AsyncIterable<Uint8Array>) {
-      push(chunk);
+    const iterator = (body as AsyncIterable<Uint8Array>)[Symbol.asyncIterator]();
+    try {
+      for (;;) {
+        const { done, value } = await abortable(iterator.next(), signal);
+        if (done) break;
+        push(value);
+      }
+    } catch (error) {
+      cancelBody(body);
+      void iterator.return?.().catch(() => {});
+      throw error;
     }
   }
 
@@ -376,6 +444,7 @@ export type OutboundTransport = (
     method?: string;
     headers?: Record<string, string>;
     timeoutMs?: number;
+    signals?: { abortSignal?: AbortSignal };
     /** Set by `publicFetch` to pin the socket to a validated address. */
     lookup?: LookupHook;
   },
@@ -411,7 +480,10 @@ export type LookupHook = (
  * with `pinnedTransport({ lookup })` as a constructor-level fallback.
  */
 export function pinnedTransport({ lookup: defaultLookup, signals }: PinnedTransportOptions = {}): OutboundTransport {
-  return async function request(url, { method = "GET", headers = {}, timeoutMs = 10000, lookup = defaultLookup } = {}) {
+  return async function request(url, { method = "GET", headers = {}, timeoutMs = 10000, lookup = defaultLookup, signals: callSignals } = {}) {
+    const abortSignals = [signals?.abortSignal, callSignals?.abortSignal].filter((s): s is AbortSignal => !!s);
+    const signal = abortSignals.length ? AbortSignal.any(abortSignals) : undefined;
+    signal?.throwIfAborted();
     const { request: httpRequest } = url.protocol === "https:"
       ? await import("node:https")
       : await import("node:http");
@@ -425,13 +497,10 @@ export function pinnedTransport({ lookup: defaultLookup, signals }: PinnedTransp
           method,
           headers,
           lookup: lookup as import("node:net").LookupFunction | undefined,
-          signal: signals?.abortSignal,
+          signal,
         },
         (res) => {
-          const location = res.headers.location;
-          if (REDIRECT_CODES.has(res.statusCode ?? 0) && location) {
-            res.resume(); // drain the redirect body; the connection is reused
-          }
+          res.once("close", () => clearTimeout(timer));
           resolve({
             status: res.statusCode ?? 0,
             headers: res.headers as OutboundResponse["headers"],
@@ -440,8 +509,9 @@ export function pinnedTransport({ lookup: defaultLookup, signals }: PinnedTransp
           });
         },
       );
-      req.setTimeout(timeoutMs, () => req.destroy(new Error("timeout")));
-      req.on("error", reject);
+      const timer = setTimeout(() => req.destroy(new CollectionHttpError("timeout")), timeoutMs);
+      req.once("error", (error) => { clearTimeout(timer); reject(error); });
+      req.once("close", () => clearTimeout(timer));
       req.end();
     });
   };
@@ -468,6 +538,9 @@ export async function publicFetch(
     resolver = dns,
     transport = pinnedTransport(),
     as = "text",
+    signal,
+    allowNotModified = false,
+    metrics,
   }: {
     headers?: Record<string, string>;
     timeoutMs?: number;
@@ -477,35 +550,112 @@ export async function publicFetch(
     resolver?: DnsResolver;
     transport?: OutboundTransport;
     as?: "text" | "bytes";
+    signal?: AbortSignal;
+    allowNotModified?: boolean;
+    metrics?: { bytes: number | null };
   } = {},
-): Promise<{ text?: string; bytes?: Uint8Array; url: string; contentType: string }> {
-  let url = assertPublicUrl(rawUrl);
-  let redirects = 0;
+): Promise<{ text?: string; bytes?: Uint8Array; url: string; contentType: string; status: number; headers: Record<string, string> }> {
+  const deadline = new AbortController();
+  const timer = setTimeout(() => deadline.abort(new CollectionHttpError("timeout")), timeoutMs);
+  const combined = signal ? AbortSignal.any([signal, deadline.signal]) : deadline.signal;
+  const expiresAt = Date.now() + timeoutMs;
+  let response: OutboundResponse | undefined;
+  let release: (() => void) | undefined;
+  try {
+    let url = assertPublicUrl(rawUrl);
+    let redirects = 0;
+    let requestHeaders = { ...headers };
+    for (;;) {
+      combined.throwIfAborted();
+      // ponytail: OS DNS lookup is not cancellable; discard late results and never dial after expiry.
+      const addresses = await abortable(resolvePublicAddresses(url.hostname, resolver), combined);
+      const approved = [...addresses];
+      const lookup = createPinnedLookup(approved);
+      release = await acquireCollectionPermit(url, combined);
+      combined.throwIfAborted();
+      const remainingMs = expiresAt - Date.now();
+      if (remainingMs <= 0) throw new CollectionHttpError("timeout");
+      const pending = transport(url, { method: "GET", headers: requestHeaders,
+        timeoutMs: remainingMs, lookup, signals: { abortSignal: combined } });
+      void pending.then((late) => { if (combined.aborted) cancelBody(late.body); }, () => {});
+      response = await abortable(pending, combined);
+      const status = response.status ?? 0;
+      const responseHeaders: Record<string, string> = {};
+      for (const [key, value] of Object.entries(response.headers ?? {})) {
+        if (value !== undefined) responseHeaders[key.toLowerCase()] = Array.isArray(value) ? value.join(", ") : value;
+      }
 
-  for (;;) {
-    const addresses = await resolvePublicAddresses(url.hostname, resolver);
-    const approved = [...addresses];
-    const lookup = createPinnedLookup(approved);
+      if (REDIRECT_CODES.has(status)) {
+        const location = responseHeaders.location;
+        cancelBody(response.body);
+        response = undefined;
+        release(); release = undefined;
+        if (!location) throw new Error("redirect_without_location");
+        if (redirects >= maxRedirects) throw new Error("too_many_redirects");
+        redirects += 1;
+        const next = assertPublicUrl(new URL(location, url).href);
+        // Validators belong to this representation, not the next redirect target.
+        // ponytail: redirected feeds refetch 200; cache the final URL explicitly if that cost matters.
+        requestHeaders = Object.fromEntries(Object.entries(requestHeaders)
+          .filter(([key]) => !/^(if-none-match|if-modified-since)$/i.test(key)));
+        if (next.origin !== url.origin) requestHeaders = Object.fromEntries(Object.entries(requestHeaders)
+          .filter(([key]) => !/^(host|referer)$|auth|cookie|token|key|secret|credential|session|password/i.test(key)));
+        url = next;
+        continue;
+      }
+      if (status === 304 && allowNotModified && redirects === 0) {
+        if (metrics) metrics.bytes = (metrics.bytes ?? 0);
+        cancelBody(response.body);
+        response = undefined;
+        return { url: url.href, contentType: responseHeaders['content-type'] ?? '', status, headers: responseHeaders };
+      }
+      if (status < 200 || status >= 300) throw new CollectionHttpError(status === 429 ? "rate_limited" : "http_error", `HTTP ${status}`,
+        { status, retryAt: parseRetryAfter(responseHeaders["retry-after"] ?? null, Date.now()) ?? undefined });
 
-    const response = await transport(url, { method: "GET", headers, timeoutMs, lookup });
-    const status = response.status ?? 0;
-
-    if (REDIRECT_CODES.has(status)) {
-      const rawLocation = response.headers?.location;
-      const location = Array.isArray(rawLocation) ? rawLocation[0] : rawLocation;
-      if (!location) throw new Error("redirect_without_location");
-      if (redirects >= maxRedirects) throw new Error("too_many_redirects");
-      redirects += 1;
-      url = assertPublicUrl(new URL(location, url).href);
-      continue;
+      const contentType = responseHeaders["content-type"] ?? "";
+      const limit = maxBytes ?? capFor(contentType, kind);
+      const bytes = await readCapped(response.body, limit, combined);
+      if (metrics) metrics.bytes = (metrics.bytes ?? 0) + bytes.byteLength;
+      response = undefined;
+      if (as === "bytes") return { bytes, url: url.href, contentType, status, headers: responseHeaders };
+      return { text: new TextDecoder().decode(bytes), url: url.href, contentType, status, headers: responseHeaders };
     }
-    if (status < 200 || status >= 300) throw new Error(`HTTP ${status}`);
-
-    const rawContentType = response.headers?.["content-type"];
-    const contentType = Array.isArray(rawContentType) ? rawContentType[0] ?? "" : String(rawContentType ?? "");
-    const limit = maxBytes ?? capFor(contentType, kind);
-    const bytes = await readCapped(response.body, limit);
-    if (as === "bytes") return { bytes, url: url.href, contentType };
-    return { text: new TextDecoder().decode(bytes), url: url.href, contentType };
+  } catch (error) {
+    throw collectionHttpError(error, combined);
+  } finally {
+    clearTimeout(timer);
+    if (response) cancelBody(response.body);
+    release?.();
   }
+}
+
+/** Fixed operator endpoints only. Hold admission through body EOF, cancellation or deadline. */
+export async function collectionFetch(url: string, init: RequestInit, fetchImpl: typeof fetch = fetch): Promise<Response> {
+  const signal = init.signal ?? undefined;
+  const release = await acquireCollectionPermit(new URL(url), signal);
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  const finish = () => { signal?.removeEventListener('abort', abort); release(); };
+  const abort = () => { void reader?.cancel().catch(() => {}); finish(); };
+  signal?.addEventListener('abort', abort, { once: true });
+  try {
+    signal?.throwIfAborted();
+    const pending = fetchImpl(url, { ...init, redirect: 'error' });
+    void pending.then(r => { if(signal?.aborted) void r.body?.cancel().catch(() => {}); }, () => {});
+    const response = await abortable(pending, signal);
+    if (!response.body) { finish(); return response; }
+    reader = response.body.getReader();
+    const body = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        try {
+          const part = await abortable(reader!.read(), signal);
+          if (part.done) { finish(); controller.close(); }
+          else controller.enqueue(part.value);
+        } catch (error) { abort(); controller.error(error); }
+      },
+      cancel() { abort(); },
+    }, { highWaterMark: 0 });
+    const result = new Response(body, {status:response.status, statusText:response.statusText, headers:response.headers});
+    Object.defineProperty(result, 'url', {value:response.url});
+    return result;
+  } catch (error) { abort(); throw collectionHttpError(error, signal); }
 }

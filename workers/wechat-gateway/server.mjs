@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 import { toAtom } from "./atom.mjs";
 import { createDajialaClient } from "./dajiala.mjs";
 import { canonicalWechatId, fetchPrimary } from "./primary.mjs";
-import { alertState, nextPaidRetry, paidDecision, PAID_RETRY_MINUTES, shanghaiDay,
+import { alertState, freshnessState, nextPaidRetry, paidDecision, PAID_RETRY_MINUTES, shanghaiDay,
   shouldReconcile } from "./state-machine.mjs";
 import { openStore } from "./store.mjs";
 
@@ -42,8 +42,13 @@ export function validateSourceInput(input, allowedFeedHosts) {
     .has(feed.hostname.toLowerCase())) throw new Error("primary_feed_url must use an allowed host");
   const priority = input.priority ?? "normal";
   if (!["normal", "high"].includes(priority)) throw new Error("priority must be normal or high");
+  const expectedHours = input.expected_update_hours ?? null;
+  if (expectedHours !== null && (typeof expectedHours !== "number" || !Number.isFinite(expectedHours) || expectedHours <= 0)) {
+    throw new Error("expected_update_hours must be a positive number or null");
+  }
   return { id: input.id.trim(), name: input.name.trim(), account_id: input.account_id.trim(), priority,
-    sample_url: sample.toString(), primary_feed_url: feed.toString() };
+    sample_url: sample.toString(), primary_feed_url: feed.toString(),
+    ...(input.expected_update_hours !== undefined ? { expected_update_hours: expectedHours } : {}) };
 }
 
 const json = (status, body) => Response.json(body, { status });
@@ -190,16 +195,25 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
       : unresolvedPaidError && source.last_paid_result === "mapping_error" ? "alert"
       : unresolvedPaidError && source.last_paid_result === "technical_error" ? "degraded"
         : dynamicAlert;
+    const freshness = freshnessState(source, date);
+    const contentAt = Date.parse(source.last_primary_content_at ?? "");
     return {
       source_id: source.source_id,
       alert_state: projectedAlert,
       last_primary_ok_at: source.last_primary_ok_at,
+      last_primary_content_at: source.last_primary_content_at,
+      latest_published_at: source.latest_published_at,
+      expected_update_hours: source.expected_update_hours,
+      content_age_hours: Number.isFinite(contentAt) && contentAt <= nowMs ? (nowMs - contentAt) / 3_600_000 : null,
+      freshness_state: freshness,
+      diagnostic_code: freshness === "suspected_stale" ? "primary_content_stale" : "",
       consecutive_primary_failures: source.consecutive_primary_failures,
       last_paid_check_at: source.last_paid_check_at,
       last_paid_result: source.last_paid_result,
       recent_error_type: unresolvedPaidError && source.last_paid_result === "mapping_error" ? "mapping_error"
         : unresolvedPaidError && source.last_paid_result === "technical_error" ? "technical_error"
-          : source.consecutive_primary_failures > 0 ? "primary_feed_failed" : "",
+          : source.consecutive_primary_failures > 0
+            ? source.last_primary_error_type || "primary_feed_failed" : "",
       next_retry_at: source.next_retry_at,
       paid_configured: Boolean(paid),
       paid_day_amount: paidUsage.amount,
@@ -321,9 +335,10 @@ export function createGateway({ store, primary = fetchPrimary, paid = null, toke
     let primaryItems;
     try {
       primaryItems = await primary(source, date, allowedFeedHosts);
-    } catch {
+    } catch (error) {
       const failedAt = clock(now);
-      store.recordPrimaryFailure(source.source_id, failedAt.toISOString());
+      store.recordPrimaryFailure(source.source_id, failedAt.toISOString(),
+        error?.code === "risk_control" ? "risk_control" : "primary_feed_failed");
       const failed = store.getSource(source.source_id);
       if (!paidDecision(failed, failedAt).allowed) {
         return withFeedMeta(json(503, { error: "primary_feed_failed" }), "", ["primary"], false);

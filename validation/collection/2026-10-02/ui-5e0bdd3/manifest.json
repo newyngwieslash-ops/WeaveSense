@@ -1,0 +1,186 @@
+{
+  "source_sha": "5e0bdd31c0b303e1709f62babdcfa8b7d5f99511",
+  "runtime_harness_sha": "52a16ea23d7af683b57faf5d1f1fd45670ab09dc",
+  "evidence_scope": "isolated-ui-fixture",
+  "home_read_only": false,
+  "source_and_jobs_pages_read_only": true,
+  "home_behavior": "Existing mount effect calls bootstrap and tick; one local-only keyword job with no external attempts occurred.",
+  "build_exit_code": 0,
+  "brand_note": "Existing utility/admin dashboard; missing custom OG card note retained, no branding changes.",
+  "parent_visually_reviewed": [
+    "t17-smoke-dev.png",
+    "t17-smoke-dev-mobile.png",
+    "t17-smoke-built.png",
+    "t17-smoke-built-mobile.png",
+    "t16-fix-dev-desktop-sources-rate.png",
+    "t16-fix-dev-mobile-sources-primary.png",
+    "t16-fix-dev-desktop-jobs.png",
+    "t16-fix-dev-mobile-jobs.png",
+    "t16-fix-built-desktop-sources-stale.png",
+    "t16-fix-built-mobile-sources-primary.png",
+    "t16-fix-built-desktop-jobs.png",
+    "t16-fix-built-mobile-jobs.png"
+  ],
+  "files": [
+    {
+      "name": "build.log",
+      "bytes": 14269,
+      "sha256": "a5325dceb363454e55ee2339f364fe56eef61d4523c1ce39311a2813138b42ec"
+    },
+    {
+      "name": "home-auto-tick-audit.json",
+      "bytes": 1347,
+      "sha256": "e82aebf8d3d3b8a60fcb7095053723814f590717f2e2c29c908cd69ee4af982d"
+    },
+    {
+      "name": "t16-fix-built-desktop-jobs.png",
+      "bytes": 243262,
+      "sha256": "70779665ee5985c53b87a9c1cc7b0cce8d8bdf3eecbd1b0a8b175e508489b3aa"
+    },
+    {
+      "name": "t16-fix-built-desktop-sources-primary.png",
+      "bytes": 162386,
+      "sha256": "46571bd76e02573afb8a9d0bbed477b634d82ba74a558d9f9d67c6e22f874b5e"
+    },
+    {
+      "name": "t16-fix-built-desktop-sources-rate.png",
+      "bytes": 155627,
+      "sha256": "9cd17e77ca2dc108eb2ab579cf9b2335ba219c1fae01a3d7ddd5e7df321ab993"
+    },
+    {
+      "name": "t16-fix-built-desktop-sources-stale.png",
+      "bytes": 157717,
+      "sha256": "aab79a4e9ef0d1f01abee7380572fdc8a5adda5f67387c1aa9de9b9fb38dab34"
+    },
+    {
+      "name": "t16-fix-built-mobile-jobs.png",
+      "bytes": 215850,
+      "sha256": "fb535cce90e9f884b5d52b3c517a82323dc6fb5f51f0fff4bbc283e12366982f"
+    },
+    {
+      "name": "t16-fix-built-mobile-sources-primary.png",
+      "bytes": 109206,
+      "sha256": "86e02493d4e0e24a3567c45385abeac4e1b76f8ad31b3649e33c09286c1041f8"
+    },
+    {
+      "name": "t16-fix-built-mobile-sources-rate.png",
+      "bytes": 100917,
+      "sha256": "b40f051877ba818ae5dbaecd16f835e03461ecd46ff6772b7ca36f726f9595db"
+    },
+    {
+      "name": "t16-fix-built-mobile-sources-stale.png",
+      "bytes": 91825,
+      "sha256": "700ada3b208519bbb8c675a9de52c4db8c28073f2a34be9ed7d06b68344cfd21"
+    },
+    {
+      "name": "t16-fix-built-verdict.json",
+      "bytes": 1915,
+      "sha256": "3041fce86cc943fd5e2c3db94458af622ab7f3d3e5b2919b26d0cf21d15b0dfa"
+    },
+    {
+      "name": "t16-fix-dev-desktop-jobs.png",
+      "bytes": 243262,
+      "sha256": "70779665ee5985c53b87a9c1cc7b0cce8d8bdf3eecbd1b0a8b175e508489b3aa"
+    },
+    {
+      "name": "t16-fix-dev-desktop-sources-primary.png",
+      "bytes": 162386,
+      "sha256": "46571bd76e02573afb8a9d0bbed477b634d82ba74a558d9f9d67c6e22f874b5e"
+    },
+    {
+      "name": "t16-fix-dev-desktop-sources-rate.png",
+      "bytes": 155627,
+      "sha256": "9cd17e77ca2dc108eb2ab579cf9b2335ba219c1fae01a3d7ddd5e7df321ab993"
+    },
+    {
+      "name": "t16-fix-dev-desktop-sources-stale.png",
+      "bytes": 157717,
+      "sha256": "aab79a4e9ef0d1f01abee7380572fdc8a5adda5f67387c1aa9de9b9fb38dab34"
+    },
+    {
+      "name": "t16-fix-dev-mobile-jobs.png",
+      "bytes": 215850,
+      "sha256": "fb535cce90e9f884b5d52b3c517a82323dc6fb5f51f0fff4bbc283e12366982f"
+    },
+    {
+      "name": "t16-fix-dev-mobile-sources-primary.png",
+      "bytes": 109206,
+      "sha256": "86e02493d4e0e24a3567c45385abeac4e1b76f8ad31b3649e33c09286c1041f8"
+    },
+    {
+      "name": "t16-fix-dev-mobile-sources-rate.png",
+      "bytes": 100917,
+      "sha256": "b40f051877ba818ae5dbaecd16f835e03461ecd46ff6772b7ca36f726f9595db"
+    },
+    {
+      "name": "t16-fix-dev-mobile-sources-stale.png",
+      "bytes": 91825,
+      "sha256": "700ada3b208519bbb8c675a9de52c4db8c28073f2a34be9ed7d06b68344cfd21"
+    },
+    {
+      "name": "t16-fix-dev-verdict.json",
+      "bytes": 1897,
+      "sha256": "7440dc355a347d5fe41c2772bbd0c4a10435859e1c6b6be24aaf2823f863eb40"
+    },
+    {
+      "name": "t17-overflow-probe.json",
+      "bytes": 82,
+      "sha256": "32bb97aeb1dafb3c01686a0e443aa91b390f2a473d1b93ed78cd4c21def05aff"
+    },
+    {
+      "name": "t17-smoke-built-bound.json",
+      "bytes": 2321,
+      "sha256": "2aece3459419378d68ee5159c5e9a14415aeb4b338e8f36e38c87ae579b3a139"
+    },
+    {
+      "name": "t17-smoke-built-mobile.png",
+      "bytes": 221271,
+      "sha256": "9188d379cadac79557b578d9ebfb67798989a1a770b47d8bfaff21912b786389"
+    },
+    {
+      "name": "t17-smoke-built.json",
+      "bytes": 2015,
+      "sha256": "ae45608661d1c67b2fcb6dc0b04f539b6fe38f5adf6621d5099cab9b4516c7fc"
+    },
+    {
+      "name": "t17-smoke-built.png",
+      "bytes": 742384,
+      "sha256": "8270790c113e0bf7a5c58b7d8a526ddfd5bf2c7428eb631f75c92419ac75b120"
+    },
+    {
+      "name": "t17-smoke-dev-bound.json",
+      "bytes": 2251,
+      "sha256": "df50f81d3be77973da02381015ec775ecbd692c69874f0ee962c507d03ac71da"
+    },
+    {
+      "name": "t17-smoke-dev-first-mobile.png",
+      "bytes": 238863,
+      "sha256": "cf454b03efd65fe78017aa18fe86acd03b004b94c7deda1f9bca461afef59ff8"
+    },
+    {
+      "name": "t17-smoke-dev-first.json",
+      "bytes": 1972,
+      "sha256": "f8e7585afb77c596ed0e4ee69ab6d1fb47689ac29a9cfada54faa36243dcba12"
+    },
+    {
+      "name": "t17-smoke-dev-first.png",
+      "bytes": 750230,
+      "sha256": "1c621a12c02b0ac6307978201661d4d82d50285ad2aaf6b5ab77b5960646a64a"
+    },
+    {
+      "name": "t17-smoke-dev-mobile.png",
+      "bytes": 219606,
+      "sha256": "a8caf1b88dc2c266fef3772cc0d714a3e7d8fe789a3c5926a87667cedd910ae7"
+    },
+    {
+      "name": "t17-smoke-dev.json",
+      "bytes": 1951,
+      "sha256": "04ec4dcc691cc31306d4c531ae97fb591c4bd5d51913ba7d820158438a4c7097"
+    },
+    {
+      "name": "t17-smoke-dev.png",
+      "bytes": 753621,
+      "sha256": "726cc8614cfc8110fda445093ed8b70e41a93e7d517a9adf10d4016d6f56b973"
+    }
+  ]
+}

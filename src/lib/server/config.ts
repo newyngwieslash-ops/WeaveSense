@@ -7,6 +7,7 @@ function read(name: string, fallback = ""): string {
 
 export const prod = {
   telegramWorkerUrl: read("TELEGRAM_WORKER_URL").replace(/\/$/, ""),
+  telegramMediaToken: read("TELEGRAM_MEDIA_TOKEN"),
   wechatGatewayUrl: read("WECHAT_GATEWAY_URL").replace(/\/$/, ""),
   wechatGatewayToken: read("WECHAT_GATEWAY_TOKEN"),
   cronSecret: read("CRON_SECRET"),

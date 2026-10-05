@@ -1,0 +1,21 @@
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: backup_authentication_failed; resources retained
+
+
+1 !== 0
+
+    at cli (file:///C:/Users/yi'da'dui/.codex/worktrees/collection-reliability/WeaveSense/validation/collection/2026-10-02/backup-check.mjs:49:23)
+    at file:///C:/Users/yi'da'dui/.codex/worktrees/collection-reliability/WeaveSense/validation/collection/2026-10-02/backup-check.mjs:115:20
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 1,
+  expected: 0,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.16.0

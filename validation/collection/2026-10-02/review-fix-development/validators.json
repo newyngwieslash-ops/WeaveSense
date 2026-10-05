@@ -1,0 +1,10 @@
+{
+  "source_state": "dirty-development-only",
+  "command": [
+    "node",
+    "--test",
+    "scripts/readiness-offline.test.mjs"
+  ],
+  "exit_code": 0,
+  "duration_ms": 576
+}

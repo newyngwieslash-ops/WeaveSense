@@ -25,6 +25,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFil
 import { spawnSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import pg from "pg";
+import { offlineEnv } from "./readiness-offline.mjs";
 import {
   assertRestoreTargetIsNew,
   assertTaggedResource,
@@ -55,6 +56,7 @@ function run(command, args, options = {}) {
     encoding: "utf8",
     windowsHide: true,
     timeout: 180000,
+    env: offlineEnv(process.env),
     ...options,
   });
   if (result.error) throw result.error;
@@ -123,7 +125,8 @@ try {
   docker([
     "run", "--detach", "--name", name, "--label", "loom.readiness.t03=isolated",
     "-e", `POSTGRES_PASSWORD=${PASSWORD}`, "-e", `POSTGRES_DB=${SOURCE_DB}`,
-    "-p", `127.0.0.1:${port}:5432`, "postgres:16-alpine",
+    "--memory", "512m", "--cpus", "2",
+    "-p", `127.0.0.1:${port}:5432`, "postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685",
   ]);
   containerStarted = true;
 
@@ -199,18 +202,14 @@ try {
   ).rows.map((r) => r.name);
   await sourceClient.end();
 
-  const dumped = docker([
+  // One successful binary dump; partial stdout on a failed process is refused.
+  const dumpResult = spawnSync("docker", [
     "exec", name, "pg_dump", "-U", USER, "-d", SOURCE_DB, "--format=custom", "--no-owner", "--no-acl",
-  ], { maxBuffer: 256 * 1024 * 1024 });
-
-  // pg_dump writes binary to stdout; spawnSync with encoding utf8 would corrupt it,
-  // so re-run capturing bytes.
-  const dumpBytes = spawnSync("docker", [
-    "exec", name, "pg_dump", "-U", USER, "-d", SOURCE_DB, "--format=custom", "--no-owner", "--no-acl",
-  ], { windowsHide: true, timeout: 180000, maxBuffer: 256 * 1024 * 1024 }).stdout;
+  ], { windowsHide: true, timeout: 180000, maxBuffer: 256 * 1024 * 1024, env: offlineEnv(process.env) });
+  assert.equal(dumpResult.status, 0, "pg_dump failed");
+  const dumpBytes = dumpResult.stdout;
   assert.ok(Buffer.isBuffer(dumpBytes) && dumpBytes.length > 0, "pg_dump produced no bytes");
   writeFileSync(archive, dumpBytes, { flag: "wx" });
-  assert.ok(dumped !== null);
 
   const manifest = {
     createdAt: new Date().toISOString(),

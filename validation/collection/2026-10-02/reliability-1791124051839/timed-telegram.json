@@ -1,0 +1,107 @@
+{
+  "type": "telegram",
+  "source_count": 14,
+  "concurrency": 1,
+  "source_transport_delay_seconds": 45,
+  "telegram_media_transport_delay_seconds": 120,
+  "reservation_seconds": 195,
+  "server_budget_seconds": 720,
+  "loop_budget_seconds": 750,
+  "elapsed_seconds": 571.404,
+  "collection": {
+    "ran": 10,
+    "items_new": 10,
+    "errors": 0,
+    "jobs": [
+      {
+        "source_id": "capacity-telegram-00",
+        "name": "capacity-telegram-00",
+        "items_new": 1,
+        "error": "",
+        "kind": "source"
+      },
+      {
+        "source_id": "capacity-telegram-01",
+        "name": "capacity-telegram-01",
+        "items_new": 1,
+        "error": "",
+        "kind": "source"
+      },
+      {
+        "source_id": "capacity-telegram-02",
+        "name": "capacity-telegram-02",
+        "items_new": 1,
+        "error": "",
+        "kind": "source"
+      },
+      {
+        "source_id": "capacity-telegram-03",
+        "name": "capacity-telegram-03",
+        "items_new": 1,
+        "error": "",
+        "kind": "source"
+      },
+      {
+        "source_id": "capacity-telegram-04",
+        "name": "capacity-telegram-04",
+        "items_new": 1,
+        "error": "",
+        "kind": "source"
+      },
+      {
+        "source_id": "capacity-telegram-05",
+        "name": "capacity-telegram-05",
+        "items_new": 1,
+        "error": "",
+        "kind": "source"
+      },
+      {
+        "source_id": "capacity-telegram-06",
+        "name": "capacity-telegram-06",
+        "items_new": 1,
+        "error": "",
+        "kind": "source"
+      },
+      {
+        "source_id": "capacity-telegram-07",
+        "name": "capacity-telegram-07",
+        "items_new": 1,
+        "error": "",
+        "kind": "source"
+      },
+      {
+        "source_id": "capacity-telegram-08",
+        "name": "capacity-telegram-08",
+        "items_new": 1,
+        "error": "",
+        "kind": "source"
+      },
+      {
+        "source_id": "capacity-telegram-09",
+        "name": "capacity-telegram-09",
+        "items_new": 1,
+        "error": "",
+        "kind": "source"
+      }
+    ],
+    "deferred": 4
+  },
+  "production": {
+    "stored": 1,
+    "extracted": 0,
+    "analyzed": 0,
+    "ingest_errors": 0,
+    "extract_errors": 0,
+    "deferred": 0,
+    "stages": {
+      "analyze": "disabled",
+      "ingest": "stored=1 errors=0",
+      "extract": "disabled"
+    }
+  },
+  "delay_p50": 180.225715,
+  "delay_p95": 406.277657,
+  "oldest_deferred_age_seconds": 571.404,
+  "proposed_due_wait_p95_120_seconds": "NOT MET",
+  "scope": "real wall-clock serial fixture; production default concurrency is 9, not a fleet capacity promise"
+}

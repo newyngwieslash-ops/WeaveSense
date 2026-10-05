@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 
 type QuerySql = { query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<T[]> };
+export const EXTRACT_TARGET_LIMIT = 4;
+export const EXTRACT_LEASE_MINUTES = 15;
 
 export type ExtractTarget = {
   id: string;
@@ -9,6 +11,7 @@ export type ExtractTarget = {
   public_url: string;
   content_type: string;
   kind: string;
+  status?: string;
 };
 
 type Extracted = { text: string; model: string };
@@ -104,12 +107,22 @@ export async function runExtractTargets({ sql, itemId, targets, load, ocr, asr }
   // Candidates are the first few targets; whether each one is OCR or ASR is
   // decided per target, after its bytes are loaded, because the *served* content
   // type is the honest signal (see kindOf).
-  const eligible = targets.slice(0, 4).map((target) => ({ target, key: extractTargetKey(target) }));
+  const eligible = [...new Map(targets.slice(0, EXTRACT_TARGET_LIMIT).map((target) => {
+    const key = extractTargetKey(target);
+    return [key, { target, key }] as const;
+  })).values()];
   if (!eligible.length) return { ok: false, ran: 0, error: "没有可 OCR/ASR 的媒体" };
   let ran = 0;
   let lastError = "";
   let classified = 0;
+  let deferred = false;
   for (const { target, key } of eligible) {
+    // Ingest reserves a key before upload/MIME commit. Wait without spending an extraction attempt.
+    if ((target.object_key || /^telegram:/i.test(target.source_url)) &&
+        (!target.object_key || !target.content_type || (target.status !== undefined && target.status !== "stored"))) {
+      deferred = true;
+      continue;
+    }
     // The declared kind decides the *job* row, so a reload still short-circuits on
     // the existing row; the served type is re-checked before any model call.
     const jobKind = target.kind === "audio" || target.kind === "video" ? "asr" : "ocr";
@@ -123,8 +136,8 @@ export async function runExtractTargets({ sql, itemId, targets, load, ocr, asr }
       set status='running', attempts=attempts+1, error='', finished_at=null, started_at=now(), claim_token=$3
       where item_id=$1 and target_key=$2 and attempts < 3
         and (status in ('pending','error')
-          or (status='running' and (started_at is null or started_at <= now() - interval '15 minutes')))
-      returning id`, [itemId, key, claimToken]);
+          or (status='running' and (started_at is null or started_at <= now() - ($4::integer * interval '1 minute'))))
+      returning id`, [itemId, key, claimToken, EXTRACT_LEASE_MINUTES]);
     if (!claimed) continue;
     try {
       const file = await load(target);
@@ -155,10 +168,10 @@ export async function runExtractTargets({ sql, itemId, targets, load, ocr, asr }
     "select status, attempts from extract_jobs where item_id=$1 and target_key=any($2::text[])",
     [itemId, eligible.map(({ key }) => key)],
   );
-  const terminal = states.length === eligible.length
+  const terminal = !deferred && states.length === eligible.length
     && states.every(({ status, attempts }) => status === "ok" || Number(attempts) >= 3);
   await sql.query("update items set pipeline_status=$2 where id=$1", [itemId, terminal ? "extracted" : "ingested"]);
-  if (!terminal) return { ok: false, ran, error: lastError || "提取尚未完成" };
+  if (!terminal) return { ok: false, ran, error: lastError || (deferred ? "媒体落盘尚未完成" : "提取尚未完成") };
   // Terminal. Distinguish "nothing here was ever extractable" from "already done":
   // a target that succeeded on a previous run is a clean no-op, not a failure —
   // otherwise every page refresh would report an error.

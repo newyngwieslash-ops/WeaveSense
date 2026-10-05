@@ -14,7 +14,7 @@ import {
   requestWechatReconciliation,
   requestWechatReconciliationAck,
   cronWorkSlot,
-  cronDueQuotas,
+  fairCollectionQueue,
   runCronBatch,
   runCronStages,
   runReconciledSourceJobs,
@@ -92,10 +92,10 @@ test("four half-hour slots give 100 due sources capacity without starving extrac
   const slots = Array.from({ length: 4 }, (_, index) => cronWorkSlot(new Date(index * 1_800_000)));
   assert.deepEqual(slots, ["collect", "collect", "collect", "extract"]);
   const capacity = slots.filter((slot) => slot === "collect")
-    .reduce((sum) => sum + cronDueQuotas(200).sources, 0);
+    .reduce((sum) => sum + fairCollectionQueue(Array(35).fill(0), [], [], 35).length, 0);
   assert.ok(capacity >= 100);
   const worstCaseMs = Math.ceil(2 / RECONCILIATION_QUEUE_CONCURRENCY) * CRON_SOURCE_RESERVE_MS
-    + Math.ceil(cronDueQuotas(200).sources / CRON_SOURCE_CONCURRENCY) * CRON_SOURCE_RESERVE_MS
+    + Math.ceil(fairCollectionQueue(Array(35).fill(0), [], [], 35).length / CRON_SOURCE_CONCURRENCY) * CRON_SOURCE_RESERVE_MS
     + CRON_INGEST_RESERVE_MS + CRON_GATEWAY_RESERVE_MS;
   assert.equal(worstCaseMs, 680_000);
   assert.ok(worstCaseMs <= CRON_SERVER_BUDGET_MS);
@@ -104,8 +104,9 @@ test("four half-hour slots give 100 due sources capacity without starving extrac
 });
 
 test("source backlog is capped while every due tick reserves a keyword opportunity", () => {
-  assert.deepEqual(cronDueQuotas(200), { sources: 34, keywords: 1 });
-  assert.deepEqual(cronDueQuotas(1), { sources: 1, keywords: 1 });
+  const queue = fairCollectionQueue(Array(200).fill(0), [], [1], 35);
+  assert.equal(queue.length, 35);
+  assert.equal(queue[0].kind, "keyword");
 });
 
 test("source batch concurrency is fixed and never fans out all due work", async () => {

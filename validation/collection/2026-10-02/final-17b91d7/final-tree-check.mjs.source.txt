@@ -1,0 +1,31 @@
+import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
+import {mkdirSync,openSync,closeSync,writeFileSync,readFileSync} from 'node:fs';
+import {resolve,join} from 'node:path';
+import {offlineEnv} from '../../scripts/readiness-offline.mjs';
+const [sha,phase='tests']=process.argv.slice(2);
+assert.match(sha,/^[a-f0-9]{40}$/);assert.ok(['tests','build'].includes(phase));
+const root=process.cwd();
+const current=spawnSync('git',['rev-parse','HEAD'],{encoding:'utf8',windowsHide:true});assert.equal(current.status,0);assert.equal(current.stdout.trim(),sha);
+const snapshot=resolve('E:/AI-JIANSHI-20260825/WeaveSense/.worktrees',`collection-ui-${sha.slice(0,7)}`);
+if(phase==='build')assert.equal(readFileSync(join(snapshot,'.superpowers/sdd/source-sha.txt'),'utf8').trim(),sha);
+const out=join(root,'.superpowers/sdd',`final-checks-${sha.slice(0,7)}`);mkdirSync(out,{recursive:true});
+const report={sourceSha:sha,phase,runtime:process.version,startedAt:new Date().toISOString(),scope:'offline committed source; isolated or in-memory fixture databases; no production or real provider',checks:[],ok:false};
+function check(name,command,args,cwd=root,overrides={}){
+ const log=join(out,`${name}.log`);const fd=openSync(log,'wx');const started=Date.now();let r;
+ try{r=spawnSync(command,args,{cwd,env:offlineEnv(process.env,overrides),stdio:['ignore',fd,fd],windowsHide:true,timeout:1200000});}finally{closeSync(fd);}
+ const row={name,command,args,cwd,exit:r.status,error:r.error?.code??null,elapsedMs:Date.now()-started,log};report.checks.push(row);
+ writeFileSync(join(out,`${phase}.json`),JSON.stringify(report,null,2));console.log(JSON.stringify(row));assert.equal(r.status,0,`${name} failed; see ${log}`);
+}
+try{
+ if(phase==='tests'){
+  check('npm-test',process.execPath,['F:/nodejs/node_modules/npm/bin/npm-cli.js','test']);
+  check('gateway-test',process.execPath,['F:/nodejs/node_modules/npm/bin/npm-cli.js','run','gateway:test']);
+  check('telethon-test',join(root,'.venv/Scripts/python.exe'),['-m','unittest','discover','-s','workers/telethon','-p','test_history.py']);
+  check('typecheck',process.execPath,['F:/nodejs/node_modules/npm/bin/npm-cli.js','run','typecheck']);
+  check('agent-go','go',['-C','workers/agent','test','./...','-count=1'],root,{GOTOOLCHAIN:'auto',GOMODCACHE:join(root,'.superpowers/sdd/codec-module-cache'),GOCACHE:join(root,'.superpowers/sdd/codec-build-cache'),GOFLAGS:'-mod=readonly'});
+ }else{
+  check('build',process.execPath,['F:/nodejs/node_modules/npm/bin/npm-cli.js','run','build'],snapshot);
+ }
+ report.ok=true;
+}finally{report.finishedAt=new Date().toISOString();writeFileSync(join(out,`${phase}.json`),JSON.stringify(report,null,2));}

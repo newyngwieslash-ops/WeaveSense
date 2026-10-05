@@ -17,6 +17,11 @@ import type {
   SourceRow,
 } from "../types.ts";
 import { asBool, asInt, asJson, iso } from "./serialize.ts";
+import { collectionHealth } from "./collection-health.mjs";
+
+export async function getCollectionHealth() {
+  return collectionHealth(await getSql());
+}
 
 function platformOf(value: unknown): PlatformId {
   const s = String(value);
@@ -49,6 +54,11 @@ export function mapSource(row: Record<string, unknown>): SourceRow {
     last_published_at: iso(row.last_published_at),
     last_scanned_at: iso(row.last_scanned_at),
     last_error: String(row.last_error ?? ""),
+    next_attempt_at: iso(row.next_attempt_at),
+    consecutive_failures: asInt(row.consecutive_failures) ?? 0,
+    last_success_at: iso(row.last_success_at),
+    last_content_at: iso(row.last_content_at),
+    last_error_code: String(row.last_error_code ?? ""),
     status: (["idle", "running", "ok", "error"].includes(String(row.status))
       ? row.status
       : "idle") as SourceRow["status"],
@@ -56,6 +66,10 @@ export function mapSource(row: Record<string, unknown>): SourceRow {
     notes: String(row.notes ?? ""),
     created_at: iso(row.created_at) ?? new Date().toISOString(),
     item_count: asInt(row.item_count) ?? undefined,
+    scan_state: asJson<SourceRow["scan_state"]>(row.scan_state, undefined),
+    has_more: asBool(row.has_more),
+    collection_coverage: asJson<SourceRow["collection_coverage"]>(row.collection_coverage, undefined),
+    rejected_entries: asInt(row.rejected_entries) ?? 0,
   };
 }
 
@@ -68,6 +82,10 @@ export function mapKeyword(row: Record<string, unknown>): KeywordRow {
     enabled: asBool(row.enabled),
     last_scanned_at: iso(row.last_scanned_at),
     last_error: String(row.last_error ?? ""),
+    next_attempt_at: iso(row.next_attempt_at),
+    consecutive_failures: asInt(row.consecutive_failures) ?? 0,
+    last_success_at: iso(row.last_success_at),
+    last_error_code: String(row.last_error_code ?? ""),
     status: (["idle", "running", "ok", "error"].includes(String(row.status))
       ? row.status
       : "idle") as KeywordRow["status"],
@@ -111,7 +129,7 @@ export function mapJob(row: Record<string, unknown>): JobRow {
     started_at: iso(row.started_at) ?? new Date().toISOString(),
     finished_at: iso(row.finished_at),
     status: (row.status as JobRow["status"]) ?? "ok",
-    items_found: asInt(row.items_found) ?? 0,
+    items_found: asInt(row.items_found),
     items_new: asInt(row.items_new) ?? 0,
     error: String(row.error ?? ""),
     kind: String(row.kind ?? "incremental"),
@@ -120,6 +138,14 @@ export function mapJob(row: Record<string, unknown>): JobRow {
       .filter((attempt): attempt is string => typeof attempt === "string")
       .map((attempt) => attempt.slice(0, 80)).slice(0, 8),
     paid_call: asBool(row.paid_call),
+    adapter: row.adapter == null ? null : String(row.adapter),
+    error_code: row.error_code == null ? null : String(row.error_code),
+    duration_ms: asInt(row.duration_ms),
+    items_updated: asInt(row.items_updated),
+    items_invalid: asInt(row.items_invalid),
+    bytes: asInt(row.bytes),
+    coverage: asJson<JobRow['coverage']>(row.coverage, null),
+    retry_at: iso(row.retry_at),
     keyword_id: row.keyword_id ? String(row.keyword_id) : "",
     source_name: row.source_name ? String(row.source_name) : undefined,
   };
@@ -190,6 +216,9 @@ export function mapMediaObject(row: Record<string, unknown>): MediaObjectRow {
     kind: String(row.kind ?? "file"),
     status: String(row.status ?? "remote"),
     error: String(row.error ?? ""),
+    attempts: asInt(row.attempts) ?? 0,
+    next_attempt_at: iso(row.next_attempt_at),
+    claimed_at: iso(row.claimed_at),
   };
 }
 
@@ -236,10 +265,10 @@ export async function getOverview(): Promise<Overview> {
         (select count(*)::int from analyses) as analysis_count,
         (select count(*)::int from knowledge_notes) as note_count,
         (select count(*)::int from items where collected_at > now() - interval '24 hours') as new_24h,
-        (select count(*)::int from sources where enabled and (last_scanned_at is null or last_scanned_at < now() - (interval_minutes * interval '1 minute'))) as due_count,
+        (select count(*)::int from sources where enabled and (next_attempt_at is null or next_attempt_at <= now()) and (next_attempt_at is not null or last_scanned_at is null or last_scanned_at < now() - (interval_minutes * interval '1 minute'))) as due_count,
         (select count(*)::int from keywords) as keyword_count,
         (select count(*)::int from keywords where enabled) as keyword_enabled,
-        (select count(*)::int from keywords where enabled and (last_scanned_at is null or last_scanned_at < now() - (interval_minutes * interval '1 minute'))) as keyword_due,
+        (select count(*)::int from keywords where enabled and (next_attempt_at is null or next_attempt_at <= now()) and (next_attempt_at is not null or last_scanned_at is null or last_scanned_at < now() - (interval_minutes * interval '1 minute'))) as keyword_due,
         (select coalesce(sum(hits), 0)::int from keywords) as keyword_hits`,
   );
   const platformRows = await sql.query<Record<string, unknown>>(

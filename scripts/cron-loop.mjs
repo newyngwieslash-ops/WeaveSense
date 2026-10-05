@@ -1,6 +1,6 @@
 import { isMainModule } from "./with-app-env.mjs";
 
-const DEFAULT_INTERVAL_MS = 1_800_000;
+const DEFAULT_INTERVAL_MS = 60_000;
 const MAX_INTERVAL_MS = 2_147_483_647;
 // The server stops starting work at 720 seconds; this leaves 30 seconds to serialize and respond.
 const REQUEST_TIMEOUT_MS = 750_000;

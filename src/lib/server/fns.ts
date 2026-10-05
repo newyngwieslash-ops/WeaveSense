@@ -1,20 +1,22 @@
+import { clearConfigurationFailure } from "./scheduler-atomic.ts";
+import { initialScanState } from "./cursor.ts";
+import { validateSourceInput } from "./source-validation.ts";
 import { createServerFn } from "@tanstack/react-start";
 import type { AskResult } from "../types";
 import { getSql } from "@/lib/db";
 import { parseKeywordList, parsePlatformList } from "@/lib/keyword";
-import { defaultAdapter } from "./collectors";
 import { prod, wechatGatewayConfigured, agentAsyncAvailable } from "./config";
 import { parseTelegramHandles, telethonHealth } from "./telethon";
 import { analyzeInput, askInput, briefingInput } from "../agent-contract.ts";
 import { analyzeItemWith, askKnowledgeWith, generateBriefingWith } from "./analyze";
 import { getAiJob, cancelQueuedResearchJobs } from "./agent-queue";
 import { extractItem, extractPending } from "./extract";
-import { ingestPending } from "./media";
+import { ingestPending, replayMedia } from "./media";
 import { getNodesStatus, runProductionTick } from "./nodes";
-import { getOverview, listKeywords, listSources, mapAnalysis, mapExtractJob, mapItem, mapJob, mapMediaObject, mapNote } from "./queries";
+import { getCollectionHealth, getOverview, listKeywords, listSources, mapAnalysis, mapExtractJob, mapItem, mapJob, mapMediaObject, mapNote } from "./queries";
 import { ensureSeeded } from "./seed";
 import { runKeywordJob, runSourceJob, tickDueSources } from "./scheduler";
-import { isPlatform, type PlatformId } from "@/lib/platforms";
+import { isPlatform } from "@/lib/platforms";
 import { shortId } from "@/lib/utils";
 import { importWechatSources, previewWechatImport } from "./wechat-import";
 import { createProductionWechatGatewayClient } from "./wechat-gateway-client";
@@ -154,54 +156,47 @@ export const toggleSourceFn = createServerFn({ method: "POST" })
   });
 
 export const addSourceFn = createServerFn({ method: "POST" })
-  .validator(
-    (input: {
-      platform: string;
-      name: string;
-      handle: string;
-      url?: string;
-      feed_url?: string;
-      interval_minutes: number;
-    }) => input,
-  )
-  .handler(async ({ data }) => {
-    if (!isPlatform(data.platform)) throw new Error("未知平台");
-    const name = data.name.trim().slice(0, 80);
-    if (!name) throw new Error("请填写信源名称");
-    const feed = (data.feed_url ?? "").trim();
-    const url = (data.url ?? "").trim();
-    let handle = data.handle.trim().slice(0, 400);
-    let storedUrl = url;
-    if (data.platform === "telegram") {
-      const parsed = parseTelegramHandles([handle, url, feed].filter(Boolean).join("\n"))[0] ?? "";
-      if (!parsed) throw new Error("请填写频道用户名，或 t.me/用户名 链接");
-      handle = parsed;
-      storedUrl = `https://t.me/s/${parsed}`;
-    }
-    if (!handle && !feed && !url) throw new Error("请填写账号、链接或 RSS 地址");
+  .validator((input: { platform: string; name: string; handle: string; url?: string;
+    feed_url?: string; interval_minutes: number; scan_state?: unknown }) => input)
+  .handler(async ({ data: input }) => {
+    const result = validateSourceInput(input);
+    if (!result.ok) throw new Error(result.code);
+    const data = result.value;
     const sql = await getSql();
-    const id = shortId();
+    const { id } = data;
+    if (data.platform === "wechat" && (await sql.query(
+      "select id from sources where id = $1 or (platform = 'wechat' and lower(handle) = lower($2)) limit 1",
+      [id, data.handle],
+    )).length) throw new Error("source_already_exists");
     await sql.query(
       `insert into sources (
-         id, platform, name, handle, url, feed_url, interval_minutes, enabled, adapter, notes, status
-       ) values ($1,$2,$3,$4,$5,$6,$7,true,$8,'', 'idle')`,
+         id, platform, name, handle, url, feed_url, interval_minutes, enabled, adapter, notes, status, scan_state
+       ) values ($1,$2,$3,$4,$5,$6,$7,true,$8,'', 'idle',$9::jsonb)`,
       [
         id,
         data.platform,
-        name,
-        handle,
-        storedUrl,
-        feed,
-        data.interval_minutes || 30,
-        defaultAdapter(data.platform as PlatformId),
+        data.name,
+        data.handle,
+        data.url,
+        data.feed_url,
+        data.interval_minutes,
+        data.adapter,
+        JSON.stringify(data.scan_state),
       ],
     );
     return { id };
   });
 
 export const addTelegramChannelsFn = createServerFn({ method: "POST" })
-  .validator((input: { handles: string; interval_minutes: number }) => input)
+  .validator((input: { handles: string; interval_minutes: number; scan_state?: unknown }) => input)
   .handler(async ({ data }) => {
+    if (!data || typeof data.handles !== "string") throw new Error("invalid_source_input");
+    for (const handle of data.handles.split(/[\n,;]+/).map(value => value.trim()).filter(Boolean)) {
+      const result = validateSourceInput({ platform: "telegram", name: "频道", handle,
+        interval_minutes: data.interval_minutes, scan_state: data.scan_state });
+      if (!result.ok) throw new Error(result.code);
+    }
+    const scanState = initialScanState(data.scan_state);
     const handles = parseTelegramHandles(data.handles);
     if (!handles.length) throw new Error("请粘贴频道用户名，每行一个");
     const interval = data.interval_minutes || 10;
@@ -220,9 +215,9 @@ export const addTelegramChannelsFn = createServerFn({ method: "POST" })
       const id = shortId();
       await sql.query(
         `insert into sources (
-           id, platform, name, handle, url, feed_url, interval_minutes, enabled, adapter, notes, status
-         ) values ($1,'telegram',$2,$3,$4,'',$5,true,'telegram_web','Telethon 增量',$6)`,
-        [id, handle, handle, `https://t.me/s/${handle}`, interval, "idle"],
+           id, platform, name, handle, url, feed_url, interval_minutes, enabled, adapter, notes, status, scan_state
+         ) values ($1,'telegram',$2,$3,$4,'',$5,true,'telegram_web','Telethon 增量',$6,$7::jsonb)`,
+        [id, handle, handle, `https://t.me/s/${handle}`, interval, "idle", JSON.stringify(scanState)],
       );
       created.push(handle);
     }
@@ -241,21 +236,23 @@ export const addKeywordsFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const phrases = parseKeywordList(data.phrases);
     if (!phrases.length) throw new Error("请填写至少一个关键词（2–40 字）");
+    if (data.platforms && (!Array.isArray(data.platforms) || data.platforms.some(p => !isPlatform(p)))) throw new Error("未知平台");
     const platforms = parsePlatformList(data.platforms ?? []);
     const interval = data.interval_minutes || 30;
     const sql = await getSql();
     const created: string[] = [];
     for (const phrase of phrases) {
-      const [existing] = await sql.query<{ id: string }>(
-        "select id from keywords where lower(phrase) = lower($1)",
+      const [existing] = await sql.query<{ id: string; platforms: unknown }>(
+        "select id, platforms from keywords where lower(phrase) = lower($1)",
         [phrase],
       );
       if (existing) {
         await sql.query(
-          `update keywords set enabled = true, interval_minutes = $2, platforms = $3::jsonb, last_error = ''
+          `update keywords set enabled = true, interval_minutes = $2, platforms = $3::jsonb
            where id = $1`,
           [existing.id, interval, JSON.stringify(platforms)],
         );
+        if (JSON.stringify(existing.platforms) !== JSON.stringify(platforms)) await clearConfigurationFailure(sql, "keywords", existing.id);
         created.push(existing.id);
         continue;
       }
@@ -295,10 +292,12 @@ export const updateKeywordFn = createServerFn({ method: "POST" })
       ]);
     }
     if (data.platforms) {
-      await sql.query("update keywords set platforms = $2::jsonb where id = $1", [
+      if (!Array.isArray(data.platforms) || data.platforms.some(p => !isPlatform(p))) throw new Error("未知平台");
+      const changed = await sql.query("update keywords set platforms = $2::jsonb where id = $1 and platforms is distinct from $2::jsonb returning id", [
         data.id,
         JSON.stringify(parsePlatformList(data.platforms)),
       ]);
+      if (changed.length) await clearConfigurationFailure(sql, "keywords", data.id);
     }
     return { ok: true };
   });
@@ -379,7 +378,7 @@ export const getItemFn = createServerFn({ method: "GET" })
     try {
       media = (
         await sql.query<Record<string, unknown>>(
-          "select id, source_url, object_key, public_url, content_type, bytes, kind, status, error from media_objects where item_id = $1 order by created_at",
+          "select id, source_url, object_key, public_url, content_type, bytes, kind, status, error, attempts, next_attempt_at, claimed_at from media_objects where item_id = $1 order by created_at",
           [data.id],
         )
       ).map(mapMediaObject);
@@ -414,6 +413,8 @@ export const listJobsFn = createServerFn({ method: "GET" }).handler(async () => 
   );
   return rows.map(mapJob);
 });
+
+export const collectionHealthFn = createServerFn({ method: "GET" }).handler(async () => getCollectionHealth());
 
 export const analyzeItemFn = createServerFn({ method: "POST" })
   .validator((input: unknown) => analyzeInput.parse(input ?? {}))
@@ -489,6 +490,13 @@ export const extractItemFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => extractItem(data.id));
 
 export const ingestMediaFn = createServerFn({ method: "POST" }).handler(async () => ingestPending(8));
+
+export const replayMediaFn = createServerFn({ method: "POST" })
+  .validator((input: { id: string }) => {
+    if (typeof input?.id !== 'string' || !input.id.trim() || input.id.length > 100) throw new Error('invalid_media_id');
+    return { id: input.id.trim() };
+  })
+  .handler(async ({ data }) => ({ requeued: await replayMedia(await getSql(), data.id) }));
 
 export const extractPendingFn = createServerFn({ method: "POST" }).handler(async () => extractPending(3));
 
