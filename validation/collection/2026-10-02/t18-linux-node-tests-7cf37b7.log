@@ -1,0 +1,899 @@
+TAP version 13
+# (node:14) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: authenticated encryption refuses changed data, wrong key and truncation
+ok 1 - authenticated encryption refuses changed data, wrong key and truncation
+  ---
+  duration_ms: 4.554103
+  type: 'test'
+  ...
+# Subtest: manifest fails closed for hash, schema, resource identity, traversal and credential-bearing extras
+ok 2 - manifest fails closed for hash, schema, resource identity, traversal and credential-bearing extras
+  ---
+  duration_ms: 2.084785
+  type: 'test'
+  ...
+# Subtest: new-child boundary refuses existing targets, traversal and symlinks
+ok 3 - new-child boundary refuses existing targets, traversal and symlinks
+  ---
+  duration_ms: 1.58654
+  type: 'test'
+  ...
+# Subtest: all required roles and any extra labelled writer must be stopped with correct ownership
+ok 4 - all required roles and any extra labelled writer must be stopped with correct ownership
+  ---
+  duration_ms: 0.542648
+  type: 'test'
+  ...
+# Subtest: retention only proposes authenticated owned generations; never deletes or touches foreign state
+ok 5 - retention only proposes authenticated owned generations; never deletes or touches foreign state
+  ---
+  duration_ms: 7.386554
+  type: 'test'
+  ...
+# Subtest: SQLite backup API includes committed WAL and preserves pending outbox, with actual platform permissions
+ok 6 - SQLite backup API includes committed WAL and preserves pending outbox, with actual platform permissions
+  ---
+  duration_ms: 11.486817
+  type: 'test'
+  ...
+# Subtest: runOnce posts the protected cron request with response margin over the server budget
+ok 7 - runOnce posts the protected cron request with response margin over the server budget
+  ---
+  duration_ms: 35.514845
+  type: 'test'
+  ...
+# Subtest: runOnce rejects non-2xx without exposing response data
+ok 8 - runOnce rejects non-2xx without exposing response data
+  ---
+  duration_ms: 1.536036
+  type: 'test'
+  ...
+# Subtest: network errors invoke a sanitized error callback
+ok 9 - network errors invoke a sanitized error callback
+  ---
+  duration_ms: 0.375634
+  type: 'test'
+  ...
+# Subtest: runOnce skips an overlapping invocation
+ok 10 - runOnce skips an overlapping invocation
+  ---
+  duration_ms: 1.090997
+  type: 'test'
+  ...
+# Subtest: interval accepts only Node's safe timer range
+ok 11 - interval accepts only Node's safe timer range
+  ---
+  duration_ms: 0.509245
+  type: 'test'
+  ...
+# Subtest: Compose waits for an app healthcheck before the immediate tick
+ok 12 - Compose waits for an app healthcheck before the immediate tick
+  ---
+  duration_ms: 0.533747
+  type: 'test'
+  ...
+# Subtest: a tick reports each stage separately, not one summed error count
+ok 13 - a tick reports each stage separately, not one summed error count
+  ---
+  duration_ms: 1.35062
+  type: 'test'
+  ...
+# Subtest: a healthy tick reports every stage ok and no error code
+ok 14 - a healthy tick reports every stage ok and no error code
+  ---
+  duration_ms: 1.24591
+  type: 'test'
+  ...
+# Subtest: stage codes never carry a URL, token or provider text
+ok 15 - stage codes never carry a URL, token or provider text
+  ---
+  duration_ms: 1.443627
+  type: 'test'
+  ...
+# Subtest: default wake-up is one minute; source and production cadence remain server-owned
+ok 16 - default wake-up is one minute; source and production cadence remain server-owned
+  ---
+  duration_ms: 1.146801
+  type: 'test'
+  ...
+# Subtest: a new restore target is accepted
+ok 17 - a new restore target is accepted
+  ---
+  duration_ms: 1.491432
+  type: 'test'
+  ...
+# Subtest: an existing restore target is refused
+ok 18 - an existing restore target is refused
+  ---
+  duration_ms: 0.648757
+  type: 'test'
+  ...
+# Subtest: only this batch's labelled resource is accepted
+ok 19 - only this batch's labelled resource is accepted
+  ---
+  duration_ms: 0.384134
+  type: 'test'
+  ...
+# Subtest: a failed or missing verification is a non-zero exit
+ok 20 - a failed or missing verification is a non-zero exit
+  ---
+  duration_ms: 0.327429
+  type: 'test'
+  ...
+# Subtest: lists today's articles with the exact provider request and no detail call
+ok 21 - lists today's articles with the exact provider request and no detail call
+  ---
+  duration_ms: 34.43865
+  type: 'test'
+  ...
+# Subtest: uses a 20 second native timeout
+ok 22 - uses a 20 second native timeout
+  ---
+  duration_ms: 0.843274
+  type: 'test'
+  ...
+# Subtest: enriches one article with the exact detail request
+ok 23 - enriches one article with the exact detail request
+  ---
+  duration_ms: 1.036292
+  type: 'test'
+  ...
+# Subtest: provider code is a sanitized mapping error
+ok 24 - provider code is a sanitized mapping error
+  ---
+  duration_ms: 1.062594
+  type: 'test'
+  ...
+# Subtest: invalid JSON is a sanitized mapping error
+ok 25 - invalid JSON is a sanitized mapping error
+  ---
+  duration_ms: 0.660558
+  type: 'test'
+  ...
+# Subtest: HTTP 400 is a sanitized mapping error
+ok 26 - HTTP 400 is a sanitized mapping error
+  ---
+  duration_ms: 0.840375
+  type: 'test'
+  ...
+# Subtest: non-array list is a sanitized mapping error
+ok 27 - non-array list is a sanitized mapping error
+  ---
+  duration_ms: 1.023291
+  type: 'test'
+  ...
+# Subtest: missing article field is a sanitized mapping error
+ok 28 - missing article field is a sanitized mapping error
+  ---
+  duration_ms: 0.738465
+  type: 'test'
+  ...
+# Subtest: out-of-range timestamp is a sanitized mapping error
+ok 29 - out-of-range timestamp is a sanitized mapping error
+  ---
+  duration_ms: 1.548737
+  type: 'test'
+  ...
+# Subtest: implausible future timestamp is a sanitized mapping error
+ok 30 - implausible future timestamp is a sanitized mapping error
+  ---
+  duration_ms: 1.293214
+  type: 'test'
+  ...
+# Subtest: fractional timestamp is a sanitized mapping error
+ok 31 - fractional timestamp is a sanitized mapping error
+  ---
+  duration_ms: 0.754567
+  type: 'test'
+  ...
+# Subtest: ambiguous date string is a sanitized mapping error
+ok 32 - ambiguous date string is a sanitized mapping error
+  ---
+  duration_ms: 0.78187
+  type: 'test'
+  ...
+# Subtest: HTTP 201 missing field is a sanitized mapping error
+ok 33 - HTTP 201 missing field is a sanitized mapping error
+  ---
+  duration_ms: 1.204407
+  type: 'test'
+  ...
+# Subtest: HTTP 429 is a sanitized retryable technical error
+ok 34 - HTTP 429 is a sanitized retryable technical error
+  ---
+  duration_ms: 0.543248
+  type: 'test'
+  ...
+# Subtest: HTTP 503 is a sanitized retryable technical error
+ok 35 - HTTP 503 is a sanitized retryable technical error
+  ---
+  duration_ms: 0.521346
+  type: 'test'
+  ...
+# Subtest: timeout is a sanitized retryable technical error
+ok 36 - timeout is a sanitized retryable technical error
+  ---
+  duration_ms: 0.294726
+  type: 'test'
+  ...
+# Subtest: network is a sanitized retryable technical error
+ok 37 - network is a sanitized retryable technical error
+  ---
+  duration_ms: 0.243321
+  type: 'test'
+  ...
+# Subtest: missing detail fields fail without leaking credentials
+ok 38 - missing detail fields fail without leaking credentials
+  ---
+  duration_ms: 0.593853
+  type: 'test'
+  ...
+# Subtest: validates the API key before making requests
+ok 39 - validates the API key before making requests
+  ---
+  duration_ms: 0.232921
+  type: 'test'
+  ...
+# Subtest: accepts only a credential-free HTTPS provider base URL
+ok 40 - accepts only a credential-free HTTPS provider base URL
+  ---
+  duration_ms: 0.260523
+  type: 'test'
+  ...
+# Subtest: redirect failures are sanitized technical errors
+ok 41 - redirect failures are sanitized technical errors
+  ---
+  duration_ms: 0.619755
+  type: 'test'
+  ...
+# Subtest: rejects unsafe list article and cover URLs
+ok 42 - rejects unsafe list article and cover URLs
+  ---
+  duration_ms: 3.153879
+  type: 'test'
+  ...
+# Subtest: keeps request article URLs HTTPS-only
+ok 43 - keeps request article URLs HTTPS-only
+  ---
+  duration_ms: 0.655658
+  type: 'test'
+  ...
+# Subtest: upgrades provider list article HTTP URLs to HTTPS
+ok 44 - upgrades provider list article HTTP URLs to HTTPS
+  ---
+  duration_ms: 0.626856
+  type: 'test'
+  ...
+# Subtest: accepts an empty cover and the exact qlogo CDN host
+ok 45 - accepts an empty cover and the exact qlogo CDN host
+  ---
+  duration_ms: 0.653158
+  type: 'test'
+  ...
+# Subtest: rejects unsafe detail article and cover URLs
+ok 46 - rejects unsafe detail article and cover URLs
+  ---
+  duration_ms: 3.559415
+  type: 'test'
+  ...
+# Subtest: upgrades provider detail article HTTP URLs to HTTPS
+ok 47 - upgrades provider detail article HTTP URLs to HTTPS
+  ---
+  duration_ms: 0.606454
+  type: 'test'
+  ...
+# Subtest: accepts only finite nonnegative numeric provider costs
+ok 48 - accepts only finite nonnegative numeric provider costs
+  ---
+  duration_ms: 1.780457
+  type: 'test'
+  ...
+# Subtest: normalizes an explicit ISO timestamp
+ok 49 - normalizes an explicit ISO timestamp
+  ---
+  duration_ms: 0.435539
+  type: 'test'
+  ...
+# Subtest: classifies response body timeout and network errors as sanitized technical errors
+ok 50 - classifies response body timeout and network errors as sanitized technical errors
+  ---
+  duration_ms: 1.777257
+  type: 'test'
+  ...
+# Subtest: rejects a declared response above 4 MiB and cancels it
+ok 51 - rejects a declared response above 4 MiB and cancels it
+  ---
+  duration_ms: 0.797471
+  type: 'test'
+  ...
+# Subtest: rejects and cancels a chunked response above 4 MiB
+ok 52 - rejects and cancels a chunked response above 4 MiB
+  ---
+  duration_ms: 0.538947
+  type: 'test'
+  ...
+# (node:48) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: ships a QA-only primary fixture and wires its host allowlist
+ok 53 - ships a QA-only primary fixture and wires its host allowlist
+  ---
+  duration_ms: 50.206846
+  type: 'test'
+  ...
+# Subtest: serves the deterministic fixture without side effects on import
+ok 54 - serves the deterministic fixture without side effects on import
+  ---
+  duration_ms: 44.482838
+  type: 'test'
+  ...
+# Subtest: requires an exact bearer token
+ok 55 - requires an exact bearer token
+  ---
+  duration_ms: 0.968186
+  type: 'test'
+  ...
+# Subtest: requires a WeChat sample URL and HTTP feed
+ok 56 - requires a WeChat sample URL and HTTP feed
+  ---
+  duration_ms: 1.491232
+  type: 'test'
+  ...
+# Subtest: stores source health state in SQLite
+ok 57 - stores source health state in SQLite
+  ---
+  duration_ms: 4.469096
+  type: 'test'
+  ...
+# Subtest: migrates an existing source database with paid-success history
+ok 58 - migrates an existing source database with paid-success history
+  ---
+  duration_ms: 16.372849
+  type: 'test'
+  ...
+# Subtest: rolls back a failed store migration and closes its database
+ok 59 - rolls back a failed store migration and closes its database
+  ---
+  duration_ms: 5.736008
+  type: 'test'
+  ...
+# Subtest: reserves and adjusts provider spend atomically within both daily caps
+ok 60 - reserves and adjusts provider spend atomically within both daily caps
+  ---
+  duration_ms: 6.087539
+  type: 'test'
+  ...
+# Subtest: records paid checks without losing the last paid success
+ok 61 - records paid checks without losing the last paid success
+  ---
+  duration_ms: 5.30977
+  type: 'test'
+  ...
+# Subtest: paid success attribution rejects the future and never moves backward
+ok 62 - paid success attribution rejects the future and never moves backward
+  ---
+  duration_ms: 6.121842
+  type: 'test'
+  ...
+# Subtest: merges cached provider history without erasing article content
+ok 63 - merges cached provider history without erasing article content
+  ---
+  duration_ms: 6.635988
+  type: 'test'
+  ...
+# Subtest: keeps the mirrored canonical algorithm in parity
+ok 64 - keeps the mirrored canonical algorithm in parity
+  ---
+  duration_ms: 1.58254
+  type: 'test'
+  ...
+# Subtest: preserves 100 valid primary entries
+ok 65 - preserves 100 valid primary entries
+  ---
+  duration_ms: 62.705352
+  type: 'test'
+  ...
+# Subtest: primary marks trusted content complete and summaries incomplete
+ok 66 - primary marks trusted content complete and summaries incomplete
+  ---
+  duration_ms: 9.70996
+  type: 'test'
+  ...
+# Subtest: primary rejects over 1000 entries instead of returning a truncated success
+ok 67 - primary rejects over 1000 entries instead of returning a truncated success
+  ---
+  duration_ms: 10.356617
+  type: 'test'
+  ...
+# Subtest: primary rejects malformed roots and XML
+ok 68 - primary rejects malformed roots and XML
+  ---
+  duration_ms: 4.954838
+  type: 'test'
+  ...
+# Subtest: primary HTTP, redirect and size failures do not wait for stalled cancel
+ok 69 - primary HTTP, redirect and size failures do not wait for stalled cancel
+  ---
+  duration_ms: 4.641211
+  type: 'test'
+  ...
+# Subtest: rejects invalid primary article fields
+ok 70 - rejects invalid primary article fields
+  ---
+  duration_ms: 19.505227
+  type: 'test'
+  ...
+# Subtest: accepts empty Atom, RSS, and RDF feeds but rejects an unknown root
+ok 71 - accepts empty Atom, RSS, and RDF feeds but rejects an unknown root
+  ---
+  duration_ms: 58.561285
+  type: 'test'
+  ...
+# Subtest: keeps valid entries when sibling entries are invalid
+ok 72 - keeps valid entries when sibling entries are invalid
+  ---
+  duration_ms: 6.298458
+  type: 'test'
+  ...
+# Subtest: rejects a chunked primary response above 8 MiB
+ok 73 - rejects a chunked primary response above 8 MiB
+  ---
+  duration_ms: 71.933769
+  type: 'test'
+  ...
+# Subtest: revalidates every redirect against the feed host allowlist
+ok 74 - revalidates every redirect against the feed host allowlist
+  ---
+  duration_ms: 9.209115
+  type: 'test'
+  ...
+# Subtest: serializes the required XML-safe Atom contract
+ok 75 - serializes the required XML-safe Atom contract
+  ---
+  duration_ms: 2.553526
+  type: 'test'
+  ...
+# Subtest: serves authenticated source, health, and feed routes
+ok 76 - serves authenticated source, health, and feed routes
+  ---
+  duration_ms: 48.827623
+  type: 'test'
+  ...
+# Subtest: an empty feed succeeds while an upstream failure is counted with a fixed error
+ok 77 - an empty feed succeeds while an upstream failure is counted with a fixed error
+  ---
+  duration_ms: 26.683662
+  type: 'test'
+  ...
+# Subtest: seven days of an identical expired feed update availability, not primary freshness or paid spend
+ok 78 - seven days of an identical expired feed update availability, not primary freshness or paid spend
+  ---
+  duration_ms: 14.213958
+  type: 'test'
+  ...
+# Subtest: SQLite restart preserves content evidence, conservative reservations, outbox and body replay
+ok 79 - SQLite restart preserves content evidence, conservative reservations, outbox and body replay
+  ---
+  duration_ms: 17.657363
+  type: 'test'
+  ...
+# Subtest: process exit without closing SQLite retains reserved spend and completed body before ACK
+ok 80 - process exit without closing SQLite retains reserved spend and completed body before ACK
+  ---
+  duration_ms: 46.457013
+  type: 'test'
+  ...
+# Subtest: period configuration is validated, persisted and can be explicitly unset on the existing PUT route
+ok 81 - period configuration is validated, persisted and can be explicitly unset on the existing PUT route
+  ---
+  duration_ms: 5.76661
+  type: 'test'
+  ...
+# Subtest: upgrade preserves legacy primary IDs before another source or empty feed prunes them and survives restart
+ok 82 - upgrade preserves legacy primary IDs before another source or empty feed prunes them and survives restart
+  ---
+  duration_ms: 13.256674
+  type: 'test'
+  ...
+# Subtest: legacy mixed-provider body and paid-before-first-revisit do not seed primary completeness
+ok 83 - legacy mixed-provider body and paid-before-first-revisit do not seed primary completeness
+  ---
+  duration_ms: 10.545434
+  type: 'test'
+  ...
+# Subtest: only an explicit upstream risk_control code marks the primary restricted
+ok 84 - only an explicit upstream risk_control code marks the primary restricted
+  ---
+  duration_ms: 6.163045
+  type: 'test'
+  ...
+# Subtest: primary-first gateway caches a seven-day union and never pays on success
+ok 85 - primary-first gateway caches a seven-day union and never pays on success
+  ---
+  duration_ms: 3.000466
+  type: 'test'
+  ...
+# Subtest: a cached primary summary is paid-enriched once and remains explicitly complete
+ok 86 - a cached primary summary is paid-enriched once and remains explicitly complete
+  ---
+  duration_ms: 5.728907
+  type: 'test'
+  ...
+# Subtest: first primary failure is 503 without spend; second uses paid list and only missing-body detail
+ok 87 - first primary failure is 503 without spend; second uses paid list and only missing-body detail
+  ---
+  duration_ms: 4.096663
+  type: 'test'
+  ...
+# Subtest: paid detail failure preserves the list floor and exhausted list budget is 429
+ok 88 - paid detail failure preserves the list floor and exhausted list budget is 429
+  ---
+  duration_ms: 7.370353
+  type: 'test'
+  ...
+# Subtest: reconciliation is time-gated, idempotent, prioritised, and stops at the cap
+ok 89 - reconciliation is time-gated, idempotent, prioritised, and stops at the cap
+  ---
+  duration_ms: 5.444382
+  type: 'test'
+  ...
+# Subtest: same-source concurrency shares work and sequential responses use the durable union
+ok 90 - same-source concurrency shares work and sequential responses use the durable union
+  ---
+  duration_ms: 11.021976
+  type: 'test'
+  ...
+# Subtest: gateway health exposes paid configuration and capped daily usage
+ok 91 - gateway health exposes paid configuration and capped daily usage
+  ---
+  duration_ms: 3.805937
+  type: 'test'
+  ...
+# Subtest: aggregate health is bearer-protected and returns source, usage, and limit state
+ok 92 - aggregate health is bearer-protected and returns source, usage, and limit state
+  ---
+  duration_ms: 5.547091
+  type: 'test'
+  ...
+# Subtest: aggregate health returns a bounded Shanghai-day usage range with zero-filled days
+ok 93 - aggregate health returns a bounded Shanghai-day usage range with zero-filled days
+  ---
+  duration_ms: 3.757233
+  type: 'test'
+  ...
+# Subtest: health projects unresolved paid hard errors until a later primary success
+ok 94 - health projects unresolved paid hard errors until a later primary success
+  ---
+  duration_ms: 5.025045
+  type: 'test'
+  ...
+# Subtest: health keeps a 24-hour alert above a newer unresolved technical error
+ok 95 - health keeps a 24-hour alert above a newer unresolved technical error
+  ---
+  duration_ms: 3.547414
+  type: 'test'
+  ...
+# Subtest: health ignores future paid hard errors when projecting the current state
+ok 96 - health ignores future paid hard errors when projecting the current state
+  ---
+  duration_ms: 6.21595
+  type: 'test'
+  ...
+# Subtest: detail-enriches a cached article whose normalized body is still empty
+ok 97 - detail-enriches a cached article whose normalized body is still empty
+  ---
+  duration_ms: 6.31766
+  type: 'test'
+  ...
+# Subtest: paid technical failures advance through the 5 then 15 minute retry schedule
+ok 98 - paid technical failures advance through the 5 then 15 minute retry schedule
+  ---
+  duration_ms: 6.111741
+  type: 'test'
+  ...
+# Subtest: a successful source request removes cached articles older than 30 days
+ok 99 - a successful source request removes cached articles older than 30 days
+  ---
+  duration_ms: 5.427581
+  type: 'test'
+  ...
+# Subtest: concurrent reconciliations serialize per source and the waiter skips a completed success
+ok 100 - concurrent reconciliations serialize per source and the waiter skips a completed success
+  ---
+  duration_ms: 14.56549
+  type: 'test'
+  ...
+# Subtest: feed waiting behind reconciliation reuses the paid cache instead of spending twice
+ok 101 - feed waiting behind reconciliation reuses the paid cache instead of spending twice
+  ---
+  duration_ms: 4.562604
+  type: 'test'
+  ...
+# Subtest: reconciliation isolates an invalid source and continues to the next source
+ok 102 - reconciliation isolates an invalid source and continues to the next source
+  ---
+  duration_ms: 4.892633
+  type: 'test'
+  ...
+# Subtest: reconciliation crossing Shanghai midnight bills the old day, skips details, and stops
+ok 103 - reconciliation crossing Shanghai midnight bills the old day, skips details, and stops
+  ---
+  duration_ms: 5.53589
+  type: 'test'
+  ...
+# Subtest: a paid call begun before midnight remains eligible on the next Shanghai day
+ok 104 - a paid call begun before midnight remains eligible on the next Shanghai day
+  ---
+  duration_ms: 3.560515
+  type: 'test'
+  ...
+# Subtest: reconciliation crossing midnight after the lock check makes no paid call
+ok 105 - reconciliation crossing midnight after the lock check makes no paid call
+  ---
+  duration_ms: 3.741831
+  type: 'test'
+  ...
+# Subtest: a pending detail crossing Shanghai midnight is deferred before provider spend
+ok 106 - a pending detail crossing Shanghai midnight is deferred before provider spend
+  ---
+  duration_ms: 3.028169
+  type: 'test'
+  ...
+# Subtest: feed fallback reserves on the clock at the paid call, not request entry
+ok 107 - feed fallback reserves on the clock at the paid call, not request entry
+  ---
+  duration_ms: 3.704128
+  type: 'test'
+  ...
+# Subtest: reconciliation reports exact call-cap and provider overrun exhaustion
+ok 108 - reconciliation reports exact call-cap and provider overrun exhaustion
+  ---
+  duration_ms: 6.655289
+  type: 'test'
+  ...
+# Subtest: duplicate paid list items buy detail once after canonical de-duplication
+ok 109 - duplicate paid list items buy detail once after canonical de-duplication
+  ---
+  duration_ms: 5.614697
+  type: 'test'
+  ...
+# Subtest: reconciliation stops starting paid detail and source calls at its cooperative deadline
+ok 110 - reconciliation stops starting paid detail and source calls at its cooperative deadline
+  ---
+  duration_ms: 5.641699
+  type: 'test'
+  ...
+# Subtest: feed fallback returns the paid list floor and queues details before its deadline
+ok 111 - feed fallback returns the paid list floor and queues details before its deadline
+  ---
+  duration_ms: 4.252577
+  type: 'test'
+  ...
+# Subtest: feed fallback stops starting later details and keeps their list floor
+ok 112 - feed fallback stops starting later details and keeps their list floor
+  ---
+  duration_ms: 7.675379
+  type: 'test'
+  ...
+# Subtest: an aborted paid feed is replayed from the outbox until ACK
+ok 113 - an aborted paid feed is replayed from the outbox until ACK
+  ---
+  duration_ms: 12.713825
+  type: 'test'
+  ...
+# Subtest: the default paid feed deadline leaves an app response margin
+ok 114 - the default paid feed deadline leaves an app response margin
+  ---
+  duration_ms: 0.278925
+  type: 'test'
+  ...
+# Subtest: PUT rejects owner changes, serializes with feed, resets repaired mapping, and sanitizes JSON
+ok 115 - PUT rejects owner changes, serializes with feed, resets repaired mapping, and sanitizes JSON
+  ---
+  duration_ms: 9.430135
+  type: 'test'
+  ...
+# Subtest: the Node gateway returns a fixed 413 for a PUT body above one MiB
+ok 116 - the Node gateway returns a fixed 413 for a PUT body above one MiB
+  ---
+  duration_ms: 15.579579
+  type: 'test'
+  ...
+# Subtest: paid success is durably replayed from the outbox until authenticated ACK
+ok 117 - paid success is durably replayed from the outbox until authenticated ACK
+  ---
+  duration_ms: 5.918924
+  type: 'test'
+  ...
+# Subtest: reconciliation outbox pages at the app protocol cap
+ok 118 - reconciliation outbox pages at the app protocol cap
+  ---
+  duration_ms: 28.628335
+  type: 'test'
+  ...
+# Subtest: a detail deferred by the paid deadline is persisted and completed without another list
+ok 119 - a detail deferred by the paid deadline is persisted and completed without another list
+  ---
+  duration_ms: 4.62801
+  type: 'test'
+  ...
+# Subtest: mapping detail failures keep the list floor without entering automatic retry
+ok 120 - mapping detail failures keep the list floor without entering automatic retry
+  ---
+  duration_ms: 5.245965
+  type: 'test'
+  ...
+# Subtest: technical detail failures back off for 5, 15, 60, then 60 minutes
+ok 121 - technical detail failures back off for 5, 15, 60, then 60 minutes
+  ---
+  duration_ms: 7.360252
+  type: 'test'
+  ...
+# Subtest: freshness requires content evidence and an explicit expected interval
+ok 122 - freshness requires content evidence and an explicit expected interval
+  ---
+  duration_ms: 4.893607
+  type: 'test'
+  ...
+# Subtest: uses Shanghai calendar time
+ok 123 - uses Shanghai calendar time
+  ---
+  duration_ms: 0.909275
+  type: 'test'
+  ...
+# Subtest: allows paid fallback at the second consecutive primary failure
+ok 124 - allows paid fallback at the second consecutive primary failure
+  ---
+  duration_ms: 2.089173
+  type: 'test'
+  ...
+# Subtest: allows paid fallback at six hours without primary success
+ok 125 - allows paid fallback at six hours without primary success
+  ---
+  duration_ms: 0.506042
+  type: 'test'
+  ...
+# Subtest: respects paid retry backoff and allows retry at the boundary
+ok 126 - respects paid retry backoff and allows retry at the boundary
+  ---
+  duration_ms: 0.47844
+  type: 'test'
+  ...
+# Subtest: fails closed for mapping errors and malformed retry timestamps
+ok 127 - fails closed for mapping errors and malformed retry timestamps
+  ---
+  duration_ms: 0.48254
+  type: 'test'
+  ...
+# Subtest: schedules paid retries at 5, 15, then 60 minutes
+ok 128 - schedules paid retries at 5, 15, then 60 minutes
+  ---
+  duration_ms: 0.60295
+  type: 'test'
+  ...
+# Subtest: reconciles once after 23:30 Shanghai
+ok 129 - reconciles once after 23:30 Shanghai
+  ---
+  duration_ms: 0.422535
+  type: 'test'
+  ...
+# Subtest: reconciliation retries a same-day technical error only after backoff
+ok 130 - reconciliation retries a same-day technical error only after backoff
+  ---
+  duration_ms: 0.566647
+  type: 'test'
+  ...
+# Subtest: technical-error backoff applies when the persisted check is in the future
+ok 131 - technical-error backoff applies when the persisted check is in the future
+  ---
+  duration_ms: 0.650954
+  type: 'test'
+  ...
+# Subtest: technical-error backoff applies when the persisted check is from yesterday
+ok 132 - technical-error backoff applies when the persisted check is from yesterday
+  ---
+  duration_ms: 0.431836
+  type: 'test'
+  ...
+# Subtest: mapping errors never reconcile automatically, even on another day
+ok 133 - mapping errors never reconcile automatically, even on another day
+  ---
+  duration_ms: 0.59275
+  type: 'test'
+  ...
+# Subtest: reports normal, degraded, paid fallback, and alert states
+ok 134 - reports normal, degraded, paid fallback, and alert states
+  ---
+  duration_ms: 0.273023
+  type: 'test'
+  ...
+# Subtest: alerts at 24 hours without a success and clears on recovery
+ok 135 - alerts at 24 hours without a success and clears on recovery
+  ---
+  duration_ms: 0.249821
+  type: 'test'
+  ...
+# Subtest: tracks the last paid success separately from a newer failed attempt
+ok 136 - tracks the last paid success separately from a newer failed attempt
+  ---
+  duration_ms: 0.205317
+  type: 'test'
+  ...
+# Subtest: ignores future persisted events when making time decisions
+ok 137 - ignores future persisted events when making time decisions
+  ---
+  duration_ms: 0.369531
+  type: 'test'
+  ...
+# Subtest: all exported time decisions reject an invalid current time
+ok 138 - all exported time decisions reject an invalid current time
+  ---
+  duration_ms: 0.409534
+  type: 'test'
+  ...
+# (node:74) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: an unknown outcome keeps the conservative reservation, never releases it to zero
+ok 139 - an unknown outcome keeps the conservative reservation, never releases it to zero
+  ---
+  duration_ms: 6.175314
+  type: 'test'
+  ...
+# Subtest: an unknown outcome is not re-settled later into a smaller number
+ok 140 - an unknown outcome is not re-settled later into a smaller number
+  ---
+  duration_ms: 3.459888
+  type: 'test'
+  ...
+# Subtest: the observed overrun is recorded and blocks further paid admission
+ok 141 - the observed overrun is recorded and blocks further paid admission
+  ---
+  duration_ms: 3.793316
+  type: 'test'
+  ...
+# Subtest: overruns are visible to the operator, with their count and excess
+ok 142 - overruns are visible to the operator, with their count and excess
+  ---
+  duration_ms: 3.463088
+  type: 'test'
+  ...
+# Subtest: the daily budget is enforced against real spend, not against estimates
+ok 143 - the daily budget is enforced against real spend, not against estimates
+  ---
+  duration_ms: 3.289673
+  type: 'test'
+  ...
+# Subtest: a call spanning midnight is settled against the day it started
+ok 144 - a call spanning midnight is settled against the day it started
+  ---
+  duration_ms: 3.899325
+  type: 'test'
+  ...
+# Subtest: an unknown reservation from an earlier day still holds that day's budget
+ok 145 - an unknown reservation from an earlier day still holds that day's budget
+  ---
+  duration_ms: 3.812217
+  type: 'test'
+  ...
+# Subtest: the last of the budget is admitted to exactly one caller
+ok 146 - the last of the budget is admitted to exactly one caller
+  ---
+  duration_ms: 4.000133
+  type: 'test'
+  ...
+# Subtest: without a verified price bound, paid admission is refused
+ok 147 - without a verified price bound, paid admission is refused
+  ---
+  duration_ms: 2.055271
+  type: 'test'
+  ...
+1..147
+# tests 147
+# suites 0
+# pass 147
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1738.379971
+

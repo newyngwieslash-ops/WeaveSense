@@ -1,0 +1,61 @@
+{
+  "ok": false,
+  "sourceSha": "7cf37b75b21010fa87b293d2135a3644e940f9d7",
+  "scope": "isolated-Linux-image-release-candidate",
+  "productionActivated": false,
+  "roles": {
+    "postgres": {
+      "containerId": "1a9641b81ec298f7d4d976cd47f950622d88a5edee4c48334ad45df01ef1054d",
+      "imageId": "sha256:75f5a96988cdf694a215073c3e9c001b706b371e2f94df3967f2efdec2787f6b",
+      "command": [
+        "postgres"
+      ],
+      "revision": null
+    },
+    "app": {
+      "containerId": "882aada5c82879341064777587810de4abf8217974836db0629f88bca66b3213",
+      "imageId": "sha256:2248ccc7f16fe11f7ef9e5b405a1a50a01683e703c405a2b495a79e4a3830e10",
+      "command": [
+        "npm",
+        "run",
+        "start"
+      ],
+      "revision": "7cf37b75b21010fa87b293d2135a3644e940f9d7"
+    }
+  },
+  "rollback": {
+    "production": "not-surveyed; no-production-deployment",
+    "isolated": {}
+  },
+  "checks": {
+    "appImage": {
+      "id": "sha256:2248ccc7f16fe11f7ef9e5b405a1a50a01683e703c405a2b495a79e4a3830e10",
+      "tags": [
+        "loom-collection:7cf37b75b21010fa87b293d2135a3644e940f9d7"
+      ],
+      "revision": "7cf37b75b21010fa87b293d2135a3644e940f9d7"
+    },
+    "telethonImage": {
+      "id": "sha256:51aeacb29b6ba780e8548565041a468e2c73905787341eb4977a8ed7b4982646",
+      "tags": [
+        "loom-telethon:7cf37b75b21010fa87b293d2135a3644e940f9d7"
+      ],
+      "revision": "7cf37b75b21010fa87b293d2135a3644e940f9d7"
+    }
+  },
+  "cleanup": [
+    {
+      "id": "882aada5c82879341064777587810de4abf8217974836db0629f88bca66b3213",
+      "removed": true
+    },
+    {
+      "id": "1a9641b81ec298f7d4d976cd47f950622d88a5edee4c48334ad45df01ef1054d",
+      "removed": true
+    },
+    {
+      "network": "0653e1be7a49b2be2893714811e966b10d442570267abc03c5222bc52a5799e4",
+      "removed": true
+    }
+  ],
+  "error": "TypeError: Cannot read properties of undefined (reading '0')\n    at file:///C:/Users/yi'da'dui/.codex/worktrees/collection-reliability/WeaveSense/.superpowers/sdd/t18-release-check.mjs:45:66"
+}

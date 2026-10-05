@@ -1,0 +1,13 @@
+{
+  "ok": false,
+  "scope": "isolated-fixture-only",
+  "sourceSha": "development",
+  "runtime": "v24.16.0",
+  "nonce": "t18-muulsv5k-a6dfb5",
+  "productionActivated": false,
+  "offMachine": false,
+  "failures": {},
+  "resources": [],
+  "error": "AssertionError [ERR_ASSERTION]: docker operation failed: docker: error during connect: Head \"http://%2F%2F.%2Fpipe%2FdockerDesktopLinuxEngine/_ping\": open //./pipe/dockerDesktopLinuxEngine: Access is denied.\n\nRun 'docker run --help' for more information\n\n\n125 !== 0\n\n    at run (file:///C:/Users/yi'da'dui/.codex/worktrees/collection-reliability/WeaveSense/validation/collection/2026-10-02/backup-check.mjs:30:10)\n    at docker (file:///C:/Users/yi'da'dui/.codex/worktrees/collection-reliability/WeaveSense/validation/collection/2026-10-02/backup-check.mjs:32:20)\n    at start (file:///C:/Users/yi'da'dui/.codex/worktrees/collection-reliability/WeaveSense/validation/collection/2026-10-02/backup-check.mjs:37:12)\n    at file:///C:/Users/yi'da'dui/.codex/worktrees/collection-reliability/WeaveSense/validation/collection/2026-10-02/backup-check.mjs:54:16\n    at ModuleJob.run (node:internal/modules/esm/module_job:439:25)\n    at async node:internal/modules/esm/loader:633:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)",
+  "cleanup": []
+}

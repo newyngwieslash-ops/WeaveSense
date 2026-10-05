@@ -2,6 +2,8 @@
 
 这是可由运维配置的工具和操作契约，不会自动启用生产备份。最终固定提交、镜像、恢复计时及副本位置见同目录的 T18 验收记录；开发夹具结果不能替代生产演练。
 
+已完成的固定版本证据见[7cf37b7 恢复/发布候选验收](collection-recovery-release-acceptance.md)，其中明确区分 Windows 宿主恢复与 Linux 镜像测试。
+
 ## 支持的入口与边界
 
 在受控宿主运行 `node scripts/collection-backup.mjs`，需要 Node 22.16+ 的 `node:sqlite.backup`、Docker CLI、以及安装 `workers/telethon/requirements.txt` 固定版本的 Python。Windows 已有 `.venv/Scripts/python.exe` 可用。根应用镜像没有 Python，**不把备份安排在 app/scheduler 镜像内运行**。不增加服务、业务调度协议或新依赖。
