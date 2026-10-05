@@ -11,6 +11,8 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { inflateRawSync } from "node:zlib";
+import { offlineEnv } from "./readiness-offline.mjs";
 import { test } from "node:test";
 import { zipDirectory } from "./zip.mjs";
 import { packExcluded } from "./deployment-policy.mjs";
@@ -69,4 +71,27 @@ test("the archive is a real zip (PK header) not a renamed blob", () => {
   zipDirectory(join(dir), zip, "zhishi-loom");
   const head = readFileSync(zip).subarray(0, 4);
   assert.deepEqual([...head], [0x50, 0x4b, 0x03, 0x04], "missing local file header");
+});
+
+test("actual delivery ZIP contains registered tests and their fixture/import closure, without private state", () => {
+  const packed=spawnSync(process.execPath,['scripts/pack-source.mjs'],{encoding:'utf8',windowsHide:true,env:offlineEnv(process.env)});
+  assert.equal(packed.status,0,packed.stderr);
+  const zip=readFileSync('artifacts/zhishi-loom-source.zip'); const files=new Map(); let offset=0;
+  while(zip.readUInt32LE(offset)===0x04034b50) {
+    const method=zip.readUInt16LE(offset+8),size=zip.readUInt32LE(offset+18),nameLength=zip.readUInt16LE(offset+26),extra=zip.readUInt16LE(offset+28);
+    const name=zip.subarray(offset+30,offset+30+nameLength).toString().replace(/^zhishi-loom\//,'');
+    const start=offset+30+nameLength+extra; const bytes=zip.subarray(start,start+size);
+    assert.equal(packExcluded(name),false,`excluded archive path: ${name}`);
+    files.set(name,method===8?inflateRawSync(bytes):bytes);offset=start+size;
+  }
+  assert.ok(files.size>100);
+  const scripts=JSON.parse(files.get('package.json')).scripts.test;
+  for(const name of scripts.match(/(?:scripts|src|validation)\/[^\s]+\.test\.(?:ts|mjs)/g)??[]) assert.ok(files.has(name),`missing registered test: ${name}`);
+  assert.ok(files.has('validation/agent/contracts/analyze-valid.json'));
+  for(const [name,bytes] of files) if(name.startsWith('validation/')&&name.endsWith('.test.ts')) {
+    for(const match of bytes.toString().matchAll(/from\s+["'](\.\.[^"']+)["']/g)) {
+      const normalized=join(name,'..',match[1]).replaceAll('\\','/'); assert.ok(files.has(normalized),`missing relative import: ${normalized}`);
+    }
+  }
+  assert.deepEqual(readFileSync('public/zhishi-loom-source.zip'),zip);
 });

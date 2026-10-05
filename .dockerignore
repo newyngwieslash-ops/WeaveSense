@@ -1,4 +1,22 @@
 node_modules
+.venv
+.superpowers
+.agents
+.codex
+.comet
+.cursor
+.tanstack
+.zcode
+.aws
+.pytest_cache
+.mypy_cache
+**/__pycache__
+**/*.pyc
+**/*.loom-backup
+**/*.session-*
+**/*.db
+**/*.db-wal
+**/*.db-shm
 **/*.local.json*
 *.local.json*
 # Secrets and runtime state that must never reach the build context. The context

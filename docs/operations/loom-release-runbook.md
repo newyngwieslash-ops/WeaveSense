@@ -1,5 +1,18 @@
 # 织识 Loom 正式发布运行手册（T24 / Gate D）
 
+## 2026-10-05 T18 发布契约（以下 9 月内容仅保留为历史）
+
+本轮只构建/检查隔离候选，不运行生产 compose、不读取外部生产 env、不自动发布或启用备份。固定源码提交及实际镜像验收见 T18 证据；未完成证据不能填“上线”。
+
+1. 从**已提交且已验证**的完整 SHA 制作干净构建上下文。根镜像的 Node 基础 digest、Python 基础 digest、npm lock 与 Python 已有依赖版本均固定；Python 不主张 wheel 字节级可重建。根和 Telethon 的独立上下文都先检查私密状态排除规则，保留 `.grok/app-env.json`、品牌和平台输入。不能把工作树里已有 ZIP 直接放镜像；Dockerfile 在无真实凭据构建中重新生成源码包，保证页面下载路径有内容。
+2. `docker build --build-arg SOURCE_SHA=<完整SHA> -t loom-collection:<SHA> .`；Telethon 对其目录同样使用固定 SHA/tag。记录 `docker image inspect` 的实际完整 image ID，不能用基础镜像 probe 代替服务验证。app/scheduler/gateway 复用根镜像，命令分别是 `npm run start`、`npm run cron:start`、`npm run gateway:start`；Telethon 是自己的 Python image。
+3. 每个角色在仅有命名 dummy 凭据的隔离环境验证实际入口、健康/就绪状态和业务夹具；离线 Telethon 验证 unconfigured/unauthorized 与 FakeTelethon 协议，不把它写成真实账号已 ready。检查追加迁移清单、页面/源码下载、scheduler 对本地假端点触发、gateway SQLite/队列。禁止真实模型和外部 Feed 调用。
+4. 发布清单必须包含：`source SHA → app/scheduler/gateway 完整 image IDs 与独立命令 → Telethon ID/依赖版本 → 迁移版本 → smoke 证据 → 四角色 rollback IDs`。回滚 ID 必须在实际切换前从当时运行实例只读登记；隔离新镜像 ID 不能伪称当前生产回滚点。缺少真实回滚清单则生产切换仍为未就绪。
+5. 得到后续发布授权后关闭新任务/写入口，等待在途任务完成，按[备份一致性契约](collection-backup.md)核验停止所有写者、保留待执行队列并备份。迁移只能追加且向后兼容；先在隔离恢复副本演练，再迁移批准的目标。保持 scheduler 停止，用少量批准信源验证游标、正文、媒体和 outbox ACK，再逐步恢复调度。
+6. 小流量验证失败：再次停新写/排空，按角色恢复清单中的旧镜像，**保留新字段、新表和已写数据，绝不倒滚游标/删表/清空队列/回退已发生费用**。如旧代码不能读取追加 schema，则保持停写并修复，不能执行破坏性 down migration。
+
+Compose 的 `LOOM_RELEASE_IMAGE`、`LOOM_TELETHON_IMAGE`、`LOOM_RELEASE_SHA` 为必填发布选择器，来自已核验清单；没有默认旧生产 tag。各服务原有独立 env_file 保持不合并。微信网关/调度仍单副本。真实账号、24h耐久、72h/7d微信窗口、1000信源延迟和实际预算门保持未完成；T14/T15 仍由指定站点需求触发。
+
 日期：2026-09-17。**状态：待用户逐条批准后执行。**
 
 ---

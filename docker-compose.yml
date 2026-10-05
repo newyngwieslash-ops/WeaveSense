@@ -15,6 +15,9 @@ services:
   # 因为下面已改为必填从 env_file 取值）。
   # ---------------------------------------------------------------------------
   postgres:
+    labels:
+      loom.backup.group: loom-local
+      loom.backup.role: postgres
     # Pinned by digest (from the image actually in use, 2026-09-16) so a
     # redeploy cannot silently change the database engine version.
     image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
@@ -34,6 +37,9 @@ services:
     restart: unless-stopped
 
   minio:
+    labels:
+      loom.backup.group: loom-local
+      loom.backup.role: minio
     image: minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     command: server /data --console-address ":9001"
     env_file:
@@ -81,8 +87,15 @@ services:
 
 
   telethon:
+    image: ${LOOM_TELETHON_IMAGE:?set_a_verified_fixed_release_tag}
+    labels:
+      loom.backup.group: loom-local
+      loom.backup.role: telethon
+    stop_grace_period: 180s
     build:
       context: ./workers/telethon
+      args:
+        SOURCE_SHA: ${LOOM_RELEASE_SHA:?set_the_tested_commit}
     env_file:
       - F:/loom-backups/env/telethon.env
     environment:
@@ -109,7 +122,11 @@ services:
     restart: unless-stopped
 
   wechat-gateway:
-    build: .
+    image: ${LOOM_RELEASE_IMAGE:?set_a_verified_fixed_release_tag}
+    labels:
+      loom.backup.group: loom-local
+      loom.backup.role: gateway
+    stop_grace_period: 180s
     command: ["npm", "run", "gateway:start"]
     deploy:
       replicas: 1
@@ -128,6 +145,9 @@ services:
     command: ["node", "workers/wechat-gateway/fixture-server.mjs"]
 
   agent:
+    labels:
+      loom.backup.group: loom-local
+      loom.backup.role: agent
     # Optional service, not started by default.
     #
     # Why: it refuses to start without AGENT_SERVICE_TOKEN (the app's default is
@@ -168,12 +188,17 @@ services:
     restart: unless-stopped
 
   app:
-    # 2026-09-30 merge: comet/local-model-settings is merged into main, so the
-    # root tree now IS the production source. `build: .` is safe again (T24's
-    # "root tree holds pre-fix code" no longer applies). Image tag kept as the
-    # friendly local cache name; compose builds it when absent.
-    build: .
-    image: loom-app:readiness-20260930-merged
+    # Fixed tags/SHA come from the reviewed release manifest, never inferred
+    # from an old production tag. Scheduler and gateway reuse this exact image.
+    build:
+      context: .
+      args:
+        SOURCE_SHA: ${LOOM_RELEASE_SHA:?set_the_tested_commit}
+    image: ${LOOM_RELEASE_IMAGE:?set_a_verified_fixed_release_tag}
+    labels:
+      loom.backup.group: loom-local
+      loom.backup.role: app
+    stop_grace_period: 180s
     # 凭据从工作树外的文件读入，不经命令行、不进仓库（见文件头注释）。
     env_file:
       - F:/loom-backups/env/app.env
@@ -244,7 +269,11 @@ services:
 
   scheduler:
     # Same image as app — it runs the readiness scheduler code.
-    image: loom-app:readiness-20260930-merged
+    image: ${LOOM_RELEASE_IMAGE:?set_a_verified_fixed_release_tag}
+    labels:
+      loom.backup.group: loom-local
+      loom.backup.role: scheduler
+    stop_grace_period: 180s
     command: ["npm", "run", "cron:start"]
     deploy:
       replicas: 1

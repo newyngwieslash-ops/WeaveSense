@@ -14,8 +14,8 @@
  * Matching is by path segment so `config/model.local.json`, a nested
  * `artifacts/...`, or a session file all match regardless of depth.
  */
-const EXCLUDED_SEGMENTS = new Set(["artifacts", "attachments", "node_modules", ".git", ".repo", ".worktrees", "screenshots", "__pycache__", ".venv"]);
-const EXCLUDED_SUFFIXES = [".local.json", ".session", ".sqlite", ".sqlite-wal", ".sqlite-shm", ".dump", ".key", ".pem", ".env"];
+const EXCLUDED_SEGMENTS = new Set(["artifacts", "attachments", "node_modules", ".git", ".repo", ".worktrees", "screenshots", "__pycache__", ".venv", ".superpowers", ".agents", ".codex", ".comet", ".cursor", ".tanstack", ".aws", ".zcode"]);
+const EXCLUDED_SUFFIXES = [".local.json", ".session", ".sqlite", ".sqlite-wal", ".sqlite-shm", ".dump", ".key", ".pem", ".env", ".loom-backup", ".db", ".db-wal", ".db-shm"];
 
 export function packExcluded(path) {
   const normalized = String(path).replaceAll("\\", "/");
@@ -23,6 +23,7 @@ export function packExcluded(path) {
   if (segments.some((part) => EXCLUDED_SEGMENTS.has(part))) return true;
   const base = segments.at(-1) ?? "";
   if (base === ".env" || base.startsWith(".env.")) return true;
+  if (/\.session-|\.local\.json./i.test(base)) return true;
   return EXCLUDED_SUFFIXES.some((suffix) => base.endsWith(suffix));
 }
 
