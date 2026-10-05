@@ -1,0 +1,8 @@
+{
+  "command": "node scripts/readiness-offline.mjs -- node F:/nodejs/node_modules/npm/bin/npm-cli.js test",
+  "condition": "original npm registry; only named deterministic test-clock correction",
+  "git_sha": "5e0bdd31c0b303e1709f62babdcfa8b7d5f99511",
+  "exit": 0,
+  "started_at": "2026-10-04T14:43:43.2874335Z",
+  "duration_seconds": 92.8157339
+}

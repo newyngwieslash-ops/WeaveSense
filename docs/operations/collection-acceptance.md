@@ -39,10 +39,33 @@ Every report records the source SHA/state, image IDs/digests, runtime, input ref
 
 ## Results and limits
 
-Development evidence is preserved, including failing fixture attempts. These are not final committed-SHA release evidence. The latest pre-commit quick run and 100-source burst passed their deterministic assertions; final committed-SHA runs and full test/build/browser checks are recorded in the T17 implementation report after the controller commits the source.
+Development evidence is preserved, including failing fixture attempts. These are not final committed-SHA release evidence. Runtime/harness checks target `52a16ea23d7af683b57faf5d1f1fd45670ab09dc`. Final tests/typecheck and controller build/browser target `5e0bdd31c0b303e1709f62babdcfa8b7d5f99511`; the only intervening source change makes one synthetic DNS budget test deterministic. Full timed reliability and final-SHA dev/built desktop/mobile browser checks are complete; scope and limits are recorded below.
 
-The proposed media recovery threshold is **not met**: a retry can become eligible after 60 seconds, while the preserved ingest stage dispatches at the next half-hour window (1,800 seconds in the controlled scenario, 1,740 seconds after eligibility). Calling `ingestPending` directly is not counted as cron recovery. Timed serial profiles separately report whether due-to-start P95 exceeds 120 seconds; exceeded thresholds are not presented as passes.
+| Committed-SHA check | Result | Scope |
+| --- | --- | --- |
+| 100-source burst, two rounds + replay | 2,000 exact IDs, 0 missing/duplicates; 9.820 s | Accelerated due-set drain |
+| 1,000-source burst, two rounds + replay | 20,000 exact IDs, 0 missing/duplicates; 31.747 s | Accelerated due-set drain |
+| 1,000-source first-round wait | P50 3.165393 s / P95 6.025886 s | Actual job-start minus explicitly aged due time |
+| Gateway | 127/127 | Offline fake providers |
+| Python worker | 25/25 | Fake Telethon, no account session |
+| Full registered npm suite | 535/535, 92.816 s | Final 5e0bdd3 tree, original command |
+| TypeScript | Passed, 10.119 s | Final 5e0bdd3 native checkout |
+| Full default reliability | 331/331, 0 missing/duplicates, 1,330.924 s | Actual PG/MinIO, real clocks; 52a16ea |
+| Source retry | 49.255 s after eligibility | Actual second minute cron tick |
+| Ordinary reserve 55 s | 13 collected / 1 deferred; 587.371 s; P95 542.296248 s | Serial 45-second sources |
+| Telegram reserve 195 s | 10 collected / 4 deferred; 571.404 s; P95 406.277657 s | Same sources plus actual 120-second media storage |
 
-Native Node peak RSS is process memory, not Docker-cgroup memory. PostgreSQL `memory.current`, `memory.peak`, `memory.stat` and `memory.events` refer only to its enforced container and include file cache. The development 300,000-row history run reached the 512 MiB cgroup peak; this does not establish application RSS under 70% of a container budget. The application has no enforced container budget in these native runs, so the application 70% resource gate is **unknown**, and 24-hour endurance is **pending**. Production resource limits are unchanged.
+The first full npm run exposed two existing millisecond timing assertions under concurrent test/build load. Both files passed unchanged in isolation (42/42). An original-command recheck reproduced only the synthetic DNS budget test: real 25 ms sleeps could miss its total 90 ms deadline under runner concurrency. The authorized one-test correction advances the existing mocked clock twice by 25 ms, requires exact remaining budgets [65, 40], and preserves the real body-abort timer and original wall-time bound. The final original suite passed all 535 tests. Both first failures and the isolated pass remain in evidence. An unsupported Node concurrency environment flag failed at setup and is not counted as a test execution.
+
+The proposed media recovery threshold is **not met**: a retry can become eligible after 60 seconds, while the preserved ingest stage dispatches at the next half-hour window (1,800 seconds in the controlled scenario, 1,740 seconds after eligibility). Calling `ingestPending` directly is not counted as cron recovery. Both timed serial profiles also **do not meet** the proposed due-to-start P95 <=120-second threshold. Both finish inside the 720-second server / 750-second loop budgets. Exit 0 certifies the asserted behavior and evidence collection; it is not an all-gates operational acceptance.
+
+Native Node peak RSS is process memory, not Docker-cgroup memory. PostgreSQL `memory.current`, `memory.peak`, `memory.stat` and `memory.events` refer only to its enforced container and include file cache. The final 300,000-row history run reached the 512 MiB cgroup peak (536,875,008 bytes; file 510,689,280, anon 10,416,128, shmem 146,903,040 included in file; max events 3400, OOM events zero). Native Node peak RSS was 159,965,184 bytes; this does not establish application RSS under 70% of a container budget. The application has no enforced container budget in these native runs, so the application 70% resource gate is **unknown**, and 24-hour endurance is **pending**. Production resource limits are unchanged.
 
 For live acceptance, record each permitted source's platform, interval, accessible reference IDs, initial range and upstream window. Run 10–20 sources for 72 hours, then 100+ for seven days. Keep inaccessible/upstream-limited samples in the report, explain missing IDs, and record paid costs conservatively. Offline completeness and a short resource sample cannot close those gates.
+
+
+## Final build and UI verification
+
+Final source `5e0bdd31c0b303e1709f62babdcfa8b7d5f99511` built successfully from an exact archive. Dev and built home checks passed desktop/mobile; built did not diverge from dev. Source/jobs presentation checks each passed 4/4, with no horizontal overflow, console errors or page errors. Parent inspected desktop/mobile screenshots for both runtimes. See `validation/collection/2026-10-02/ui-5e0bdd3/manifest.json` for hashed build, verdict, screenshot and audit evidence.
+
+The first desktop home overflow verdict is retained. A fresh DOM probe and unchanged repeat passed; transient initial rendering is only an inference. Opening home invokes its existing bootstrap and automatic scheduler tick: one synthetic Telegram-scoped keyword matched local content, with no external attempts and no new items. Thus home verification includes an isolated database write; source/jobs checks are read-only. Display fixtures are not online-source evidence. The existing utility dashboard OG-card note is retained.

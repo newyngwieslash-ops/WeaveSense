@@ -1,0 +1,8 @@
+{
+  "command": "npm test",
+  "condition": "offline NODE_OPTIONS=--test-concurrency=1",
+  "git_sha": "52a16ea23d7af683b57faf5d1f1fd45670ab09dc",
+  "exit": 9,
+  "started_at": "2026-10-04T14:31:08.3262385Z",
+  "duration_seconds": 0.1415585
+}

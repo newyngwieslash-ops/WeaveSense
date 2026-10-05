@@ -1,0 +1,48 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Index Scan",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Scan Direction": "Forward",
+      "Index Name": "items_source_id_external_id_key",
+      "Relation Name": "items",
+      "Alias": "items",
+      "Startup Cost": 0.42,
+      "Total Cost": 490.15,
+      "Plan Rows": 80,
+      "Plan Width": 29,
+      "Actual Startup Time": 0.092,
+      "Actual Total Time": 0.42,
+      "Actual Rows": 80,
+      "Actual Loops": 1,
+      "Index Cond": "((source_id = 'history-rss'::text) AND (external_id = ANY ('{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80}'::text[])))",
+      "Rows Removed by Index Recheck": 0,
+      "Shared Hit Blocks": 483,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0
+    },
+    "Planning": {
+      "Shared Hit Blocks": 95,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0
+    },
+    "Planning Time": 1.03,
+    "Triggers": [],
+    "Execution Time": 0.449
+  }
+]

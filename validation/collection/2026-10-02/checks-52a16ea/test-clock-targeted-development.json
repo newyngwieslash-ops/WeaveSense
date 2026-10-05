@@ -1,0 +1,5 @@
+{
+  "exit": 0,
+  "duration_seconds": 1.1578367,
+  "scope": "dirty test-only fix; business and reliability harness unchanged from 52a16ea"
+}

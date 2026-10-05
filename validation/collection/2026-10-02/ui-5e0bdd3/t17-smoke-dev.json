@@ -1,0 +1,38 @@
+{
+  "url": "http://127.0.0.1:18173/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "织识 Loom",
+      "hasCanvas": false,
+      "bodyTextLen": 1079,
+      "bodyTextHash": "149a2f94245205d68978898f1ccd9d808d88c9ee323ba21f3f000d73be122085",
+      "bodyTextPrefix": "织识 LOOM 总览 关键词 信源 内容 知识库 任务 节点 模型设置 管道 指南 规格 关键词 · 增量采集 扫描到期 MED",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "E:\\AI-JIANSHI-20260825\\WeaveSense\\.worktrees\\collection-ui-5e0bdd3\\screenshots\\t17-smoke-dev.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "织识 Loom",
+      "hasCanvas": false,
+      "bodyTextLen": 1044,
+      "bodyTextHash": "f1badfc72d548e5ea93b689b4ecfe8e74ba7a7f9663968c21f463f10ab06e5ca",
+      "bodyTextPrefix": "织识 行业媒体矩阵 扫描到期 MEDIA MATRIX · INCREMENTAL 织识 把频道、关键词与时间织进同一条增量管道",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "E:\\AI-JIANSHI-20260825\\WeaveSense\\.worktrees\\collection-ui-5e0bdd3\\screenshots\\t17-smoke-dev-mobile.png"
+    }
+  },
+  "brandWarnings": [
+    "BRAND NOTE: no custom public/og.jpg — the platform will serve the og.grok.me placeholder. Custom cards are the default for games of every kind (DOM board/word games included), whimsical apps, creative tools, and brand-forward pages — only plain utilities (converters, CRUD trackers, admin dashboards) keep the placeholder. If this app is not a plain utility, finish the brand-asset pass per \\workspace\\.grok\\skills\\og\\SKILL.md."
+  ],
+  "authWarnings": [],
+  "verdictFile": "E:\\AI-JIANSHI-20260825\\WeaveSense\\.worktrees\\collection-ui-5e0bdd3\\screenshots\\t17-smoke-dev.json"
+}
