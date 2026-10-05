@@ -238,6 +238,12 @@ async def handle_media(request: web.Request) -> web.Response:
                 await initialize_storage()
                 if minio_client is None:
                     return web.json_response({"error": "media_unavailable"}, status=503)
+                # History and account recovery can change admission while storage setup awaits.
+                wait = cooldown_seconds()
+                if wait:
+                    return web.json_response({"error": "flood_wait"}, status=429, headers={"Retry-After": str(wait)})
+                if client is None or not client.is_connected() or connection_state != "ready":
+                    return web.json_response({"error": "unavailable"}, status=503)
                 result = await download_media_to_store(body["channel"].lower(), int(body["message_id"]))
                 return web.json_response(result)
     except FloodWaitError as exc:

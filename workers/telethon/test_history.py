@@ -205,6 +205,77 @@ class HistoryPaginationTests(unittest.TestCase):
             self.assertEqual(len(asyncio.all_tasks()), 1)
         asyncio.run(run())
 
+    def test_storage_recovery_rechecks_shared_cooldown_and_account_readiness(self):
+        import json
+        import threading
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        mod = self.mod
+        async def run():
+            class Request:
+                headers = {"Authorization": "Bearer synthetic"}
+                async def json(self): return {"channel": "channel", "message_id": "101"}
+            mod.MEDIA_TOKEN = "synthetic"
+            mod.MINIO_ENDPOINT, mod.MINIO_ACCESS, mod.MINIO_SECRET = "fixture", "synthetic", "synthetic"
+            for state in ["flood_wait", "unavailable", "disconnected"]:
+                with self.subTest(state=state):
+                    mod.minio_client, mod.paused_until, mod.connection_state = None, 0, "ready"
+                    entered, release = threading.Event(), threading.Event()
+                    calls, saved = [], []
+                    probes = 0
+                    message = FakeMessage(101)
+                    message.media = mod.MessageMediaPhoto()
+                    message.file = SimpleNamespace(size=3, mime_type="image/jpeg")
+                    async def messages(**kwargs):
+                        calls.append("messages")
+                        if "ids" in kwargs: return message
+                        if state == "flood_wait": raise mod.FloodWaitError(request=None, capture=30)
+                        raise OSError("synthetic disconnect")
+                    candidate = FakeClient(messages)
+                    async def entity(channel):
+                        calls.append("entity")
+                        return channel
+                    async def download(media, **kwargs):
+                        calls.append("download")
+                        yield b"abc"
+                    candidate.get_entity, candidate.iter_download = entity, download
+                    mod.client = candidate
+                    class Store:
+                        def bucket_exists(self, bucket):
+                            nonlocal probes
+                            probes += 1
+                            entered.set()
+                            if not release.wait(2): raise TimeoutError("test release missing")
+                            return True
+                        def put_object(self, bucket, key, data, length, **kwargs):
+                            saved.append((key, data.read()))
+                    with patch.object(mod, "Minio", return_value=Store()):
+                        pending = asyncio.create_task(mod.handle_media(Request()))
+                        try:
+                            await until(entered.is_set)
+                            self.assertEqual(calls, [], "no Telegram work before storage is ready")
+                            if state == "disconnected": await candidate.disconnect()
+                            else:
+                                history = await asyncio.wait_for(mod.history("channel", 100, 80), 0.2)
+                                self.assertEqual(history["error"], state)
+                            calls.clear()
+                        finally:
+                            release.set()
+                            response = await pending
+                        self.assertEqual(response.status, 429 if state == "flood_wait" else 503)
+                        self.assertEqual(json.loads(response.text)["error"], "flood_wait" if state == "flood_wait" else "unavailable")
+                        if state == "flood_wait": self.assertGreaterEqual(int(response.headers["Retry-After"]), 30)
+                        self.assertEqual(calls, [], "admission must be rechecked before entity/message/download calls")
+                        self.assertEqual(saved, [])
+                        self.assertIsNotNone(mod.minio_client, "successful storage setup stays cached")
+                        self.assertFalse(mod.media_gate.locked())
+                        mod.paused_until, mod.connection_state, candidate.connected = 0, "ready", True
+                        self.assertEqual((await mod.handle_media(Request())).status, 200)
+                        self.assertEqual(probes, 1)
+                        self.assertEqual(saved, [("telegram/channel/101", b"abc")])
+            self.assertEqual(len(asyncio.all_tasks()), 1)
+        asyncio.run(run())
+
     def test_storage_recovery_timeout_or_cancel_retains_native_setup_owner(self):
         import threading
         from unittest.mock import patch
