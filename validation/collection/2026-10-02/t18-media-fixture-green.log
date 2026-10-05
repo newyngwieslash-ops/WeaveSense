@@ -1,0 +1,32 @@
+▶ media queue: actual ingest, SQL leases/retries and fixed storage boundary
+  ✔ Telegram waits without storage/token, then actual worker handoff and extraction recover (66.3066ms)
+  ✔ Telegram production reserves its bounded path without consuming deferred/extract-slot windows (535.6567ms)
+  ✔ Telegram node keeps text live while attachment configuration is unavailable (29.7152ms)
+  ✔ Telegram stable keys, worker/read cooling, integrity and audio/video extraction (136.3655ms)
+  ✔ received worker cooldown survives body reset/cap/timeout, exhaustion and replay (143.7838ms)
+  ✔ received GET cooldown survives body reset/cap/timeout, exhaustion and replay (140.1696ms)
+  ✔ received PUT cooldown survives body reset/cap/timeout, exhaustion and replay (129.0162ms)
+  ✔ single atomic winner, expiry replaces token and consumes an attempt (16.8003ms)
+  ✔ 503 recovers after persisted one-minute backoff; three retries mean four attempts (47.6822ms)
+  ✔ permanent URL, missing object and size failures dead-letter; historical errors need explicit replay (67.4238ms)
+  ✔ upload succeeds but item DB write rolls back, then overwrites the same key (25.8045ms)
+  ✔ actual extractItem defers uploaded/uncommitted MIME then extracts each target once after recovery (51.7482ms)
+  ✔ actual extractPending limit1 skips dead/cooling-only newest work and revisits recovered media (96.5894ms)
+  ✔ fallback window identity, duplicate convergence and lease admission match actual runner (99.7528ms)
+  ✔ expired completion and stale owner cannot change media or display URLs (36.2757ms)
+  ✔ complete DB outage after upload leaves a recoverable lease and same persisted object key (11.5448ms)
+  ✔ overlapping workers preserve both display replacements and MIME classifies cover for OCR (35.455ms)
+  ✔ storage HTTP 503 schedules retry and a redirect never becomes another target (28.5139ms)
+  ✔ 48-hour Retry-After survives manual replay, including exhausted dead rows (30.0141ms)
+  ✔ storage Retry-After also survives explicit replay (9.63ms)
+  ✔ actual production entry cannot steal manual ingest; media retries retain 30-minute admission (23.5704ms)
+  ✔ unique enqueue preserves failed rows; signed storage reads enforce the media cap (49.5121ms)
+✔ media queue: actual ingest, SQL leases/retries and fixed storage boundary (4748.3027ms)
+ℹ tests 23
+ℹ suites 0
+ℹ pass 23
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5145.9924

@@ -1,6 +1,25 @@
 # T18 恢复与发布候选验收（2026-10-05）
 
-**已验证源码：`7cf37b75b21010fa87b293d2135a3644e940f9d7`。** 后续证据/文档提交不改变本页测试对象。未部署生产、未启用定时备份、未读取生产 env/session、未登录 Telegram。整分支最终回归和独立审查是另一个验收门。
+**当前复验源码：`17b91d79e3397dae88d7dd816d0cb667570ce99d`。** 下方保留的 7cf37b7 记录是历史基线，不冒充修正后的证明。后续证据/文档提交不改变被测源码身份。未部署生产、未启用定时备份、未读取生产 env/session、未登录 Telegram。整分支最终回归和独立审查是另一个验收门。
+
+## 17b91d7 修正后复验
+
+Linux 恢复输出改为复用现有 `snapshotSqlite`：受限、不可变 scratch 不需要额外写入锁，原生 backup API 创建新文件后设置权限，仍验证恢复内容。最终根镜像实际运行 **148/148** Node 检查，包括 `umask 022` 下 gateway/session 两个实际 SQLite 输出均 **0600**、内容一致、拒绝覆盖；完整 CLI 编排则在 Windows 对两份密文分别实际恢复 PG/MinIO/SQLite，并验证 NTFS ACL 与有序摘要。这两个平台范围分别记录，不声称根服务镜像内包含 Python/Docker 备份操作工具。
+
+媒体路由测试的独立夹具问题也已修正：空库会播种 26 个 enabled 演示输入，导致原测试可能派发无关采集。保留安全的确定性 RED（只调用播种，26≠0），改用 seeded marker 与 disabled radar/keyword 后，实际 01:30/02:00 路由断言前后 enabled=0、collection ran/items_new=0、Telegram 延后再单次落盘；focused **23/23**。没有修改业务调度代码、放宽阈值或跳过断言。原全套失败和随后单文件通过的历史记录仍由父代理保留。
+
+- 主副本：`D:/Weave-things-1005/collection-backup-17b91d7-24ef4fb39a/t18-muunyxcz-316d1a/generation.loom-backup`。
+- 补充副本：`E:/AI-JIANSHI-20260825/WeaveSense/.worktrees/collection-backup-17b91d7-24ef4fb39a/t18-muunyxcz-316d1a/generation.loom-backup`。
+- 两份 SHA-256：`5cd25ae8a35ff58e1454ea7a904af55052086497b962eb33fd7b0053c892788a`；密钥分离，实际 NTFS current SID + SYSTEM ACL；所有有序数据/媒体摘要及 pending extract/detail/outbox 各 1 项保持一致。最慢恢复 **17.387 秒**，最大快照年龄 **56.913 秒**。6 个备份夹具容器已清理，密文保留；仍是同机、小型夹具证明。
+- `t18-backup-final-17b91d7.json` 为成功完整复验；`t18-backup-17b91d7.json` 与 `t18-backup-failed-retention-17b91d7.log` 保留第一次失败：两次恢复已通过，但 retention-plan 在共享 D 父目录遇到旧密钥归档并拒绝认证。没有删除旧代或改变 fail-closed 行为；复演选择唯一 D/E 父目录隔离该次 generation，retention 仅提出计划、未激活删除。
+- app/scheduler/gateway：`loom-collection:17b91d79e3397dae88d7dd816d0cb667570ce99d`，实际 ID `sha256:44c19ee6dd3fa4659d53ddac0ac1c624217ea8301ac759e4121d0a63d071d3c8`。
+- Telethon：`loom-telethon:17b91d79e3397dae88d7dd816d0cb667570ce99d`，实际 ID `sha256:2ca43a6c165d1d7d20a668193ae2e01578469e15eefe6a0ceb86dd0a2e4db855`。代码/requirements 未变，revision 元数据更新；依赖安装实际重新执行并核对固定闭包，不能称该层命中缓存。Python **25/25**、pip check 通过。
+- 两镜像 OCI revision 均为 17b91d7 完整 SHA；Node **22.23.3** / Python **3.12.15**。实际四角色入口、鉴权 tick HTTP200/error0、enabled=0、网关/Telethon 无账号健康状态、26 个迁移通过；7 个角色夹具与网络均清理。
+- 最终镜像下载 ZIP **414 项 / 64 个注册测试**，SHA-256 `53681eb04a667903d887912ea7a4a89273a6e44902a20f4094a9684727ef1df4`。最终镜像桌面/移动截图均已查看，无横向溢出或 console/page error，既有英文背景装饰与 OG 占位提示保持原样。
+
+复验文件：`t18-release-final-17b91d7.json`、`t18-{root,telethon}-build-17b91d7.log`、`t18-linux-{node,python}-tests-17b91d7.log`、`t18-{desktop,mobile}-17b91d7.png`、`t18-manifest-17b91d7.json`。清单记录 21 个源文件的快照原始 hash、规范 LF hash 和由其计算的 Git blob OID；直接 Git blob 绑定由父代理复核。下方 DEP-01/DEP-02 仍未修复，未宣称安全门通过，生产晋级须另行处理。
+
+## 历史基线：7cf37b7
 
 ## 加密夹具备份与实际恢复
 

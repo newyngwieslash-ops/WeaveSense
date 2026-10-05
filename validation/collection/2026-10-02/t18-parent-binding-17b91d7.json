@@ -1,0 +1,16 @@
+{
+  "sourceSha": "17b91d79e3397dae88d7dd816d0cb667570ce99d",
+  "verifiedAt": "2026-10-05T03:12:52.375Z",
+  "rawGitSourceFiles": 21,
+  "t18EvidenceCanonicalOrBinary": 14,
+  "finalEvidenceRawFiles": 57,
+  "actualCipherCopies": 2,
+  "allOrderedRestoresMatch": true,
+  "actualImageIdsAndRevision": true,
+  "all13OwnedContainersAndNetworkAbsent": true,
+  "keyContentsRead": false,
+  "scope": "independent parent read-only verification, fixtures only",
+  "stagedCanonicalEvidenceFiles": 71,
+  "stagedPublicZipMatchesFinalManifest": true,
+  "stagedVerifiedAt": "2026-10-05T03:24:41.826Z"
+}
