@@ -1,27 +1,27 @@
 
 > preview
-> node scripts/with-app-env.mjs vite preview --host 127.0.0.1 --port 52361 --strictPort
+> node scripts/with-app-env.mjs vite preview --host 127.0.0.1 --port 14720 --strictPort
 
 
  [37m╭[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m [Build Info] [39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m╮[39m
  [37m│[39m                                     [37m│[39m
  [37m│[39m  - Build Directory: [36m.vercel/output[39m  [37m│[39m
- [37m│[39m  - Date: 2026/9/16 14:41:03         [37m│[39m
+ [37m│[39m  - Date: 2026/10/6 12:54:15         [37m│[39m
  [37m│[39m  - Nitro Version: 3.0.260610-beta   [37m│[39m
  [37m│[39m  - Nitro Preset: vercel             [37m│[39m
  [37m│[39m                                     [37m│[39m
  [37m╰[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m─[39m[37m╯[39m
 
-  [32m➜[39m  [1mLocal[22m:   [36mhttp://127.0.0.1:[1m52361[22m/[39m
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://127.0.0.1:[1m14720[22m/[39m
 Error: aborted
-    at abortIncoming (node:_http_server:845:17)
+    at abortIncoming (node:_http_server:855:17)
     ... 2 lines matching cause stack trace ...
-    at TCP.<anonymous> (node:net:346:12) {
+    at TCP.<anonymous> (node:net:350:12) {
   cause: Error: aborted
-      at abortIncoming (node:_http_server:845:17)
-      at socketOnClose (node:_http_server:839:3)
-      at Socket.emit (node:events:520:35)
-      at TCP.<anonymous> (node:net:346:12) {
+      at abortIncoming (node:_http_server:855:17)
+      at socketOnClose (node:_http_server:848:3)
+      at Socket.emit (node:events:521:24)
+      at TCP.<anonymous> (node:net:350:12) {
     code: 'ECONNRESET'
   },
   status: 500,
@@ -31,17 +31,21 @@ Error: aborted
   body: undefined,
   unhandled: true
 }
-Error: aborted
-    at abortIncoming (node:_http_server:845:17)
-    ... 2 lines matching cause stack trace ...
-    at TCP.<anonymous> (node:net:346:12) {
-  cause: Error: aborted
-      at abortIncoming (node:_http_server:845:17)
-      at socketOnClose (node:_http_server:839:3)
-      at Socket.emit (node:events:520:35)
-      at TCP.<anonymous> (node:net:346:12) {
-    code: 'ECONNRESET'
-  },
+AbortError: This operation was aborted
+    at new DOMException (node:internal/per_context/domexception:76:18)
+    ... 8 lines matching cause stack trace ...
+    at TCP.<anonymous> (node:net:350:12) {
+  cause: DOMException [AbortError]: This operation was aborted
+      at new DOMException (node:internal/per_context/domexception:76:18)
+      at AbortController.abort (node:internal/abort_controller:565:18)
+      at abort (file:///E:/AI-JIANSHI-20260825/WeaveSense/node_modules/srvx/dist/adapters/node.mjs:316:51)
+      at ServerResponse.<anonymous> (file:///E:/AI-JIANSHI-20260825/WeaveSense/node_modules/srvx/dist/adapters/node.mjs:320:35)
+      at Object.onceWrapper (node:events:630:28)
+      at ServerResponse.emit (node:events:509:28)
+      at emitCloseNT (node:_http_server:1089:10)
+      at Socket.onServerResponseClose (node:_http_server:289:5)
+      at Socket.emit (node:events:521:24)
+      at TCP.<anonymous> (node:net:350:12),
   status: 500,
   statusText: undefined,
   headers: undefined,

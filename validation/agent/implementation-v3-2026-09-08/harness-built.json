@@ -1,29 +1,34 @@
 {
-  "identity": "loom-agent-harness-55166aaa",
+  "identity": "loom-agent-harness-9a3cac8b",
   "mode": "built",
   "pids": [
     {
       "label": "app",
-      "pid": 29140
+      "pid": 24768
     },
     {
       "label": "go-1",
-      "pid": 44224
+      "pid": 40732
     },
     {
       "label": "go-2",
-      "pid": 58672
+      "pid": 36880
     },
     {
       "label": "go-3",
-      "pid": 58824
+      "pid": 34392
     },
     {
       "label": "rollback-app",
-      "pid": 62416
+      "pid": 39336
     }
   ],
   "requests": [
+    {
+      "kind": "app",
+      "action": "claim",
+      "status": 404
+    },
     {
       "kind": "app",
       "action": "claim",
@@ -183,11 +188,6 @@
       "kind": "app",
       "action": "model_call",
       "status": 200
-    },
-    {
-      "kind": "app",
-      "action": "claim",
-      "status": 404
     },
     {
       "kind": "app",
@@ -575,6 +575,11 @@
       "status": 404
     },
     {
+      "kind": "app",
+      "action": "claim",
+      "status": 404
+    },
+    {
       "kind": "mcp",
       "method": "initialize"
     },
@@ -618,12 +623,12 @@
     "owned app rollback to legacy cancels unstarted job; claim gate closed; Agent down leaves browsing/history available; no new model request"
   ],
   "screenshots": [
-    "F:\\AI-TG-PINGTAI-0826\\GIG5cYRBa5yN3Tsi-grok-workspace\\.worktrees\\local-model-settings\\screenshots\\agent-v3-built-desktop.png",
-    "F:\\AI-TG-PINGTAI-0826\\GIG5cYRBa5yN3Tsi-grok-workspace\\.worktrees\\local-model-settings\\screenshots\\agent-v3-built-mobile.png"
+    "E:\\AI-JIANSHI-20260825\\WeaveSense\\screenshots\\agent-v3-built-desktop.png",
+    "E:\\AI-JIANSHI-20260825\\WeaveSense\\screenshots\\agent-v3-built-mobile.png"
   ],
   "container": {
-    "name": "loom-agent-harness-55166aaa",
-    "port": 52360
+    "name": "loom-agent-harness-9a3cac8b",
+    "port": 14719
   },
   "counts": {
     "modelCalls": 18,
@@ -634,7 +639,7 @@
   "ok": true,
   "runs": [
     {
-      "id": "9089fb89-1f1e-45af-8cfb-1ffb83825da5",
+      "id": "7ff112cf-cc7d-419c-8f2c-a409b0c5413a",
       "mode": "research",
       "provider": "eino",
       "status": "succeeded",
@@ -645,7 +650,7 @@
       "output_tokens": "20"
     },
     {
-      "id": "31ea76b6-3249-4548-bbca-78b1130828e9",
+      "id": "88e9c208-2d50-4f29-a8b3-c575131b20c0",
       "mode": "research",
       "provider": "eino",
       "status": "succeeded",
@@ -656,7 +661,7 @@
       "output_tokens": "80"
     },
     {
-      "id": "3af2d7ec-644e-481c-8094-d1808452a85a",
+      "id": "c10afa26-15b1-4abd-a726-02ef784f673f",
       "mode": "research",
       "provider": "eino",
       "status": "succeeded",
@@ -667,7 +672,7 @@
       "output_tokens": "20"
     },
     {
-      "id": "23f8fc3b-9a89-4b11-8098-40ebb4224d59",
+      "id": "ffa303f5-5fe9-401b-8176-aaa8f510b65c",
       "mode": "research",
       "provider": "eino",
       "status": "succeeded",
@@ -678,7 +683,7 @@
       "output_tokens": "20"
     },
     {
-      "id": "547599ca-c0cf-4d58-a3a9-3b287db193a6",
+      "id": "5e933fd7-e72b-4cf8-9eb2-593ecdbd8c0f",
       "mode": "research",
       "provider": "eino",
       "status": "failed",
@@ -689,7 +694,7 @@
       "output_tokens": "40"
     },
     {
-      "id": "835f99da-ef9a-4834-a491-caee974eb38c",
+      "id": "4df83a0a-0593-4712-84c5-d56b3d23aa6c",
       "mode": "research",
       "provider": "eino",
       "status": "succeeded",
@@ -700,7 +705,7 @@
       "output_tokens": "20"
     },
     {
-      "id": "e85487fc-931a-4f9e-b45e-d53b1aec3dc1",
+      "id": "2317caea-267a-489f-bbf3-c7175389f1ac",
       "mode": "research",
       "provider": "eino",
       "status": "failed",
@@ -711,7 +716,7 @@
       "output_tokens": "100"
     },
     {
-      "id": "e4a961fc-271d-47a9-9a2e-b4cb183bb318",
+      "id": "f9845052-af7c-4884-aeff-ec5da5138450",
       "mode": "briefing",
       "provider": "eino",
       "status": "succeeded",
@@ -722,7 +727,7 @@
       "output_tokens": "20"
     },
     {
-      "id": "f77ac37c-f15f-443d-aa48-70fb946bcbb2",
+      "id": "af2fabcd-05d0-4f23-b10a-7a52e5bcf519",
       "mode": "analyze_item",
       "provider": "eino",
       "status": "succeeded",
@@ -733,7 +738,7 @@
       "output_tokens": "20"
     },
     {
-      "id": "41aa7d06-ff5e-4d25-a7eb-1381f52ad16a",
+      "id": "390f52d6-31c2-484a-87be-0d05a8642a81",
       "mode": "research",
       "provider": "eino",
       "status": "failed",
@@ -744,7 +749,7 @@
       "output_tokens": null
     },
     {
-      "id": "9bbf4095-be1f-4468-9f7d-3fe38fd5d735",
+      "id": "0799ccb5-6710-4350-9c31-f7a21708f654",
       "mode": "research",
       "provider": "eino",
       "status": "succeeded",
