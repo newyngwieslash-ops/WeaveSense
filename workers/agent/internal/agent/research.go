@@ -52,7 +52,7 @@ func runResearch(ctx context.Context, cfg Config, req ExecuteRequest, coverage C
 		}
 	}
 
-	inner, err := newChatModel(cfg, remainingDeadline(ctx), req.Policy.MaxOutputTokensPerCall)
+	inner, err := newChatModel(cfg, remainingModelDeadline(ctx, cfg), req.Policy.MaxOutputTokensPerCall)
 	if err != nil {
 		return fail(req.RunID, "agent_unconfigured", false, false), nil
 	}

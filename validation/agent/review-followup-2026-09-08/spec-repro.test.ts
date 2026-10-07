@@ -13,7 +13,7 @@ async function setup(t: any) {
   const pg = new PGlite();
   await pg.waitReady;
   t.after(() => pg.close());
-  for (const name of ["0002_schema.sql","0004_production.sql","0007_extract_target_state.sql","0011_ai_runs.sql","0012_ai_jobs.sql","0013_agent_checkpoints.sql","0014_agent_integrity.sql","0015_agent_budget_reservations.sql","0016_agent_terminal_states.sql","0017_agent_call_receipts.sql","0018_agent_checkpoint_facts.sql","0019_agent_material_revision.sql","0020_agent_daily_admission.sql"]) {
+  for (const name of ["0002_schema.sql","0004_production.sql","0007_extract_target_state.sql","0011_ai_runs.sql","0012_ai_jobs.sql","0013_agent_checkpoints.sql","0014_agent_integrity.sql","0015_agent_budget_reservations.sql","0016_agent_terminal_states.sql","0017_agent_call_receipts.sql","0018_agent_checkpoint_facts.sql","0019_agent_material_revision.sql","0020_agent_daily_admission.sql","0022_research_review.sql","0023_research_runtime.sql","0024_research_call_roles.sql","0025_research_tool_calls.sql"]) {
     await pg.exec(readFileSync(new URL(`../../../migrations/${name}`, import.meta.url), "utf8"));
   }
   await pg.query("insert into sources (id, platform, name) values ('s','rss','Source')");
@@ -34,6 +34,16 @@ function response(runId: unknown) {
   return { schema_version: 1, run_id: runId, ok: true,
     result: { content: "An answer.", citations: [], insufficient_evidence: false, coverage: "full", warnings: [] },
     runtime: { model: "fake", prompt_version: "v1", skill_versions: {}, input_tokens: null, output_tokens: null, model_calls: 1, tool_calls: 0, events: [] }, evidence: [] };
+}
+
+// These tests enqueue the current governed workflow; no model endpoint is called.
+function fakeResearchConfig(t: { after: (fn: () => void) => void }) {
+  const values = { AGENT_MODEL_NAME: "fake", AGENT_PRICE_INPUT_RMB_PER_MILLION: "1", AGENT_PRICE_OUTPUT_RMB_PER_MILLION: "1",
+    AGENT_SKILL_SNAPSHOT_DIGEST: "a".repeat(64), AGENT_RESEARCH_RUNTIME: "eino", AGENT_RESEARCH_REVIEW: "off",
+    AGENT_RESEARCH_DAILY_LIMIT: "20", AGENT_RESEARCH_DAILY_BUDGET_RMB: "20", AGENT_RESEARCH_PRICE_VERSION: "test" };
+  const previous = Object.fromEntries(Object.keys(values).map(key => [key, process.env[key]]));
+  Object.assign(process.env, values);
+  t.after(() => { for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
 }
 
 test("S01 complete without response cannot produce succeeded job", async (t) => {
@@ -58,6 +68,7 @@ test("S03 successful complete replay must be idempotently accepted", async (t) =
   assert.equal((await handleAgentJobs(request)).status, 200);
 });
 test("S04 queued same request ID with changed question must return conflict", async (t) => {
+  fakeResearchConfig(t);
   const { sql } = await setup(t);
   const requestId = randomUUID();
   const a = await askKnowledgeWith({ sql, question: "Battery", requestId, engine: "eino", async: true });
@@ -66,6 +77,7 @@ test("S04 queued same request ID with changed question must return conflict", as
   assert.equal(b.error_code, "request_conflict", JSON.stringify(b));
 });
 test("S05 same async request after claim must remain in progress rather than conflict", async (t) => {
+  fakeResearchConfig(t);
   const { sql } = await setup(t);
   const requestId = randomUUID();
   const a = await askKnowledgeWith({ sql, question: "Battery", requestId, engine: "eino", async: true });

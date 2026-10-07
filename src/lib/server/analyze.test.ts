@@ -14,7 +14,7 @@ import { hashRunToken } from "./agent-data.ts";
 async function setup() {
   const pg = new PGlite();
   await pg.waitReady;
-  for (const migration of ["0002_schema.sql","0004_production.sql","0011_ai_runs.sql","0012_ai_jobs.sql","0013_agent_checkpoints.sql","0014_agent_integrity.sql","0015_agent_budget_reservations.sql","0016_agent_terminal_states.sql","0017_agent_call_receipts.sql","0018_agent_checkpoint_facts.sql","0019_agent_material_revision.sql","0020_agent_daily_admission.sql"]) {
+  for (const migration of ["0002_schema.sql","0004_production.sql","0011_ai_runs.sql","0012_ai_jobs.sql","0013_agent_checkpoints.sql","0014_agent_integrity.sql","0015_agent_budget_reservations.sql","0016_agent_terminal_states.sql","0017_agent_call_receipts.sql","0018_agent_checkpoint_facts.sql","0019_agent_material_revision.sql","0020_agent_daily_admission.sql","0022_research_review.sql","0023_research_runtime.sql","0024_research_call_roles.sql"]) {
     await pg.exec(readFileSync(new URL(`../../../migrations/${migration}`, import.meta.url), "utf8"));
   }
   await pg.query("insert into sources (id, platform, name) values ('s','rss','信源')");
@@ -374,7 +374,11 @@ test("briefing only uses the requested range", async () => {
   await pg.close();
 });
 
-test("async ask enqueues a job without calling the model", async () => {
+test("async ask enqueues a priced, frozen job without calling the model", async (t) => {
+  const settings = { AGENT_MODEL_NAME: "fake", AGENT_PRICE_INPUT_RMB_PER_MILLION: "2", AGENT_PRICE_OUTPUT_RMB_PER_MILLION: "4", AGENT_SKILL_SNAPSHOT_DIGEST: "a".repeat(64), AGENT_RESEARCH_REVIEW: "shadow" };
+  const before = Object.fromEntries(Object.keys(settings).map(key => [key, process.env[key]]));
+  Object.assign(process.env, settings);
+  t.after(() => { for (const [key, value] of Object.entries(before)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
   const { pg, sql } = await setup();
   await pg.exec(readFileSync(new URL("../../../migrations/0012_ai_jobs.sql", import.meta.url), "utf8"));
   await pg.exec(readFileSync(new URL("../../../migrations/0014_agent_integrity.sql", import.meta.url), "utf8"));
@@ -390,6 +394,8 @@ test("async ask enqueues a job without calling the model", async () => {
   assert.equal(result.pending, true);
   assert.ok(result.job_id);
   assert.equal(calls, 0);
+  const [reservation] = await sql.query<{ status: string }>("select status from ai_budget_reservations where job_id=$1", [result.job_id]);
+  assert.equal(reservation.status, "reserved");
   await pg.close();
 });
 

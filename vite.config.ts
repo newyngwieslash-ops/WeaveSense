@@ -173,6 +173,9 @@ export default defineConfig(({ command, isPreview }) => ({
       ? [
           nitro({
             preset: "vercel",
+            // ponytail: installed Nitro/Rolldown splits SSR into an undefined ssr_exports export.
+            // One server bundle costs eager loading; remove after split-output syntax + browser checks pass.
+            inlineDynamicImports: true,
             // Auto-registers server/middleware/* (the PWA install page +
             // manifest + head-tag middleware). Nitro v3 defaults serverDir to
             // false, so removing this silently unwires /?install=1 on deploys.

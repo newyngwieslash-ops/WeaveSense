@@ -10,6 +10,8 @@ import {
   validateCitations,
   materialFingerprint,
   selectResearchSeeds,
+  evidenceMap,
+  runtimeSources,
 } from "./agent-context.ts";
 
 test('V7 selected query and briefing conclusion windows include tail proof and disclose partial coverage',()=>{
@@ -147,4 +149,30 @@ test("materialFingerprint changes when body or title changes", () => {
   const c = materialFingerprint(item({ id: "x", body: "one", title: "t2" }));
   assert.notEqual(a, b);
   assert.notEqual(a, c);
+});
+
+test("trusted seed metadata retains full fingerprint, version and authorized range outside the v1 envelope", () => {
+  const row = item({ id: "versioned", body: "😀\r\n证据正文", material_version: 7 });
+  const range = { from: "2026-09-07T00:00:00.000Z", to: "2026-09-08T00:00:00.000Z" };
+  const selected = selectBriefingSources([row], range);
+  assert.ok(selected.ok);
+  if (!selected.ok) return;
+  const [source] = selected.sources;
+  assert.equal(source.material_fingerprint, materialFingerprint(row));
+  assert.equal(source.material_fingerprint!.length, 64);
+  assert.equal(source.material_version, 7);
+  assert.deepEqual(source.authorized_range, range);
+  const receipt = evidenceMap(selected.sources).get(source.evidence_id)!;
+  assert.equal(receipt.material_fingerprint, source.material_fingerprint);
+  assert.equal(receipt.material_version, 7);
+  assert.deepEqual(receipt.authorized_range, range);
+  assert.equal(receipt.end! - receipt.start!, Array.from(receipt.text).length);
+  assert.equal(receipt.coverage, "full");
+  const [runtime] = runtimeSources(selected.sources);
+  assert.equal("material_fingerprint" in runtime, false);
+  assert.equal("material_version" in runtime, false);
+  assert.equal("authorized_range" in runtime, false);
+  assert.equal(runtime.text, source.text);
+  const [legacy] = selectResearchSeeds([item({ id: "legacy", body: "旧素材" })]).sources;
+  assert.equal(legacy.material_version, undefined);
 });

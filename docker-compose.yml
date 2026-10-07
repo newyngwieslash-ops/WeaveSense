@@ -146,8 +146,8 @@ services:
     #
     # It is also not on any live path: app runs AI_ENGINE=legacy, and both
     # AGENT_WORKER_ENABLED and AGENT_ASYNC_RESEARCH_ENABLED are false, so nothing
-    # calls it. Enabling it is a separate decision (it means switching the engine
-    # to eino), which is why this is a profile rather than a delete.
+    # calls it. Async research has its own runtime switch; the trusted Reviewer
+    # also lives here, independently of the legacy synchronous engine.
     #
     # Start it explicitly when that decision is made:
     #   docker compose --profile agent up -d agent
@@ -165,6 +165,8 @@ services:
       AGENT_SKILLS_DIR: /app/skills
       AGENT_MCP_CONFIG: ${AGENT_MCP_CONFIG:-}
       AGENT_MAX_CONCURRENT_RUNS: ${AGENT_MAX_CONCURRENT_RUNS:-2}
+      AGENT_EXECUTE_TIMEOUT_MS: ${AGENT_EXECUTE_TIMEOUT_MS:-120000}
+      AGENT_MODEL_TIMEOUT_MS: ${AGENT_MODEL_TIMEOUT_MS:-30000}
       AGENT_WORKER_ENABLED: ${AGENT_WORKER_ENABLED:-false}
     read_only: true
     healthcheck:
@@ -173,6 +175,83 @@ services:
       timeout: 5s
       retries: 8
       start_period: 10s
+    restart: unless-stopped
+
+  # Optional pilot. Keep disabled until the recorded offline/live adoption gates pass.
+  agent-bridge:
+    profiles: ["opencode"]
+    build:
+      context: ./workers/agent
+      dockerfile: Dockerfile.bridge
+    environment:
+      OPENCODE_BRIDGE_CONTROL_TOKEN: ${OPENCODE_BRIDGE_CONTROL_TOKEN:-}
+      AGENT_DATA_URL: http://app:8080/api/internal/agent-data
+      AGENT_DATA_TOKEN: ${AGENT_DATA_TOKEN:-}
+      AGENT_MODEL_BASE_URL: ${AGENT_MODEL_BASE_URL:-https://api.x.ai/v1}
+      AGENT_MODEL_NAME: ${AGENT_MODEL_NAME:-grok-4.5}
+      AGENT_MODEL_API_KEY: ${AGENT_MODEL_API_KEY:-${XAI_API_KEY:-}}
+      AGENT_EXECUTE_TIMEOUT_MS: ${AGENT_EXECUTE_TIMEOUT_MS:-120000}
+      AGENT_MODEL_TIMEOUT_MS: ${AGENT_MODEL_TIMEOUT_MS:-30000}
+    networks: ["default", "opencode-runtime"]
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 64
+    mem_limit: 256m
+    restart: unless-stopped
+
+  opencode-runtime:
+    profiles: ["opencode"]
+    build:
+      context: .
+      dockerfile: workers/opencode-runtime/Dockerfile
+      target: production
+    image: weavesense-opencode-runtime:1.3.13
+    environment:
+      OPENCODE_RUNTIME_TOKEN: ${OPENCODE_RUNTIME_TOKEN:-}
+      OPENCODE_BRIDGE_URL: http://agent-bridge:8792
+      OPENCODE_MODEL_NAME: ${AGENT_MODEL_NAME:-grok-4.5}
+    networks: ["opencode-runtime"]
+    init: true
+    user: "1000:1000"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 64
+    mem_limit: 768m
+    tmpfs:
+      - /state:rw,noexec,nosuid,size=256m,uid=1000,gid=1000
+      - /tmp:rw,noexec,nosuid,size=64m,uid=1000,gid=1000
+    restart: unless-stopped
+
+  # Control worker is trusted and holds no supplier API key. It uses the existing
+  # Go Reviewer over HTTP and is separate from the untrusted OpenCode process.
+  opencode-worker:
+    profiles: ["opencode"]
+    build:
+      context: ./workers/agent
+      dockerfile: Dockerfile.worker
+    environment:
+      OPENCODE_JOBS_URL: http://app:8080/api/internal/opencode-jobs
+      OPENCODE_WORKER_TOKEN: ${OPENCODE_WORKER_TOKEN:-}
+      OPENCODE_RUNTIME_URL: http://opencode-runtime:4097
+      OPENCODE_RUNTIME_TOKEN: ${OPENCODE_RUNTIME_TOKEN:-}
+      OPENCODE_BRIDGE_URL: http://agent-bridge:8792
+      OPENCODE_BRIDGE_CONTROL_TOKEN: ${OPENCODE_BRIDGE_CONTROL_TOKEN:-}
+      OPENCODE_REVIEW_URL: http://agent:8791/v1/review
+      AGENT_SERVICE_TOKEN: ${AGENT_SERVICE_TOKEN:-}
+      OPENCODE_MODEL_NAME: ${AGENT_MODEL_NAME:-grok-4.5}
+    networks: ["default", "opencode-runtime"]
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 64
+    mem_limit: 256m
+    depends_on:
+      agent-bridge:
+        condition: service_started
+      opencode-runtime:
+        condition: service_started
     restart: unless-stopped
 
   app:
@@ -229,6 +308,17 @@ services:
       AGENT_DATA_TOKEN: ${AGENT_DATA_TOKEN:-}
       AGENT_WORKER_ENABLED: ${AGENT_WORKER_ENABLED:-false}
       AGENT_ASYNC_RESEARCH_ENABLED: ${AGENT_ASYNC_RESEARCH_ENABLED:-false}
+      AGENT_EXECUTE_TIMEOUT_MS: ${AGENT_EXECUTE_TIMEOUT_MS:-120000}
+      AGENT_HTTP_TIMEOUT_MS: ${AGENT_HTTP_TIMEOUT_MS:-130000}
+      AGENT_RESEARCH_QUEUE_TTL_MS: ${AGENT_RESEARCH_QUEUE_TTL_MS:-600000}
+      AGENT_RESEARCH_RUNTIME: ${AGENT_RESEARCH_RUNTIME:-eino}
+      AGENT_RESEARCH_REVIEW: ${AGENT_RESEARCH_REVIEW:-off}
+      AGENT_OPENCODE_WORKER_ENABLED: ${AGENT_OPENCODE_WORKER_ENABLED:-false}
+      OPENCODE_WORKER_TOKEN: ${OPENCODE_WORKER_TOKEN:-}
+      AGENT_SKILL_SNAPSHOT_DIGEST: ${AGENT_SKILL_SNAPSHOT_DIGEST:-}
+      AGENT_RESEARCH_DAILY_LIMIT: ${AGENT_RESEARCH_DAILY_LIMIT:-20}
+      AGENT_RESEARCH_DAILY_BUDGET_RMB: ${AGENT_RESEARCH_DAILY_BUDGET_RMB:-20}
+      AGENT_RESEARCH_PRICE_VERSION: ${AGENT_RESEARCH_PRICE_VERSION:-research-price-v1}
       AGENT_MCP_ALLOWED_TOOLS: ${AGENT_MCP_ALLOWED_TOOLS:-}
       AGENT_MODEL_NAME: ${AGENT_MODEL_NAME:-grok-4.5}
       AGENT_PRICE_INPUT_RMB_PER_MILLION: ${AGENT_PRICE_INPUT_RMB_PER_MILLION:-}
@@ -283,3 +373,11 @@ volumes:
   miniodata:
   telethon-session:
   wechat-gateway-data:
+
+# Docker 28+ isolated bridge gateway mode is part of the tested runtime boundary.
+# Re-run validation/agent/opencode/isolation.test.mjs on each deployment host.
+networks:
+  opencode-runtime:
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated

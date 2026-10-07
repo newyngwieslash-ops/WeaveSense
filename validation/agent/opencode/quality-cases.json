@@ -1,0 +1,2024 @@
+{
+  "schema_version": 1,
+  "provenance": "Hand-authored synthetic cases and reviewer fixtures. Not model outputs; no live quality claims.",
+  "cases": [
+    {
+      "id": "direction-revenue-down",
+      "defect": "reverse_support",
+      "question": "根据资料判断该指标的变化方向。",
+      "expected_blocked": true,
+      "rationale": "引文写下降，候选反向写增长。",
+      "candidate": {
+        "content": "本期收入增长12%。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "本期收入较上期下降12%。"
+          }
+        ],
+        "insufficient_evidence": false,
+        "coverage": "full",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-direction-revenue-down-1",
+          "origin": "internal",
+          "title": "人工案例 direction-revenue-down 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "本期收入较上期下降12%。",
+          "coverage": "full"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "fail"
+          },
+          {
+            "id": "scope",
+            "status": "pass"
+          },
+          {
+            "id": "conflicts",
+            "status": "pass"
+          },
+          {
+            "id": "source_independence",
+            "status": "pass"
+          },
+          {
+            "id": "uncertainty",
+            "status": "pass"
+          }
+        ],
+        "findings": [
+          {
+            "code": "reverse_support",
+            "severity": "blocking",
+            "claim": "本期收入增长12%。",
+            "evidence_ids": [
+              "e1"
+            ],
+            "reason": "引文写下降，候选反向写增长。",
+            "suggestion": "依据已提供材料重新表述，保留范围、冲突和不确定性。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "direction-defects-up",
+      "defect": "reverse_support",
+      "question": "根据资料判断该指标的变化方向。",
+      "expected_blocked": true,
+      "rationale": "缺陷率上升不能推出质量改善。",
+      "candidate": {
+        "content": "本期缺陷率下降，质量已有改善。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "本期缺陷率从2%升至4%。"
+          }
+        ],
+        "insufficient_evidence": false,
+        "coverage": "full",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-direction-defects-up-1",
+          "origin": "internal",
+          "title": "人工案例 direction-defects-up 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "本期缺陷率从2%升至4%。",
+          "coverage": "full"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "fail"
+          },
+          {
+            "id": "scope",
+            "status": "pass"
+          },
+          {
+            "id": "conflicts",
+            "status": "pass"
+          },
+          {
+            "id": "source_independence",
+            "status": "pass"
+          },
+          {
+            "id": "uncertainty",
+            "status": "pass"
+          }
+        ],
+        "findings": [
+          {
+            "code": "reverse_support",
+            "severity": "blocking",
+            "claim": "本期缺陷率下降，质量已有改善。",
+            "evidence_ids": [
+              "e1"
+            ],
+            "reason": "缺陷率上升不能推出质量改善。",
+            "suggestion": "依据已提供材料重新表述，保留范围、冲突和不确定性。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "direction-output-flat",
+      "defect": "reverse_support",
+      "question": "根据资料判断该指标的变化方向。",
+      "expected_blocked": true,
+      "rationale": "同值不支持翻倍。",
+      "candidate": {
+        "content": "本期产量翻倍。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "两期产量均为100台。"
+          }
+        ],
+        "insufficient_evidence": false,
+        "coverage": "full",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-direction-output-flat-1",
+          "origin": "internal",
+          "title": "人工案例 direction-output-flat 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "两期产量均为100台。",
+          "coverage": "full"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "fail"
+          },
+          {
+            "id": "scope",
+            "status": "pass"
+          },
+          {
+            "id": "conflicts",
+            "status": "pass"
+          },
+          {
+            "id": "source_independence",
+            "status": "pass"
+          },
+          {
+            "id": "uncertainty",
+            "status": "pass"
+          }
+        ],
+        "findings": [
+          {
+            "code": "reverse_support",
+            "severity": "blocking",
+            "claim": "本期产量翻倍。",
+            "evidence_ids": [
+              "e1"
+            ],
+            "reason": "同值不支持翻倍。",
+            "suggestion": "依据已提供材料重新表述，保留范围、冲突和不确定性。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "direction-revenue-correct",
+      "defect": "reverse_support",
+      "question": "根据资料判断该指标的变化方向。",
+      "expected_blocked": false,
+      "rationale": "方向与幅度均符合来源。",
+      "candidate": {
+        "content": "本期收入下降12%。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "本期收入较上期下降12%。"
+          }
+        ],
+        "insufficient_evidence": false,
+        "coverage": "full",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-direction-revenue-correct-1",
+          "origin": "internal",
+          "title": "人工案例 direction-revenue-correct 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "本期收入较上期下降12%。",
+          "coverage": "full"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "pass"
+          },
+          {
+            "id": "scope",
+            "status": "pass"
+          },
+          {
+            "id": "conflicts",
+            "status": "pass"
+          },
+          {
+            "id": "source_independence",
+            "status": "pass"
+          },
+          {
+            "id": "uncertainty",
+            "status": "pass"
+          }
+        ],
+        "findings": []
+      }
+    },
+    {
+      "id": "direction-output-correct",
+      "defect": "reverse_support",
+      "question": "根据资料判断该指标的变化方向。",
+      "expected_blocked": false,
+      "rationale": "未将持平包装为增长。",
+      "candidate": {
+        "content": "两期产量持平，均为100台。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "两期产量均为100台。"
+          }
+        ],
+        "insufficient_evidence": false,
+        "coverage": "full",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-direction-output-correct-1",
+          "origin": "internal",
+          "title": "人工案例 direction-output-correct 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "两期产量均为100台。",
+          "coverage": "full"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "pass"
+          },
+          {
+            "id": "scope",
+            "status": "pass"
+          },
+          {
+            "id": "conflicts",
+            "status": "pass"
+          },
+          {
+            "id": "source_independence",
+            "status": "pass"
+          },
+          {
+            "id": "uncertainty",
+            "status": "pass"
+          }
+        ],
+        "findings": []
+      }
+    },
+    {
+      "id": "independence-reprints",
+      "defect": "source_independence",
+      "question": "现有报道能否作为相互独立的佐证？",
+      "expected_blocked": true,
+      "rationale": "转载与原文同一来源链。",
+      "candidate": {
+        "content": "两个独立信源均确认项目尚在试验。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "甲网注明：转载乙社报道，项目尚在试验。"
+          },
+          {
+            "evidence_id": "e2",
+            "quote": "乙社原文：项目尚在试验。"
+          }
+        ],
+        "insufficient_evidence": false,
+        "coverage": "full",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-independence-reprints-1",
+          "origin": "internal",
+          "title": "人工案例 independence-reprints 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "甲网注明：转载乙社报道，项目尚在试验。",
+          "coverage": "full"
+        },
+        {
+          "evidence_id": "e2",
+          "item_id": "item-independence-reprints-2",
+          "origin": "internal",
+          "title": "人工案例 independence-reprints 材料 2",
+          "source_name": "来源2",
+          "url": "",
+          "text": "乙社原文：项目尚在试验。",
+          "coverage": "full"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "pass"
+          },
+          {
+            "id": "scope",
+            "status": "pass"
+          },
+          {
+            "id": "conflicts",
+            "status": "pass"
+          },
+          {
+            "id": "source_independence",
+            "status": "fail"
+          },
+          {
+            "id": "uncertainty",
+            "status": "pass"
+          }
+        ],
+        "findings": [
+          {
+            "code": "source_independence",
+            "severity": "blocking",
+            "claim": "两个独立信源均确认项目尚在试验。",
+            "evidence_ids": [
+              "e1",
+              "e2"
+            ],
+            "reason": "转载与原文同一来源链。",
+            "suggestion": "依据已提供材料重新表述，保留范围、冲突和不确定性。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "independence-press-release",
+      "defect": "source_independence",
+      "question": "现有报道能否作为相互独立的佐证？",
+      "expected_blocked": true,
+      "rationale": "均据新闻稿而非独立调查。",
+      "candidate": {
+        "content": "两家媒体独立调查确认样机已发布。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "甲刊：据公司新闻稿，样机已发布。"
+          },
+          {
+            "evidence_id": "e2",
+            "quote": "乙刊：据公司新闻稿，样机已发布。"
+          }
+        ],
+        "insufficient_evidence": false,
+        "coverage": "full",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-independence-press-release-1",
+          "origin": "internal",
+          "title": "人工案例 independence-press-release 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "甲刊：据公司新闻稿，样机已发布。",
+          "coverage": "full"
+        },
+        {
+          "evidence_id": "e2",
+          "item_id": "item-independence-press-release-2",
+          "origin": "internal",
+          "title": "人工案例 independence-press-release 材料 2",
+          "source_name": "来源2",
+          "url": "",
+          "text": "乙刊：据公司新闻稿，样机已发布。",
+          "coverage": "full"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "pass"
+          },
+          {
+            "id": "scope",
+            "status": "pass"
+          },
+          {
+            "id": "conflicts",
+            "status": "pass"
+          },
+          {
+            "id": "source_independence",
+            "status": "fail"
+          },
+          {
+            "id": "uncertainty",
+            "status": "pass"
+          }
+        ],
+        "findings": [
+          {
+            "code": "source_independence",
+            "severity": "blocking",
+            "claim": "两家媒体独立调查确认样机已发布。",
+            "evidence_ids": [
+              "e1",
+              "e2"
+            ],
+            "reason": "均据新闻稿而非独立调查。",
+            "suggestion": "依据已提供材料重新表述，保留范围、冲突和不确定性。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "independence-mirrors",
+      "defect": "source_independence",
+      "question": "现有报道能否作为相互独立的佐证？",
+      "expected_blocked": true,
+      "rationale": "镜像文本不能当作另一个研究团队。",
+      "candidate": {
+        "content": "多个独立研究团队确认试验需继续。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "镜像站：本文全文转载研究所通报。"
+          },
+          {
+            "evidence_id": "e2",
+            "quote": "研究所通报：试验需继续。"
+          }
+        ],
+        "insufficient_evidence": false,
+        "coverage": "full",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-independence-mirrors-1",
+          "origin": "internal",
+          "title": "人工案例 independence-mirrors 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "镜像站：本文全文转载研究所通报。",
+          "coverage": "full"
+        },
+        {
+          "evidence_id": "e2",
+          "item_id": "item-independence-mirrors-2",
+          "origin": "internal",
+          "title": "人工案例 independence-mirrors 材料 2",
+          "source_name": "来源2",
+          "url": "",
+          "text": "研究所通报：试验需继续。",
+          "coverage": "full"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "pass"
+          },
+          {
+            "id": "scope",
+            "status": "pass"
+          },
+          {
+            "id": "conflicts",
+            "status": "pass"
+          },
+          {
+            "id": "source_independence",
+            "status": "fail"
+          },
+          {
+            "id": "uncertainty",
+            "status": "pass"
+          }
+        ],
+        "findings": [
+          {
+            "code": "source_independence",
+            "severity": "blocking",
+            "claim": "多个独立研究团队确认试验需继续。",
+            "evidence_ids": [
+              "e1",
+              "e2"
+            ],
+            "reason": "镜像文本不能当作另一个研究团队。",
+            "suggestion": "依据已提供材料重新表述，保留范围、冲突和不确定性。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "independence-qualified",
+      "defect": "source_independence",
+      "question": "现有报道能否作为相互独立的佐证？",
+      "expected_blocked": false,
+      "rationale": "正确披露转载关系。",
+      "candidate": {
+        "content": "两篇报道属于同一来源链，不能视为独立交叉验证。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "甲网注明：转载乙社报道，项目尚在试验。"
+          },
+          {
+            "evidence_id": "e2",
+            "quote": "乙社原文：项目尚在试验。"
+          }
+        ],
+        "insufficient_evidence": false,
+        "coverage": "full",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-independence-qualified-1",
+          "origin": "internal",
+          "title": "人工案例 independence-qualified 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "甲网注明：转载乙社报道，项目尚在试验。",
+          "coverage": "full"
+        },
+        {
+          "evidence_id": "e2",
+          "item_id": "item-independence-qualified-2",
+          "origin": "internal",
+          "title": "人工案例 independence-qualified 材料 2",
+          "source_name": "来源2",
+          "url": "",
+          "text": "乙社原文：项目尚在试验。",
+          "coverage": "full"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "pass"
+          },
+          {
+            "id": "scope",
+            "status": "pass"
+          },
+          {
+            "id": "conflicts",
+            "status": "pass"
+          },
+          {
+            "id": "source_independence",
+            "status": "pass"
+          },
+          {
+            "id": "uncertainty",
+            "status": "pass"
+          }
+        ],
+        "findings": []
+      }
+    },
+    {
+      "id": "independence-undetermined",
+      "defect": "source_independence",
+      "question": "现有报道能否作为相互独立的佐证？",
+      "expected_blocked": false,
+      "rationale": "不将未披露来源等同独立。",
+      "candidate": {
+        "content": "两篇报道结论相同，但材料没有说明取证来源，独立性无法确认。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "甲网称：样机已发布。"
+          },
+          {
+            "evidence_id": "e2",
+            "quote": "乙刊称：样机已发布。"
+          }
+        ],
+        "insufficient_evidence": false,
+        "coverage": "full",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-independence-undetermined-1",
+          "origin": "internal",
+          "title": "人工案例 independence-undetermined 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "甲网称：样机已发布。",
+          "coverage": "full"
+        },
+        {
+          "evidence_id": "e2",
+          "item_id": "item-independence-undetermined-2",
+          "origin": "internal",
+          "title": "人工案例 independence-undetermined 材料 2",
+          "source_name": "来源2",
+          "url": "",
+          "text": "乙刊称：样机已发布。",
+          "coverage": "full"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "pass"
+          },
+          {
+            "id": "scope",
+            "status": "pass"
+          },
+          {
+            "id": "conflicts",
+            "status": "pass"
+          },
+          {
+            "id": "source_independence",
+            "status": "pass"
+          },
+          {
+            "id": "uncertainty",
+            "status": "pass"
+          }
+        ],
+        "findings": []
+      }
+    },
+    {
+      "id": "scope-prior-year",
+      "defect": "date_scope",
+      "question": "请核对候选中的时间和统计口径是否符合资料。",
+      "expected_blocked": true,
+      "rationale": "把历史年度数据当本年度数据。",
+      "candidate": {
+        "content": "2026年一季度销量为100台。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "2025年一季度销量为100台，2026年数据尚未发布。"
+          }
+        ],
+        "insufficient_evidence": false,
+        "coverage": "full",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-scope-prior-year-1",
+          "origin": "internal",
+          "title": "人工案例 scope-prior-year 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "2025年一季度销量为100台，2026年数据尚未发布。",
+          "coverage": "full"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "pass"
+          },
+          {
+            "id": "scope",
+            "status": "fail"
+          },
+          {
+            "id": "conflicts",
+            "status": "pass"
+          },
+          {
+            "id": "source_independence",
+            "status": "pass"
+          },
+          {
+            "id": "uncertainty",
+            "status": "pass"
+          }
+        ],
+        "findings": [
+          {
+            "code": "date_scope",
+            "severity": "blocking",
+            "claim": "2026年一季度销量为100台。",
+            "evidence_ids": [
+              "e1"
+            ],
+            "reason": "把历史年度数据当本年度数据。",
+            "suggestion": "依据已提供材料重新表述，保留范围、冲突和不确定性。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "scope-quarter-as-year",
+      "defect": "date_scope",
+      "question": "请核对候选中的时间和统计口径是否符合资料。",
+      "expected_blocked": true,
+      "rationale": "季度统计不能改成全年。",
+      "candidate": {
+        "content": "2026年全年新增客户20家。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "2026年第一季度新增客户20家。"
+          }
+        ],
+        "insufficient_evidence": false,
+        "coverage": "full",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-scope-quarter-as-year-1",
+          "origin": "internal",
+          "title": "人工案例 scope-quarter-as-year 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "2026年第一季度新增客户20家。",
+          "coverage": "full"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "pass"
+          },
+          {
+            "id": "scope",
+            "status": "fail"
+          },
+          {
+            "id": "conflicts",
+            "status": "pass"
+          },
+          {
+            "id": "source_independence",
+            "status": "pass"
+          },
+          {
+            "id": "uncertainty",
+            "status": "pass"
+          }
+        ],
+        "findings": [
+          {
+            "code": "date_scope",
+            "severity": "blocking",
+            "claim": "2026年全年新增客户20家。",
+            "evidence_ids": [
+              "e1"
+            ],
+            "reason": "季度统计不能改成全年。",
+            "suggestion": "依据已提供材料重新表述，保留范围、冲突和不确定性。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "scope-different-base",
+      "defect": "date_scope",
+      "question": "请核对候选中的时间和统计口径是否符合资料。",
+      "expected_blocked": true,
+      "rationale": "同比和环比口径混用。",
+      "candidate": {
+        "content": "本期营收环比增长10%。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "本期营收同比增长10%，环比下降2%。"
+          }
+        ],
+        "insufficient_evidence": false,
+        "coverage": "full",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-scope-different-base-1",
+          "origin": "internal",
+          "title": "人工案例 scope-different-base 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "本期营收同比增长10%，环比下降2%。",
+          "coverage": "full"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "pass"
+          },
+          {
+            "id": "scope",
+            "status": "fail"
+          },
+          {
+            "id": "conflicts",
+            "status": "pass"
+          },
+          {
+            "id": "source_independence",
+            "status": "pass"
+          },
+          {
+            "id": "uncertainty",
+            "status": "pass"
+          }
+        ],
+        "findings": [
+          {
+            "code": "date_scope",
+            "severity": "blocking",
+            "claim": "本期营收环比增长10%。",
+            "evidence_ids": [
+              "e1"
+            ],
+            "reason": "同比和环比口径混用。",
+            "suggestion": "依据已提供材料重新表述，保留范围、冲突和不确定性。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "scope-prior-qualified",
+      "defect": "date_scope",
+      "question": "请核对候选中的时间和统计口径是否符合资料。",
+      "expected_blocked": false,
+      "rationale": "注明年份及当前数据缺失。",
+      "candidate": {
+        "content": "已知2025年一季度销量为100台；2026年数据尚不可得。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "2025年一季度销量为100台，2026年数据尚未发布。"
+          }
+        ],
+        "insufficient_evidence": false,
+        "coverage": "full",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-scope-prior-qualified-1",
+          "origin": "internal",
+          "title": "人工案例 scope-prior-qualified 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "2025年一季度销量为100台，2026年数据尚未发布。",
+          "coverage": "full"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "pass"
+          },
+          {
+            "id": "scope",
+            "status": "pass"
+          },
+          {
+            "id": "conflicts",
+            "status": "pass"
+          },
+          {
+            "id": "source_independence",
+            "status": "pass"
+          },
+          {
+            "id": "uncertainty",
+            "status": "pass"
+          }
+        ],
+        "findings": []
+      }
+    },
+    {
+      "id": "scope-comparison-correct",
+      "defect": "date_scope",
+      "question": "请核对候选中的时间和统计口径是否符合资料。",
+      "expected_blocked": false,
+      "rationale": "区分两个比较基准。",
+      "candidate": {
+        "content": "本期营收同比增长10%，但环比下降2%。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "本期营收同比增长10%，环比下降2%。"
+          }
+        ],
+        "insufficient_evidence": false,
+        "coverage": "full",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-scope-comparison-correct-1",
+          "origin": "internal",
+          "title": "人工案例 scope-comparison-correct 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "本期营收同比增长10%，环比下降2%。",
+          "coverage": "full"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "pass"
+          },
+          {
+            "id": "scope",
+            "status": "pass"
+          },
+          {
+            "id": "conflicts",
+            "status": "pass"
+          },
+          {
+            "id": "source_independence",
+            "status": "pass"
+          },
+          {
+            "id": "uncertainty",
+            "status": "pass"
+          }
+        ],
+        "findings": []
+      }
+    },
+    {
+      "id": "conflict-launch",
+      "defect": "conflict_omission",
+      "question": "综合全部材料，说明是否有相互冲突的结论。",
+      "expected_blocked": true,
+      "rationale": "隐去审批状态与上线主张的冲突。",
+      "candidate": {
+        "content": "所有材料一致确认产品已正式上线。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "公司公告：产品已正式上线。"
+          },
+          {
+            "evidence_id": "e2",
+            "quote": "监管答复：该产品仍在审批，尚未获准上线。"
+          }
+        ],
+        "insufficient_evidence": false,
+        "coverage": "full",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-conflict-launch-1",
+          "origin": "internal",
+          "title": "人工案例 conflict-launch 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "公司公告：产品已正式上线。",
+          "coverage": "full"
+        },
+        {
+          "evidence_id": "e2",
+          "item_id": "item-conflict-launch-2",
+          "origin": "internal",
+          "title": "人工案例 conflict-launch 材料 2",
+          "source_name": "来源2",
+          "url": "",
+          "text": "监管答复：该产品仍在审批，尚未获准上线。",
+          "coverage": "full"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "pass"
+          },
+          {
+            "id": "scope",
+            "status": "pass"
+          },
+          {
+            "id": "conflicts",
+            "status": "fail"
+          },
+          {
+            "id": "source_independence",
+            "status": "pass"
+          },
+          {
+            "id": "uncertainty",
+            "status": "pass"
+          }
+        ],
+        "findings": [
+          {
+            "code": "conflict_omission",
+            "severity": "blocking",
+            "claim": "所有材料一致确认产品已正式上线。",
+            "evidence_ids": [
+              "e1",
+              "e2"
+            ],
+            "reason": "隐去审批状态与上线主张的冲突。",
+            "suggestion": "依据已提供材料重新表述，保留范围、冲突和不确定性。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "conflict-output",
+      "defect": "conflict_omission",
+      "question": "综合全部材料，说明是否有相互冲突的结论。",
+      "expected_blocked": true,
+      "rationale": "相同口径存在不同数值。",
+      "candidate": {
+        "content": "本月产量确定为100台，各方口径一致。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "厂方称本月产量为100台。"
+          },
+          {
+            "evidence_id": "e2",
+            "quote": "盘点记录称本月产量为80台，口径同为成品。"
+          }
+        ],
+        "insufficient_evidence": false,
+        "coverage": "full",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-conflict-output-1",
+          "origin": "internal",
+          "title": "人工案例 conflict-output 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "厂方称本月产量为100台。",
+          "coverage": "full"
+        },
+        {
+          "evidence_id": "e2",
+          "item_id": "item-conflict-output-2",
+          "origin": "internal",
+          "title": "人工案例 conflict-output 材料 2",
+          "source_name": "来源2",
+          "url": "",
+          "text": "盘点记录称本月产量为80台，口径同为成品。",
+          "coverage": "full"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "pass"
+          },
+          {
+            "id": "scope",
+            "status": "pass"
+          },
+          {
+            "id": "conflicts",
+            "status": "fail"
+          },
+          {
+            "id": "source_independence",
+            "status": "pass"
+          },
+          {
+            "id": "uncertainty",
+            "status": "pass"
+          }
+        ],
+        "findings": [
+          {
+            "code": "conflict_omission",
+            "severity": "blocking",
+            "claim": "本月产量确定为100台，各方口径一致。",
+            "evidence_ids": [
+              "e1",
+              "e2"
+            ],
+            "reason": "相同口径存在不同数值。",
+            "suggestion": "依据已提供材料重新表述，保留范围、冲突和不确定性。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "conflict-safety",
+      "defect": "conflict_omission",
+      "question": "综合全部材料，说明是否有相互冲突的结论。",
+      "expected_blocked": true,
+      "rationale": "台账反例被忽略。",
+      "candidate": {
+        "content": "现有材料均表明该批设备没有故障。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "厂商声明未发现故障。"
+          },
+          {
+            "evidence_id": "e2",
+            "quote": "维修台账记录本批设备出现3次故障。"
+          }
+        ],
+        "insufficient_evidence": false,
+        "coverage": "full",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-conflict-safety-1",
+          "origin": "internal",
+          "title": "人工案例 conflict-safety 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "厂商声明未发现故障。",
+          "coverage": "full"
+        },
+        {
+          "evidence_id": "e2",
+          "item_id": "item-conflict-safety-2",
+          "origin": "internal",
+          "title": "人工案例 conflict-safety 材料 2",
+          "source_name": "来源2",
+          "url": "",
+          "text": "维修台账记录本批设备出现3次故障。",
+          "coverage": "full"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "pass"
+          },
+          {
+            "id": "scope",
+            "status": "pass"
+          },
+          {
+            "id": "conflicts",
+            "status": "fail"
+          },
+          {
+            "id": "source_independence",
+            "status": "pass"
+          },
+          {
+            "id": "uncertainty",
+            "status": "pass"
+          }
+        ],
+        "findings": [
+          {
+            "code": "conflict_omission",
+            "severity": "blocking",
+            "claim": "现有材料均表明该批设备没有故障。",
+            "evidence_ids": [
+              "e1",
+              "e2"
+            ],
+            "reason": "台账反例被忽略。",
+            "suggestion": "依据已提供材料重新表述，保留范围、冲突和不确定性。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "conflict-explicit",
+      "defect": "conflict_omission",
+      "question": "综合全部材料，说明是否有相互冲突的结论。",
+      "expected_blocked": false,
+      "rationale": "显式呈现冲突而不替一方作确定裁决。",
+      "candidate": {
+        "content": "公司称已上线，监管材料称仍待审批；两者冲突，需要核实时间和范围。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "公司公告：产品已正式上线。"
+          },
+          {
+            "evidence_id": "e2",
+            "quote": "监管答复：该产品仍在审批，尚未获准上线。"
+          }
+        ],
+        "insufficient_evidence": true,
+        "coverage": "full",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-conflict-explicit-1",
+          "origin": "internal",
+          "title": "人工案例 conflict-explicit 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "公司公告：产品已正式上线。",
+          "coverage": "full"
+        },
+        {
+          "evidence_id": "e2",
+          "item_id": "item-conflict-explicit-2",
+          "origin": "internal",
+          "title": "人工案例 conflict-explicit 材料 2",
+          "source_name": "来源2",
+          "url": "",
+          "text": "监管答复：该产品仍在审批，尚未获准上线。",
+          "coverage": "full"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "pass"
+          },
+          {
+            "id": "scope",
+            "status": "pass"
+          },
+          {
+            "id": "conflicts",
+            "status": "pass"
+          },
+          {
+            "id": "source_independence",
+            "status": "pass"
+          },
+          {
+            "id": "uncertainty",
+            "status": "pass"
+          }
+        ],
+        "findings": []
+      }
+    },
+    {
+      "id": "conflict-unresolved",
+      "defect": "conflict_omission",
+      "question": "综合全部材料，说明是否有相互冲突的结论。",
+      "expected_blocked": false,
+      "rationale": "区分各自主张并保留不确定性。",
+      "candidate": {
+        "content": "同为成品口径，厂方100台与盘点80台不一致，现有材料不足以确定最终值。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "厂方称本月产量为100台。"
+          },
+          {
+            "evidence_id": "e2",
+            "quote": "盘点记录称本月产量为80台，口径同为成品。"
+          }
+        ],
+        "insufficient_evidence": true,
+        "coverage": "full",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-conflict-unresolved-1",
+          "origin": "internal",
+          "title": "人工案例 conflict-unresolved 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "厂方称本月产量为100台。",
+          "coverage": "full"
+        },
+        {
+          "evidence_id": "e2",
+          "item_id": "item-conflict-unresolved-2",
+          "origin": "internal",
+          "title": "人工案例 conflict-unresolved 材料 2",
+          "source_name": "来源2",
+          "url": "",
+          "text": "盘点记录称本月产量为80台，口径同为成品。",
+          "coverage": "full"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "pass"
+          },
+          {
+            "id": "scope",
+            "status": "pass"
+          },
+          {
+            "id": "conflicts",
+            "status": "pass"
+          },
+          {
+            "id": "source_independence",
+            "status": "pass"
+          },
+          {
+            "id": "uncertainty",
+            "status": "pass"
+          }
+        ],
+        "findings": []
+      }
+    },
+    {
+      "id": "truncated-full-report",
+      "defect": "truncated_coverage",
+      "question": "仅根据当前读取到的片段说明资料覆盖边界。",
+      "expected_blocked": true,
+      "rationale": "只读前言不能声称核验全量数据。",
+      "candidate": {
+        "content": "我已完整核验三条生产线的全部数据，没有发现问题。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "节选前言：本报告讨论三条生产线。（正文未读取）"
+          }
+        ],
+        "insufficient_evidence": false,
+        "coverage": "full",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-truncated-full-report-1",
+          "origin": "internal",
+          "title": "人工案例 truncated-full-report 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "节选前言：本报告讨论三条生产线。（正文未读取）",
+          "coverage": "partial"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "pass"
+          },
+          {
+            "id": "scope",
+            "status": "fail"
+          },
+          {
+            "id": "conflicts",
+            "status": "pass"
+          },
+          {
+            "id": "source_independence",
+            "status": "pass"
+          },
+          {
+            "id": "uncertainty",
+            "status": "pass"
+          }
+        ],
+        "findings": [
+          {
+            "code": "truncated_coverage",
+            "severity": "blocking",
+            "claim": "我已完整核验三条生产线的全部数据，没有发现问题。",
+            "evidence_ids": [
+              "e1"
+            ],
+            "reason": "只读前言不能声称核验全量数据。",
+            "suggestion": "依据已提供材料重新表述，保留范围、冲突和不确定性。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "truncated-safety",
+      "defect": "truncated_coverage",
+      "question": "仅根据当前读取到的片段说明资料覆盖边界。",
+      "expected_blocked": true,
+      "rationale": "未读附录却断言其内容。",
+      "candidate": {
+        "content": "附录证明不存在安全事件。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "章节节选：安全事件记录见附录。（附录未提供）"
+          }
+        ],
+        "insufficient_evidence": false,
+        "coverage": "full",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-truncated-safety-1",
+          "origin": "internal",
+          "title": "人工案例 truncated-safety 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "章节节选：安全事件记录见附录。（附录未提供）",
+          "coverage": "partial"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "pass"
+          },
+          {
+            "id": "scope",
+            "status": "fail"
+          },
+          {
+            "id": "conflicts",
+            "status": "pass"
+          },
+          {
+            "id": "source_independence",
+            "status": "pass"
+          },
+          {
+            "id": "uncertainty",
+            "status": "pass"
+          }
+        ],
+        "findings": [
+          {
+            "code": "truncated_coverage",
+            "severity": "blocking",
+            "claim": "附录证明不存在安全事件。",
+            "evidence_ids": [
+              "e1"
+            ],
+            "reason": "未读附录却断言其内容。",
+            "suggestion": "依据已提供材料重新表述，保留范围、冲突和不确定性。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "truncated-total",
+      "defect": "truncated_coverage",
+      "question": "仅根据当前读取到的片段说明资料覆盖边界。",
+      "expected_blocked": true,
+      "rationale": "局部行求和不能冒充全厂总量。",
+      "candidate": {
+        "content": "全厂产量总计30台。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "表格前两行：甲线10台，乙线20台。（后续行截断）"
+          }
+        ],
+        "insufficient_evidence": false,
+        "coverage": "full",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-truncated-total-1",
+          "origin": "internal",
+          "title": "人工案例 truncated-total 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "表格前两行：甲线10台，乙线20台。（后续行截断）",
+          "coverage": "partial"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "pass"
+          },
+          {
+            "id": "scope",
+            "status": "fail"
+          },
+          {
+            "id": "conflicts",
+            "status": "pass"
+          },
+          {
+            "id": "source_independence",
+            "status": "pass"
+          },
+          {
+            "id": "uncertainty",
+            "status": "pass"
+          }
+        ],
+        "findings": [
+          {
+            "code": "truncated_coverage",
+            "severity": "blocking",
+            "claim": "全厂产量总计30台。",
+            "evidence_ids": [
+              "e1"
+            ],
+            "reason": "局部行求和不能冒充全厂总量。",
+            "suggestion": "依据已提供材料重新表述，保留范围、冲突和不确定性。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "truncated-disclosed",
+      "defect": "truncated_coverage",
+      "question": "仅根据当前读取到的片段说明资料覆盖边界。",
+      "expected_blocked": false,
+      "rationale": "主动披露读取限制。",
+      "candidate": {
+        "content": "当前只有前言，知道报告涉及三条生产线，尚不能评价具体数据或完整性。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "节选前言：本报告讨论三条生产线。（正文未读取）"
+          }
+        ],
+        "insufficient_evidence": true,
+        "coverage": "partial",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-truncated-disclosed-1",
+          "origin": "internal",
+          "title": "人工案例 truncated-disclosed 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "节选前言：本报告讨论三条生产线。（正文未读取）",
+          "coverage": "partial"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "pass"
+          },
+          {
+            "id": "scope",
+            "status": "pass"
+          },
+          {
+            "id": "conflicts",
+            "status": "pass"
+          },
+          {
+            "id": "source_independence",
+            "status": "pass"
+          },
+          {
+            "id": "uncertainty",
+            "status": "pass"
+          }
+        ],
+        "findings": []
+      }
+    },
+    {
+      "id": "truncated-subtotal",
+      "defect": "truncated_coverage",
+      "question": "仅根据当前读取到的片段说明资料覆盖边界。",
+      "expected_blocked": false,
+      "rationale": "只对可见行计算小计。",
+      "candidate": {
+        "content": "已读取的甲乙两线合计30台；其他行缺失，无法确定全厂总量。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "表格前两行：甲线10台，乙线20台。（后续行截断）"
+          }
+        ],
+        "insufficient_evidence": true,
+        "coverage": "partial",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-truncated-subtotal-1",
+          "origin": "internal",
+          "title": "人工案例 truncated-subtotal 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "表格前两行：甲线10台，乙线20台。（后续行截断）",
+          "coverage": "partial"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "pass"
+          },
+          {
+            "id": "scope",
+            "status": "pass"
+          },
+          {
+            "id": "conflicts",
+            "status": "pass"
+          },
+          {
+            "id": "source_independence",
+            "status": "pass"
+          },
+          {
+            "id": "uncertainty",
+            "status": "pass"
+          }
+        ],
+        "findings": []
+      }
+    },
+    {
+      "id": "certainty-pilot-generalized",
+      "defect": "unsupported_certainty",
+      "question": "结论的确定程度是否超过现有材料能支持的程度？",
+      "expected_blocked": true,
+      "rationale": "单样机实验不能推出所有量产现场可靠。",
+      "candidate": {
+        "content": "所有量产设备在现场均可靠，不存在故障风险。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "单台样机在实验室测试中工作正常，未开展批量测试。"
+          }
+        ],
+        "insufficient_evidence": false,
+        "coverage": "full",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-certainty-pilot-generalized-1",
+          "origin": "internal",
+          "title": "人工案例 certainty-pilot-generalized 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "单台样机在实验室测试中工作正常，未开展批量测试。",
+          "coverage": "full"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "pass"
+          },
+          {
+            "id": "scope",
+            "status": "pass"
+          },
+          {
+            "id": "conflicts",
+            "status": "pass"
+          },
+          {
+            "id": "source_independence",
+            "status": "pass"
+          },
+          {
+            "id": "uncertainty",
+            "status": "fail"
+          }
+        ],
+        "findings": [
+          {
+            "code": "insufficient_evidence",
+            "severity": "blocking",
+            "claim": "所有量产设备在现场均可靠，不存在故障风险。",
+            "evidence_ids": [],
+            "reason": "单样机实验不能推出所有量产现场可靠。",
+            "suggestion": "依据已提供材料重新表述，保留范围、冲突和不确定性。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "certainty-causal",
+      "defect": "unsupported_certainty",
+      "question": "结论的确定程度是否超过现有材料能支持的程度？",
+      "expected_blocked": true,
+      "rationale": "混杂因素存在，不能确认唯一因果。",
+      "candidate": {
+        "content": "新算法是产量上升的唯一原因。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "试运行期间产量上升，同时人员数量也增加；未做对照试验。"
+          }
+        ],
+        "insufficient_evidence": false,
+        "coverage": "full",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-certainty-causal-1",
+          "origin": "internal",
+          "title": "人工案例 certainty-causal 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "试运行期间产量上升，同时人员数量也增加；未做对照试验。",
+          "coverage": "full"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "pass"
+          },
+          {
+            "id": "scope",
+            "status": "pass"
+          },
+          {
+            "id": "conflicts",
+            "status": "pass"
+          },
+          {
+            "id": "source_independence",
+            "status": "pass"
+          },
+          {
+            "id": "uncertainty",
+            "status": "fail"
+          }
+        ],
+        "findings": [
+          {
+            "code": "insufficient_evidence",
+            "severity": "blocking",
+            "claim": "新算法是产量上升的唯一原因。",
+            "evidence_ids": [],
+            "reason": "混杂因素存在，不能确认唯一因果。",
+            "suggestion": "依据已提供材料重新表述，保留范围、冲突和不确定性。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "certainty-absence",
+      "defect": "unsupported_certainty",
+      "question": "结论的确定程度是否超过现有材料能支持的程度？",
+      "expected_blocked": true,
+      "rationale": "缺少其他报价不能比较整个市场。",
+      "candidate": {
+        "content": "该供应商一定是全市场最低价。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "目前只收到一家供应商的报价，其他报价未收集。"
+          }
+        ],
+        "insufficient_evidence": false,
+        "coverage": "full",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-certainty-absence-1",
+          "origin": "internal",
+          "title": "人工案例 certainty-absence 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "目前只收到一家供应商的报价，其他报价未收集。",
+          "coverage": "full"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "pass"
+          },
+          {
+            "id": "scope",
+            "status": "pass"
+          },
+          {
+            "id": "conflicts",
+            "status": "pass"
+          },
+          {
+            "id": "source_independence",
+            "status": "pass"
+          },
+          {
+            "id": "uncertainty",
+            "status": "fail"
+          }
+        ],
+        "findings": [
+          {
+            "code": "insufficient_evidence",
+            "severity": "blocking",
+            "claim": "该供应商一定是全市场最低价。",
+            "evidence_ids": [],
+            "reason": "缺少其他报价不能比较整个市场。",
+            "suggestion": "依据已提供材料重新表述，保留范围、冲突和不确定性。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "certainty-limits",
+      "defect": "unsupported_certainty",
+      "question": "结论的确定程度是否超过现有材料能支持的程度？",
+      "expected_blocked": false,
+      "rationale": "将证据范围与泛化边界分开。",
+      "candidate": {
+        "content": "单台样机测试正常，但量产和现场可靠性仍需验证。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "单台样机在实验室测试中工作正常，未开展批量测试。"
+          }
+        ],
+        "insufficient_evidence": true,
+        "coverage": "full",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-certainty-limits-1",
+          "origin": "internal",
+          "title": "人工案例 certainty-limits 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "单台样机在实验室测试中工作正常，未开展批量测试。",
+          "coverage": "full"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "pass"
+          },
+          {
+            "id": "scope",
+            "status": "pass"
+          },
+          {
+            "id": "conflicts",
+            "status": "pass"
+          },
+          {
+            "id": "source_independence",
+            "status": "pass"
+          },
+          {
+            "id": "uncertainty",
+            "status": "pass"
+          }
+        ],
+        "findings": []
+      }
+    },
+    {
+      "id": "certainty-causal-qualified",
+      "defect": "unsupported_certainty",
+      "question": "结论的确定程度是否超过现有材料能支持的程度？",
+      "expected_blocked": false,
+      "rationale": "明确相关性不等于因果。",
+      "candidate": {
+        "content": "产量上升与试运行同时发生，但人员也增加，现有材料不能确定算法的因果贡献。",
+        "citations": [
+          {
+            "evidence_id": "e1",
+            "quote": "试运行期间产量上升，同时人员数量也增加；未做对照试验。"
+          }
+        ],
+        "insufficient_evidence": true,
+        "coverage": "full",
+        "warnings": []
+      },
+      "evidence": [
+        {
+          "evidence_id": "e1",
+          "item_id": "item-certainty-causal-qualified-1",
+          "origin": "internal",
+          "title": "人工案例 certainty-causal-qualified 材料 1",
+          "source_name": "来源1",
+          "url": "",
+          "text": "试运行期间产量上升，同时人员数量也增加；未做对照试验。",
+          "coverage": "full"
+        }
+      ],
+      "reviewer": {
+        "checks": [
+          {
+            "id": "support",
+            "status": "pass"
+          },
+          {
+            "id": "scope",
+            "status": "pass"
+          },
+          {
+            "id": "conflicts",
+            "status": "pass"
+          },
+          {
+            "id": "source_independence",
+            "status": "pass"
+          },
+          {
+            "id": "uncertainty",
+            "status": "pass"
+          }
+        ],
+        "findings": []
+      }
+    }
+  ]
+}

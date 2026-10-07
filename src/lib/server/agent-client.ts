@@ -5,7 +5,7 @@ import {
 } from "../agent-contract.ts";
 
 const MAX_RESPONSE_BYTES = 256 * 1024;
-const DEFAULT_TIMEOUT_MS = 45_000;
+const DEFAULT_TIMEOUT_MS = 130_000;
 
 export type AgentClientConfig = {
   engine: "legacy" | "eino";
@@ -18,10 +18,17 @@ export type AgentClientConfig = {
 export function agentClientConfig(): AgentClientConfig {
   const engine = (typeof process === "undefined" ? "legacy" : process.env.AI_ENGINE?.trim() || "legacy");
   if (engine !== "legacy" && engine !== "eino") throw new AgentClientError("agent_unconfigured");
+  const executeMs = Number(process.env.AGENT_EXECUTE_TIMEOUT_MS ?? 120_000);
+  const timeoutMs = Number(process.env.AGENT_HTTP_TIMEOUT_MS ?? executeMs + 10_000);
+  if (!Number.isSafeInteger(executeMs) || executeMs < 1000 || executeMs > 900_000 ||
+      !Number.isSafeInteger(timeoutMs) || timeoutMs < executeMs + 10_000 || timeoutMs > 910_000) {
+    throw new AgentClientError("invalid_agent_timeout");
+  }
   return {
     engine,
     serviceUrl: (process.env.AGENT_SERVICE_URL ?? "").trim().replace(/\/$/, ""),
     serviceToken: (process.env.AGENT_SERVICE_TOKEN ?? "").trim(),
+    timeoutMs,
   };
 }
 

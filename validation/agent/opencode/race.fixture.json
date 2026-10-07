@@ -1,0 +1,26 @@
+{
+  "command": "go test -race -json -count=1 -timeout=5m ./internal/agent ./internal/opencode",
+  "go": "go1.25.7 linux/amd64",
+  "gcc": "Debian 12.2.0-14+deb12u1",
+  "base_image": "public.ecr.aws/docker/library/golang:1.25.7-bookworm@sha256:564e366a28ad1d70f460a2b97d1d299a562f08707eb0ecb24b659e5bd6c108e1",
+  "docker": "28.5.2",
+  "network": "none",
+  "production_environment": "none",
+  "exit_code": 0,
+  "pass_including_subtests": 203,
+  "top_level_tests": 102,
+  "failed": 0,
+  "skipped": 0,
+  "race_reports": 0,
+  "wall_seconds": 56.6051235,
+  "packages": [
+    {
+      "Package": "loom.local/agent/internal/opencode",
+      "Elapsed": 3.208
+    },
+    {
+      "Package": "loom.local/agent/internal/agent",
+      "Elapsed": 15.843
+    }
+  ]
+}

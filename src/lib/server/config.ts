@@ -1,4 +1,5 @@
 import { parseCronTickLimit } from "./cron";
+import { researchRuntime, researchReviewMode } from "./agent-research-policy.ts";
 
 function read(name: string, fallback = ""): string {
   const raw = typeof process !== "undefined" ? process.env[name] : undefined;
@@ -31,16 +32,28 @@ export const prod = {
   agentDataToken: read("AGENT_DATA_TOKEN"),
   agentAsyncResearch: read("AGENT_ASYNC_RESEARCH_ENABLED", "false") === "true",
   agentWorkerEnabled: read("AGENT_WORKER_ENABLED", "false") === "true",
+  opencodeWorkerEnabled: read("AGENT_OPENCODE_WORKER_ENABLED", "false") === "true",
+  opencodeWorkerToken: read("OPENCODE_WORKER_TOKEN"),
+  agentResearchRuntime: parseResearchRuntime(read("AGENT_RESEARCH_RUNTIME", "eino")),
+  agentResearchReview: parseResearchReview(read("AGENT_RESEARCH_REVIEW", "off")),
 };
 
 export function agentAsyncAvailable(): boolean {
-  return prod.aiEngine === "eino" && prod.agentAsyncResearch && prod.agentWorkerEnabled
+  return prod.agentAsyncResearch && (prod.agentResearchRuntime === "opencode" ? prod.opencodeWorkerEnabled && Boolean(prod.opencodeWorkerToken) : prod.agentWorkerEnabled)
     && Boolean(prod.agentServiceUrl && prod.agentServiceToken && prod.agentDataToken);
 }
 
 function parseEngine(value: string): "legacy" | "eino" {
   if (value === "legacy" || value === "eino") return value;
   throw new Error("agent_unconfigured");
+}
+
+export function parseResearchRuntime(value: string): "eino" | "opencode" {
+  return researchRuntime(value);
+}
+
+export function parseResearchReview(value: string): "off" | "shadow" | "enforce" {
+  return researchReviewMode(value);
 }
 
 export function minioConfigured(): boolean {

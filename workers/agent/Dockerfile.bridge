@@ -1,0 +1,13 @@
+FROM public.ecr.aws/docker/library/golang:1.25.7-bookworm AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+ENV CGO_ENABLED=0
+RUN go build -trimpath -o /out/agent-bridge ./cmd/agent-bridge
+
+FROM public.ecr.aws/docker/library/node:22.22.3-bookworm-slim@sha256:e21fc383b50d5347dc7a9f1cae45b8f4e2f0d39f7ade28e4eef7d2934522b752
+COPY --from=build /out/agent-bridge /usr/local/bin/agent-bridge
+USER node
+EXPOSE 8792
+ENTRYPOINT ["/usr/local/bin/agent-bridge"]

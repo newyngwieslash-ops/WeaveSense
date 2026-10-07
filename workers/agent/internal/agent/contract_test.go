@@ -45,6 +45,28 @@ func TestContractValidFixtures(t *testing.T) {
 	}
 }
 
+func TestResponseEmptyEvidenceRemainsAnArray(t *testing.T) {
+	for _, response := range []ExecuteResponse{
+		{OK: true, Evidence: []Evidence{}},
+		{OK: false},
+	} {
+		data, err := json.Marshal(response)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(data, &fields); err != nil {
+			t.Fatal(err)
+		}
+		if response.OK && string(fields["evidence"]) != "[]" {
+			t.Fatalf("successful response must preserve the empty evidence array: %s", data)
+		}
+		if !response.OK && fields["evidence"] != nil {
+			t.Fatalf("error response must not acquire evidence outside its schema: %s", data)
+		}
+	}
+}
+
 func TestContractInvalidFixtures(t *testing.T) {
 	var cases []struct {
 		ID      string          `json:"id"`

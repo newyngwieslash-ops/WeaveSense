@@ -25,6 +25,8 @@ import { Route as InboxItemIdRouteImport } from './routes/inbox.$itemId'
 import { Route as ApiCronTickRouteImport } from './routes/api/cron/tick'
 import { Route as ApiInternalAgentDataRouteImport } from './routes/api/internal/agent-data'
 import { Route as ApiInternalAgentJobsRouteImport } from './routes/api/internal/agent-jobs'
+import { Route as ApiInternalAgentReviewRouteImport } from './routes/api/internal/agent-review'
+import { Route as ApiInternalOpencodeJobsRouteImport } from './routes/api/internal/opencode-jobs'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -106,6 +108,16 @@ const ApiInternalAgentJobsRoute = ApiInternalAgentJobsRouteImport.update({
   path: '/api/internal/agent-jobs',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiInternalAgentReviewRoute = ApiInternalAgentReviewRouteImport.update({
+  id: '/api/internal/agent-review',
+  path: '/api/internal/agent-review',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiInternalOpencodeJobsRoute = ApiInternalOpencodeJobsRouteImport.update({
+  id: '/api/internal/opencode-jobs',
+  path: '/api/internal/opencode-jobs',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -124,6 +136,8 @@ export interface FileRoutesByFullPath {
   '/api/cron/tick': typeof ApiCronTickRoute
   '/api/internal/agent-data': typeof ApiInternalAgentDataRoute
   '/api/internal/agent-jobs': typeof ApiInternalAgentJobsRoute
+  '/api/internal/agent-review': typeof ApiInternalAgentReviewRoute
+  '/api/internal/opencode-jobs': typeof ApiInternalOpencodeJobsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -142,6 +156,8 @@ export interface FileRoutesByTo {
   '/api/cron/tick': typeof ApiCronTickRoute
   '/api/internal/agent-data': typeof ApiInternalAgentDataRoute
   '/api/internal/agent-jobs': typeof ApiInternalAgentJobsRoute
+  '/api/internal/agent-review': typeof ApiInternalAgentReviewRoute
+  '/api/internal/opencode-jobs': typeof ApiInternalOpencodeJobsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -161,6 +177,8 @@ export interface FileRoutesById {
   '/api/cron/tick': typeof ApiCronTickRoute
   '/api/internal/agent-data': typeof ApiInternalAgentDataRoute
   '/api/internal/agent-jobs': typeof ApiInternalAgentJobsRoute
+  '/api/internal/agent-review': typeof ApiInternalAgentReviewRoute
+  '/api/internal/opencode-jobs': typeof ApiInternalOpencodeJobsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -181,6 +199,8 @@ export interface FileRouteTypes {
     | '/api/cron/tick'
     | '/api/internal/agent-data'
     | '/api/internal/agent-jobs'
+    | '/api/internal/agent-review'
+    | '/api/internal/opencode-jobs'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -199,6 +219,8 @@ export interface FileRouteTypes {
     | '/api/cron/tick'
     | '/api/internal/agent-data'
     | '/api/internal/agent-jobs'
+    | '/api/internal/agent-review'
+    | '/api/internal/opencode-jobs'
   id:
     | '__root__'
     | '/'
@@ -217,6 +239,8 @@ export interface FileRouteTypes {
     | '/api/cron/tick'
     | '/api/internal/agent-data'
     | '/api/internal/agent-jobs'
+    | '/api/internal/agent-review'
+    | '/api/internal/opencode-jobs'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -235,6 +259,8 @@ export interface RootRouteChildren {
   ApiCronTickRoute: typeof ApiCronTickRoute
   ApiInternalAgentDataRoute: typeof ApiInternalAgentDataRoute
   ApiInternalAgentJobsRoute: typeof ApiInternalAgentJobsRoute
+  ApiInternalAgentReviewRoute: typeof ApiInternalAgentReviewRoute
+  ApiInternalOpencodeJobsRoute: typeof ApiInternalOpencodeJobsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -351,6 +377,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiInternalAgentJobsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/internal/agent-review': {
+      id: '/api/internal/agent-review'
+      path: '/api/internal/agent-review'
+      fullPath: '/api/internal/agent-review'
+      preLoaderRoute: typeof ApiInternalAgentReviewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/internal/opencode-jobs': {
+      id: '/api/internal/opencode-jobs'
+      path: '/api/internal/opencode-jobs'
+      fullPath: '/api/internal/opencode-jobs'
+      preLoaderRoute: typeof ApiInternalOpencodeJobsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -380,6 +420,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiCronTickRoute: ApiCronTickRoute,
   ApiInternalAgentDataRoute: ApiInternalAgentDataRoute,
   ApiInternalAgentJobsRoute: ApiInternalAgentJobsRoute,
+  ApiInternalAgentReviewRoute: ApiInternalAgentReviewRoute,
+  ApiInternalOpencodeJobsRoute: ApiInternalOpencodeJobsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

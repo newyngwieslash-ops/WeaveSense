@@ -73,12 +73,16 @@ func (m *budgetModel) Generate(ctx context.Context, input []*schema.Message, opt
 		return nil, fmt.Errorf("budget_exceeded")
 	}
 	start := time.Now()
-	callID, receiptErr := beforeModelCall(ctx)
+	digest, receiptErr := modelMessagesDigest(ctx, input)
+	if receiptErr != nil {
+		return nil, receiptErr
+	}
+	callID, receiptErr := beforeModelCall(ctx, digest)
 	if receiptErr != nil {
 		return nil, receiptErr
 	}
 	msg, err := m.inner.Generate(ctx, input, opts...)
-	if receiptErr = afterModelCall(ctx, callID, msg, err); err == nil && receiptErr != nil {
+	if receiptErr = afterModelCall(ctx, callID, msg, err, digest); receiptErr != nil {
 		err = receiptErr
 	}
 	m.budget.addUsage(msg)
@@ -104,7 +108,12 @@ func (m *budgetModel) Stream(ctx context.Context, input []*schema.Message, opts 
 		return nil, fmt.Errorf("budget_exceeded")
 	}
 	start := time.Now()
-	callID, receiptErr := beforeModelCall(ctx)
+	digest, receiptErr := modelMessagesDigest(ctx, input)
+	if receiptErr != nil {
+		cancel()
+		return nil, receiptErr
+	}
+	callID, receiptErr := beforeModelCall(ctx, digest)
 	if receiptErr != nil {
 		cancel()
 		return nil, receiptErr
@@ -112,13 +121,14 @@ func (m *budgetModel) Stream(ctx context.Context, input []*schema.Message, opts 
 	stream, err := m.inner.Stream(ctx, input, opts...)
 	var once sync.Once
 	var last *schema.Message
-	finish := func(ok bool) {
+	var finishErr error
+	finish := func(ok bool) error {
 		once.Do(func() {
 			var callErr error
 			if !ok {
 				callErr = fmt.Errorf("stream_incomplete")
 			}
-			if afterModelCall(ctx, callID, last, callErr) != nil {
+			if finishErr = afterModelCall(ctx, callID, last, callErr, digest); finishErr != nil {
 				ok = false
 			}
 			m.budget.addUsage(last)
@@ -128,9 +138,12 @@ func (m *budgetModel) Stream(ctx context.Context, input []*schema.Message, opts 
 				*m.events = append(*m.events, RuntimeEvent{Type: "model", Name: m.name, DurationMS: int(time.Since(start).Milliseconds()), OK: ok})
 			}
 		})
+		return finishErr
 	}
 	if err != nil {
-		finish(false)
+		if receiptErr := finish(false); receiptErr != nil {
+			err = receiptErr
+		}
 		cancel()
 		return nil, err
 	}
@@ -177,8 +190,9 @@ func (m *budgetModel) Stream(ctx context.Context, input []*schema.Message, opts 
 					last = c.msg
 				}
 				if c.err != nil {
-					finish(c.err == io.EOF && ctx.Err() == nil)
-					if c.err != io.EOF {
+					if receiptErr := finish(c.err == io.EOF && ctx.Err() == nil); receiptErr != nil {
+						writer.Send(nil, receiptErr)
+					} else if c.err != io.EOF {
 						writer.Send(nil, c.err)
 					}
 					return
@@ -202,13 +216,21 @@ func (m *budgetModel) BindTools(tools []*schema.ToolInfo) error {
 }
 
 func remainingDeadline(ctx context.Context) time.Duration {
+	return remainingModelDeadline(ctx, Config{})
+}
+
+func remainingModelDeadline(ctx context.Context, cfg Config) time.Duration {
+	limit := cfg.ModelTimeout
+	if limit <= 0 {
+		limit = 30 * time.Second
+	}
 	deadline, ok := ctx.Deadline()
 	if !ok {
-		return 30 * time.Second
+		return limit
 	}
 	left := time.Until(deadline)
-	if left > 30*time.Second {
-		return 30 * time.Second
+	if left > limit {
+		return limit
 	}
 	if left < 0 {
 		return 0
@@ -219,6 +241,10 @@ func remainingDeadline(ctx context.Context) time.Duration {
 func classifyModelError(err error) (code string, retryable, unknown bool) {
 	if err == nil {
 		return "", false, false
+	}
+	var admissionErr *modelAdmissionError
+	if errors.As(err, &admissionErr) {
+		return admissionErr.Error(), false, admissionErr.unknown
 	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return "model_timeout", false, true
@@ -238,7 +264,7 @@ func generateOnce(ctx context.Context, cfg Config, remaining *int, maxOut int, e
 		return nil, fmt.Errorf("budget_exceeded")
 	}
 	*remaining--
-	timeout := remainingDeadline(ctx)
+	timeout := remainingModelDeadline(ctx, cfg)
 	if timeout <= 0 {
 		return nil, context.DeadlineExceeded
 	}
@@ -250,12 +276,16 @@ func generateOnce(ctx context.Context, cfg Config, remaining *int, maxOut int, e
 		return nil, err
 	}
 	start := time.Now()
-	callID, receiptErr := beforeModelCall(ctx)
+	digest, receiptErr := modelMessagesDigest(ctx, messages)
+	if receiptErr != nil {
+		return nil, receiptErr
+	}
+	callID, receiptErr := beforeModelCall(ctx, digest)
 	if receiptErr != nil {
 		return nil, receiptErr
 	}
 	msg, err := cm.Generate(ctx, messages)
-	if receiptErr = afterModelCall(ctx, callID, msg, err); err == nil && receiptErr != nil {
+	if receiptErr = afterModelCall(ctx, callID, msg, err, digest); receiptErr != nil {
 		err = receiptErr
 	}
 	if b := budgetFrom(ctx); b != nil {

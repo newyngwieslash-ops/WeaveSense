@@ -11,6 +11,7 @@ import { parseExecuteResponse } from "../agent-contract.ts";
 import { AgentClientError, agentClientConfig, executeAgent } from "./agent-client.ts";
 import {
   evidenceMap,
+  runtimeSources,
   materialFingerprint,
   rankRetrievedItems,
   selectAnalyzeSources,
@@ -22,6 +23,7 @@ import {
   type EvidenceSource,
 } from "./agent-context.ts";
 import { enqueueResearchJob } from "./agent-queue.ts";
+import { researchGovernanceFromEnv, researchIntentHash } from "./agent-research-policy.ts";
 import { beginRun, failRun, finishAnalyzeAtomically, finishNoteAtomically, getRunByRequest, hashCanonical, receiptsForRun, type AgentProvider } from "./agent-runs.ts";
 import type { ItemRow } from "../types.ts";
 import { isPlatform } from "../platforms.ts";
@@ -91,8 +93,8 @@ async function chat(system: string, user: string, maxTokens: number, config: Ret
  * answer or a `model_timeout`, with the request already paid for either way.
  *
  * 120 s gives ~4x headroom over the observed success time while still bounding a
- * hung request. It is also the ceiling the agent path uses (`agent-client`), so
- * both engines now agree on what "too slow" means.
+ * hung request. This is the native single-call limit; the Agent has separate
+ * configured model, execution and HTTP deadlines.
  */
 const MODEL_CALL_TIMEOUT_SECONDS = 120;
 const MODEL_CALL_TIMEOUT_MS = MODEL_CALL_TIMEOUT_SECONDS * 1_000;
@@ -128,7 +130,7 @@ function buildRequest(mode: ExecuteRequest["mode"], sources: EvidenceSource[], e
     mode,
     input: {
       question: extra.question ?? "",
-      sources,
+      sources: runtimeSources(sources),
       range: extra.range ?? null,
     },
     policy: {
@@ -361,9 +363,10 @@ export async function askKnowledgeWith(opts: {
   if (opts.requestId) {
     const existing = await getRunByRequest(opts.sql, requestId);
     if (existing) {
+      const snapshot = existing.request_json as Record<string, unknown>;
       const begun = await beginRun(opts.sql, {
-        id: existing.id, requestId, mode: "research", provider: engine,
-        inputHash, materialHash: existing.material_hash, policyVersion: POLICY_VERSION,
+        id: existing.id, requestId, mode: "research", provider: opts.async && snapshot.governed ? existing.provider : engine,
+        inputHash: researchIntentHash(snapshot, q), materialHash: existing.material_hash, policyVersion: POLICY_VERSION,
         requestJson: existing.request_json, claimToken: existing.claim_token, expiresAt: existing.expires_at,
       });
       if (begun.kind === "replay") {
@@ -380,7 +383,7 @@ export async function askKnowledgeWith(opts: {
   if (opts.async && opts.requestId) {
     const [queued] = await opts.sql.query<{ id: string; payload: Record<string, unknown>; status: string }>("select id,payload,status from ai_jobs where request_id=$1",[requestId]);
     if (queued) {
-      if (queued.payload.question !== q || queued.payload.provider !== engine) return { ok:false,error:"请求冲突",error_code:"request_conflict" };
+      if (queued.payload.question !== q || (!queued.payload.governed && queued.payload.provider !== engine)) return { ok:false,error:"请求冲突",error_code:"request_conflict" };
       return { ok:true,pending:true,job_id:queued.id,citations:[] };
     }
   }
@@ -390,12 +393,12 @@ export async function askKnowledgeWith(opts: {
     return { ok: false, error: "材料不足", error_code: "insufficient_evidence", citations: [] };
   }
   if (opts.async) {
-    if (engine !== "eino") {
-      return { ok: false, error: "当前引擎不支持异步研究", error_code: "capability_unavailable", citations: [] };
-    }
+    let governance: ReturnType<typeof researchGovernanceFromEnv>;
+    try { governance = researchGovernanceFromEnv(q); }
+    catch { return { ok: false, error: "深入研究的模型定价或规则快照尚未配置", error_code: "capability_unavailable", citations: [] }; }
     const job = await enqueueResearchJob(opts.sql, {
       question: q, requestId, materialHash: selected.materialHash,
-      snapshot: { provider: engine, sources: selected.sources, range: null, scope: "corpus" },
+      snapshot: { ...governance, sources: selected.sources, range: null, scope: "corpus" },
     });
     if (!job) return { ok: false, error: "无法排队问答", error_code: "persist_failed" };
     if (job.kind === "conflict") return { ok: false, error: "请求冲突", error_code: "request_conflict", citations: [] };

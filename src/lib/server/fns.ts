@@ -7,7 +7,7 @@ import { prod, wechatGatewayConfigured, agentAsyncAvailable } from "./config";
 import { parseTelegramHandles, telethonHealth } from "./telethon";
 import { analyzeInput, askInput, briefingInput } from "../agent-contract.ts";
 import { analyzeItemWith, askKnowledgeWith, generateBriefingWith } from "./analyze";
-import { getAiJob, cancelQueuedResearchJobs } from "./agent-queue";
+import { getResearchStatus, cancelResearchJob } from "./agent-research-status";
 import { extractItem, extractPending } from "./extract";
 import { ingestPending } from "./media";
 import { getNodesStatus, runProductionTick } from "./nodes";
@@ -427,26 +427,39 @@ export const briefingFn = createServerFn({ method: "POST" })
 
 export const askFn = createServerFn({ method: "POST" })
   .validator((input: unknown) => askInput.parse(input ?? {}))
-  .handler(async ({ data }): Promise<AskResult> => data.async && !agentAsyncAvailable()
-    ? { ok: false as const, error: "异步研究当前不可用", error_code: "capability_unavailable" }
-    : askKnowledgeWith({
-    sql: await getSql(),
-    question: data.question,
-    requestId: data.request_id,
-    async: Boolean(data.async),
-  }));
+  .handler(async ({ data }): Promise<AskResult> => {
+    if (data.async && !await trustedResearchAccess()) return { ok: false, error: "深入研究仅对已配置的可信本机访问开放", error_code: "trusted_access_required" };
+    if (data.async && !agentAsyncAvailable()) return { ok: false, error: "深入研究当前不可用", error_code: "capability_unavailable" };
+    return askKnowledgeWith({ sql: await getSql(), question: data.question, requestId: data.request_id, async: Boolean(data.async) });
+  });
+
+// Research drafts and cancellation share the existing trusted local operator boundary.
+// This is deliberately not a substitute for multi-user resource authorization.
+async function trustedResearchAccess(): Promise<boolean> {
+  const [{ getRequest, getRequestIP }, { localModelAccess }] = await Promise.all([
+    import("@tanstack/react-start/server"), import("./model-config"),
+  ]);
+  return localModelAccess(getRequest(), getRequestIP({ xForwardedFor: false }));
+}
+
+function researchJobInput(input: unknown): { id: string } {
+  const id = input && typeof input === "object" && "id" in input ? (input as { id?: unknown }).id : null;
+  if (typeof id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new Error("invalid_job");
+  return { id };
+}
 
 export const getAskJobFn = createServerFn({ method: "POST" })
-  .validator((input: unknown) => {
-    const id = input && typeof input === "object" && "id" in input ? String((input as { id?: unknown }).id ?? "") : "";
-    if (!id) throw new Error("invalid_job");
-    return { id };
-  })
-    .handler(async ({ data }) => {
-      if (!agentAsyncAvailable()) await cancelQueuedResearchJobs(await getSql());
-      const job = await getAiJob(await getSql(), data.id);
-    if (!job) return { ok: false as const, error_code: "not_found" };
-    return { ok: true as const, job_id: job.id, status: job.status };
+  .validator(researchJobInput)
+  .handler(async ({ data }) => {
+    if (!await trustedResearchAccess()) return { ok: false as const, error_code: "trusted_access_required" };
+    return await getResearchStatus(await getSql(), data.id) ?? { ok: false as const, error_code: "not_found" };
+  });
+
+export const cancelAskJobFn = createServerFn({ method: "POST" })
+  .validator(researchJobInput)
+  .handler(async ({ data }) => {
+    if (!await trustedResearchAccess()) return { ok: false as const, error_code: "trusted_access_required" };
+    return cancelResearchJob(await getSql(), data.id, true);
   });
 
 export const listKnowledgeFn = createServerFn({ method: "GET" }).handler(async () => {
@@ -467,7 +480,7 @@ export const listKnowledgeFn = createServerFn({ method: "GET" }).handler(async (
      limit 20`,
   );
   return {
-    capabilities: { engine: prod.aiEngine, async_research: agentAsyncAvailable() },
+    capabilities: { engine: prod.aiEngine, async_research: agentAsyncAvailable() && await trustedResearchAccess() },
     notes: notes.map(mapNote),
     analyses: analyses.map((r) => ({
       ...mapAnalysis(r),

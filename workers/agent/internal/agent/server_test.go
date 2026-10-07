@@ -208,6 +208,9 @@ func TestHTTPHealthDoesNotExecute(t *testing.T) {
 	called := false
 	cfg := testConfig()
 	cfg.SkillsDir = t.TempDir()
+	for _, name := range []string{"industry-analysis", "briefing-writing", "cross-source-check"} {
+		writeSkill(t, cfg.SkillsDir, name, "---\nname: "+name+"\ndescription: d\n---\n\nRequired rule.\n")
+	}
 	srv := NewServer(cfg, func(context.Context, ExecuteRequest) (ExecuteResponse, error) {
 		called = true
 		return ExecuteResponse{}, nil

@@ -1,6 +1,6 @@
 # Agent service operations
 
-Current implementation and release status: [V3 acceptance](../../validation/agent/implementation-v3-2026-09-08/acceptance.md). Historical baseline sections below are explicitly dated; real supplier and production verification remain pending authorization.
+Current governed research operations: [optional OpenCode research runbook](opencode-research.md). Historical V3 evidence remains in [V3 acceptance](../../validation/agent/implementation-v3-2026-09-08/acceptance.md). Historical baseline sections below are explicitly dated; real supplier and production verification remain pending authorization.
 
 Internal Eino analysis worker for Loom. The TypeScript app owns materials, authorization, idempotency and persistence. This Go service only executes models and tools.
 
@@ -66,7 +66,7 @@ Final locked direct modules after `go mod tidy`:
 
 ## Runtime contract (filled as later tasks land)
 
-- `POST /v1/execute` is the only execution API. Auth is `AGENT_SERVICE_TOKEN`, not `CRON_SECRET`.
+- `POST /v1/execute` executes Producer work; `POST /v1/review` runs the isolated Reviewer. Both use `AGENT_SERVICE_TOKEN`, not `CRON_SECRET`. The execute-only API was the historical baseline.
 - `GET /healthz` is liveness. `GET /readyz` checks local config and skill loading, never a paid model.
 - Default engine is `AI_ENGINE=legacy`. Eino is explicit.
 - MCP example config is disabled. Empty `allowed_tools` exposes no tools.
@@ -122,3 +122,21 @@ Automatic admission requires Eino, `AUTO_ANALYZE=true`, a model name and positiv
 Forward migrations 0016–0020 extend the existing ledger and material revision; do not rewrite or down-migrate 0014/0015. Rollback closes new async claims and explicitly cancels queued research jobs, preserves historical results and does not reroute an existing run through another engine. In-flight runs use their saved provider/policy; expiry or unsafe recovery records unknown rather than repeating an uncertain call. Keep the Agent up while permitted in-flight tasks drain; browsing continues if it is unavailable.
 
 Real model tool calling/JSON/usage, real MCP authentication and citations, actual billing, production migrations and deployment/rollback remain unverified and require explicit authorization. Open sync Eino, async worker and automatic analysis separately after their corresponding real checks. No production switches were enabled by this implementation.
+
+## Governed worker recovery and lease handling
+
+Governed Eino claims explicitly select `producer`, `review`, or `finalize`. Only the producer phase executes the research agent. It verifies the claim's Skill snapshot digest against immutable in-memory package bytes, retains those bytes through execution, and uses only `producer_model_calls` until `producer_deadline_at`; the parent run retains its global deadline and reserved review budget. Missing or mismatched snapshots fail before a model call. Legacy claims retain their existing completion protocol.
+
+A successful producer persists a candidate before starting isolated review. Review and finalize recovery consume the persisted candidate and never rerun the producer. Candidate, review-start, review-result/error, and finalize ACK retries retain the exact serialized envelope; they do not repeat model execution. The host determines publication and final status. Model sends require an explicit `send_once` ledger disposition; ambiguous sends and missing completion ACKs are not automatically retried.
+
+The governed worker renews every five seconds throughout producer execution, review, and persistence. A `cancel_requested` renewal stops the execution context while its separate, still-leased reporting context records cancellation: before candidate persistence it reports an unknown completion; after persistence it reports a review error and requests host finalization. The UI must retain cancellation-requested state until the host records a terminal outcome.
+
+A failed renewal, malformed renewal ACK, or lost lease immediately cancels execution and reporting. The protocol does not supply a lease-expiry timestamp, so the worker deliberately does not infer a TTL or retry renewal under uncertain ownership. Persistence retries stop at the global deadline, parent cancellation, or lease loss. A new owner resumes according to the host's persisted phase and authenticated call facts.
+
+## Optional research rollout (2026-10-07)
+
+The optional OpenCode executor is disabled by default and applies only to new trusted-local asynchronous research. AI_ENGINE still selects the synchronous engine; AGENT_RESEARCH_RUNTIME selects new asynchronous job providers. Switching that default does not rewrite existing provider ownership or cancel the other queue. Keep the old provider's worker enabled while it drains or reconciles.
+
+The OpenCode profile adds three locally built services: trusted agent-bridge, restricted opencode-runtime and trusted opencode-worker. It also needs the separate agent profile for /v1/review; opencode alone does not start the Reviewer. The runtime gets only a short-lived opaque grant, while vendor credentials remain in the bridge/Reviewer. Production model quality and deployment-host isolation remain gated by the adoption decision.
+
+See [the current runbook](opencode-research.md) for exact configuration, priced model/Skill snapshot freezing, network revalidation, one-slot operation, cancellation and revoke-before-stop handling. Its read-only checks and documented rollback sequence have not been claimed as an executed production rollback. Preserve forward migrations, accounting facts and historical notes when disabling the optional services.

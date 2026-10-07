@@ -14,6 +14,7 @@ const source = {
   last_external_id: "548",
 };
 
+/** @param {unknown} body */
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -35,6 +36,7 @@ async function loadCollector() {
 test("authorized Telethon failure does not fall back to t.me/s", async () => {
   process.env.TELEGRAM_WORKER_URL = "http://telethon:8787";
   const originalFetch = globalThis.fetch;
+  /** @type {string[]} */
   const urls = [];
   globalThis.fetch = async (input, init) => {
     const url = String(input);
@@ -53,8 +55,9 @@ test("authorized Telethon failure does not fall back to t.me/s", async () => {
     await assert.rejects(
       () => collectSource(source),
       (err) => {
-        assert.match(String(err.message), /timeout/);
-        assert.deepEqual(err.meta.attempts, ["telethon"]);
+        const error = /** @type {Error & { meta: { attempts: string[] } }} */ (err);
+        assert.match(String(error.message), /timeout/);
+        assert.deepEqual(error.meta.attempts, ["telethon"]);
         return true;
       },
     );
@@ -81,8 +84,9 @@ test("authorized FloodWait pause does not fall back to t.me/s", async () => {
     await assert.rejects(
       () => collectSource(source),
       (err) => {
-        assert.match(String(err.message), /FloodWait/);
-        assert.deepEqual(err.meta.attempts, ["telethon"]);
+        const error = /** @type {Error & { meta: { attempts: string[] } }} */ (err);
+        assert.match(String(error.message), /FloodWait/);
+        assert.deepEqual(error.meta.attempts, ["telethon"]);
         return true;
       },
     );

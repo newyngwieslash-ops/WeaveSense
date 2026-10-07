@@ -144,7 +144,7 @@ type ExecuteResponse struct {
 	OK            bool          `json:"ok"`
 	Result        *AgentResult  `json:"result,omitempty"`
 	Runtime       *Runtime      `json:"runtime,omitempty"`
-	Evidence      []Evidence    `json:"evidence,omitempty"`
+	Evidence      []Evidence    `json:"evidence,omitzero"`
 	Error         *ExecuteError `json:"error,omitempty"`
 }
 

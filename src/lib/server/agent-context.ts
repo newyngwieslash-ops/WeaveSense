@@ -10,6 +10,7 @@ export const MAX_DATE_SPAN_DAYS = 31;
 
 export type TextSegment = { start: number; end: number; text: string };
 export type Coverage = "full" | "partial";
+export type AuthorizedRange = { from: string; to: string } | null;
 
 export type EvidenceSource = {
   evidence_id: string;
@@ -23,6 +24,9 @@ export type EvidenceSource = {
   start: number;
   end: number;
   coverage: Coverage;
+  material_fingerprint?: string;
+  material_version?: number;
+  authorized_range?: AuthorizedRange;
 };
 
 export type EvidenceReceipt = {
@@ -31,6 +35,13 @@ export type EvidenceReceipt = {
   text: string;
   origin: "internal" | "mcp";
   title?: string; url?: string; platform?: string; source_name?: string;
+  published_at?: string | null;
+  start?: number;
+  end?: number;
+  coverage?: Coverage;
+  material_fingerprint?: string;
+  material_version?: number;
+  authorized_range?: AuthorizedRange;
 };
 
 export type Citation = { evidence_id: string; quote: string };
@@ -69,13 +80,13 @@ export function materialFingerprint(item: ItemRow): string {
   });
 }
 
-export function evidenceIdFor(item: { id: string; title: string; body: string; author: string; url: string; platform: string; source_name?: string; published_at: string | null }, start: number, end: number): string {
+export function evidenceIdFor(item: { id: string; title: string; body: string; author: string; url: string; platform: string; source_name?: string; published_at: string | null; material_version?: number }, start: number, end: number): string {
   const hash = materialFingerprint(item as ItemRow).slice(0, 12);
   return `item:${item.id}:${hash}:${start}:${end}`;
 }
 
-function toSources(item: ItemRow, segments: TextSegment[], coverage: Coverage): EvidenceSource[] {
-  return segments.map((seg) => ({
+export function evidenceSourceFor(item: ItemRow, seg: TextSegment, coverage: Coverage, range: AuthorizedRange = null): EvidenceSource {
+  return {
     evidence_id: evidenceIdFor(item, seg.start, seg.end),
     item_id: item.id,
     title: item.title,
@@ -87,7 +98,20 @@ function toSources(item: ItemRow, segments: TextSegment[], coverage: Coverage): 
     start: seg.start,
     end: seg.end,
     coverage,
-  }));
+    material_fingerprint: materialFingerprint(item),
+    ...(item.material_version != null ? { material_version: Number(item.material_version) } : {}),
+    authorized_range: range ? { ...range } : null,
+  };
+}
+
+function toSources(item: ItemRow, segments: TextSegment[], coverage: Coverage, range: AuthorizedRange = null): EvidenceSource[] {
+  return segments.map(seg => evidenceSourceFor(item, seg, coverage, range));
+}
+
+/** Project the host snapshot onto the unchanged public /v1/execute source schema. */
+export function runtimeSources(sources: readonly EvidenceSource[]) {
+  return sources.map(({ evidence_id, item_id, title, platform, source_name, url, published_at, text, start, end, coverage }) =>
+    ({ evidence_id, item_id, title, platform, source_name, url, published_at, text, start, end, coverage }));
 }
 
 export function selectAnalyzeSources(item: ItemRow, opts: { mediaIncomplete?: boolean } = {}) {
@@ -154,7 +178,7 @@ export function selectBriefingSources(
     const end = Math.min(chars.length, ITEM_CODE_POINT_CAP, perItem);
     const itemCoverage: Coverage = end < chars.length ? "partial" : "full";
     if (itemCoverage === "partial") coverage = "partial";
-    if (end > 0) sources.push(...toSources(item, [selectEvidenceWindow(item.body,end,"结论 总结 summary conclusion")], itemCoverage));
+    if (end > 0) sources.push(...toSources(item, [selectEvidenceWindow(item.body,end,"结论 总结 summary conclusion")], itemCoverage, range));
   }
   return {
     ok: true,
@@ -282,11 +306,8 @@ export function rangePredicate(range: { from?: string; to?: string } | null, sta
 
 export function evidenceMap(sources: EvidenceSource[]): Map<string, EvidenceReceipt> {
   return new Map(sources.map((s) => [s.evidence_id, {
-    evidence_id: s.evidence_id,
-    item_id: s.item_id,
-    text: s.text,
+    ...s,
     origin: "internal",
-    title: s.title, url: s.url, platform: s.platform, source_name: s.source_name,
   }]));
 }
 

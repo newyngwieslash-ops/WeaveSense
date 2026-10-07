@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "validation": "actual_adapter_fake_AB_smoke",
+  "command": "node --experimental-strip-types validation/agent/opencode/live-adapter-smoke.mjs --run",
+  "evidence_directory": ".repo/live-adapter-smoke-4d6bfd7a-7975-4493-9342-f12ff926cbac",
+  "passed": true,
+  "model_quality_evaluated": false,
+  "paid_calls": 0,
+  "fake_calls": 3,
+  "built_sha256": "5a598bf1f4d4da0a56c7fdc4662de81793107dc560171273a25c2dd6e372415d",
+  "image_id": "sha256:5bda6da1dcf71ef3eee4a652467f3a33f390f5cab1d266ebdf996736accc90d6",
+  "model_source": "unit_test_fake",
+  "corpus_digest": "a43a4b90cf0172b0600681b1cdcfbc24fc6efbfd3470a9e8a5999a9e49cf74f4",
+  "observations": [
+    {
+      "group": "A",
+      "status": "succeeded",
+      "condition_verified": true,
+      "candidate_digest": "7bac517d8d1db3adb06c812b571966b0e1c669dc8f0d0e8f5f7121e632c8dd7a",
+      "candidate_present": true,
+      "producer_calls": 1,
+      "reviewer_calls": 0,
+      "review_valid": false,
+      "actual_cost_cny": 1.4E-06,
+      "reservation_state": "settled",
+      "duplicate_execution": false
+    },
+    {
+      "group": "B",
+      "status": "succeeded",
+      "condition_verified": true,
+      "candidate_digest": "7bac517d8d1db3adb06c812b571966b0e1c669dc8f0d0e8f5f7121e632c8dd7a",
+      "candidate_present": true,
+      "producer_calls": 1,
+      "reviewer_calls": 1,
+      "review_valid": true,
+      "actual_cost_cny": 2.8E-06,
+      "reservation_state": "settled",
+      "duplicate_execution": false
+    }
+  ],
+  "cleaned": true,
+  "first_attempt": "Explicit network aliases were missing; real preflight rejected application_database_binding_mismatch with zero model calls. Owned containers cleaned; test harness fixed and rerun.",
+  "scope": "One authored holdout in A and B; real Docker inspect, PostgreSQL, enqueue, Eino worker, candidate, independent Reviewer and publication. Existing built output reused, no new Vite build. No C quality adapter test, no paid model, no blind labeling or quality-benefit evidence."
+}

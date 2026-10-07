@@ -1,6 +1,7 @@
 import { agentTransaction, lockRun, ownsRun, type AgentSql } from "./agent-transaction.ts";
 import { hashCanonical } from "./agent-runs.ts";
 import { settleJobBudget } from "./agent-budget.ts";
+import { researchPublicationError } from "./agent-research-publication.ts";
 
 export type CompletionInput = {
   runId: string; claimToken: string; jobId?: string;
@@ -50,6 +51,11 @@ export async function completeRun(sql: AgentSql, input: CompletionInput): Promis
       return new Date(run.expires_at) <= new Date(clock.now) && (!job || (job.status === "running" && job.run_id === run.id && job.claim_token === run.claim_token));
     };
     if (!await owned()) return { ok: false, error: "stale" };
+    if (input.status === "succeeded" && job?.payload?.cancel_requested) return { ok: false, error: "cancel_requested" };
+    if (input.status === "succeeded") {
+      const publicationError = await researchPublicationError(tx, run, input.responseJson);
+      if (publicationError) return { ok: false, error: publicationError };
+    }
     const invalid = await input.validate?.(tx, run);
     if (invalid) return { ok: false, error: invalid };
     // Validation may have waited on item/source locks. Use wall clock AFTER that wait.

@@ -1,13 +1,14 @@
 import { completeRun } from "./agent-completion.ts";
 import { agentTransaction } from "./agent-transaction.ts";
-import { materialFingerprint, type EvidenceReceipt } from "./agent-context.ts";
+import { codePoints, evidenceIdFor, materialFingerprint, type EvidenceReceipt } from "./agent-context.ts";
+import { mapAgentItem } from "./agent-retrieval.ts";
 import type { ItemRow } from "../types.ts";
 import { createHash } from "node:crypto";
 
 type Queryable = { query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<T[]> };
 
 export type AgentMode = "analyze_item" | "briefing" | "research";
-export type AgentProvider = "legacy" | "eino";
+export type AgentProvider = "legacy" | "eino" | "opencode";
 export type AgentRunStatus = "running" | "succeeded" | "failed" | "timed_out" | "cancelled" | "outcome_unknown";
 
 export type AgentRunRow = {
@@ -305,15 +306,64 @@ export async function receiptsForRun(sql: Queryable, runId: string): Promise<Map
     if (event.type !== "evidence") continue;
     const id = String(event.evidence_id ?? "");
     if (!id) continue;
-    map.set(id, {
+    const receipt: EvidenceReceipt = {
       evidence_id: id,
       item_id: event.item_id == null ? null : String(event.item_id),
       text: String(event.text ?? ""),
       origin: event.origin === "mcp" ? "mcp" : "internal",
       title: String(event.title ?? event.tool ?? "来源"), url: String(event.url ?? ""), platform: String(event.platform ?? ""), source_name: String(event.source_name ?? ""),
-    });
+    };
+    // Historical receipts stay historical: never invent a revision or scope.
+    for (const key of ["published_at", "start", "end", "coverage", "material_fingerprint", "material_version", "authorized_range"] as const) {
+      if (Object.hasOwn(event, key)) Object.assign(receipt, { [key]: event[key] });
+    }
+    map.set(id, receipt);
   }
   return map;
+}
+
+/** Call inside the publication transaction, after locking the job/run. */
+export async function validateEvidenceSnapshot(sql: Queryable, evidence: readonly EvidenceReceipt[]): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (new Set(evidence.map(row => row.evidence_id)).size !== evidence.length) return { ok: false, error: "invalid_evidence_snapshot" };
+  for (const row of evidence) {
+    if (row.origin !== "internal" || typeof row.item_id !== "string" || !row.item_id || typeof row.text !== "string" ||
+      typeof row.material_fingerprint !== "string" || !/^[a-f0-9]{64}$/.test(row.material_fingerprint) ||
+      !Number.isSafeInteger(row.material_version) || row.material_version! < 0 ||
+      !Number.isSafeInteger(row.start) || row.start! < 0 || !Number.isSafeInteger(row.end) || row.end! < row.start! ||
+      !["full", "partial"].includes(row.coverage ?? "") ||
+      [row.title, row.url, row.platform, row.source_name].some(value => typeof value !== "string") ||
+      !Object.hasOwn(row, "published_at") || (row.published_at !== null && (typeof row.published_at !== "string" || !Number.isFinite(Date.parse(row.published_at)))) ||
+      !Object.hasOwn(row, "authorized_range")) return { ok: false, error: "incomplete_evidence_metadata" };
+    const range = row.authorized_range;
+    if (range !== null && (!range || typeof range.from !== "string" || typeof range.to !== "string" ||
+      !Number.isFinite(Date.parse(range.from)) || !Number.isFinite(Date.parse(range.to)) || Date.parse(range.from) >= Date.parse(range.to))) {
+      return { ok: false, error: "incomplete_evidence_metadata" };
+    }
+  }
+  if (evidence.length === 0) return { ok: true };
+  // Keep one lock order across both synchronous and asynchronous publication.
+  const itemIds = [...new Set(evidence.map(row => row.item_id!))].sort();
+  const items = await sql.query<Record<string, unknown>>("select * from items where id=any($1::text[]) order by id for update", [itemIds]);
+  if (items.length !== itemIds.length) return { ok: false, error: "input_changed" };
+  const sourceIds = [...new Set(items.map(row => String(row.source_id)))].sort();
+  const sources = await sql.query<{ id: string; name: string }>("select id,name from sources where id=any($1::text[]) order by id for update", [sourceIds]);
+  if (sources.length !== sourceIds.length) return { ok: false, error: "input_changed" };
+  const sourceNames = new Map(sources.map(row => [row.id, row.name]));
+  const material = new Map(items.map(row => [String(row.id), mapAgentItem({ ...row, source_name: sourceNames.get(String(row.source_id)) })]));
+  for (const row of evidence) {
+    const item = material.get(row.item_id!)!;
+    const chars = codePoints(item.body);
+    const range = row.authorized_range;
+    const at = Date.parse(item.published_at ?? item.collected_at);
+    if (range && (!Number.isFinite(at) || at < Date.parse(range.from) || at >= Date.parse(range.to))) return { ok: false, error: "out_of_range" };
+    if (row.material_fingerprint !== materialFingerprint(item) || row.material_version !== Number(item.material_version) ||
+      row.end! > chars.length || row.text !== chars.slice(row.start, row.end).join("") ||
+      row.coverage !== (row.start === 0 && row.end === chars.length ? "full" : "partial") ||
+      row.evidence_id !== evidenceIdFor(item, row.start!, row.end!) ||
+      row.title !== item.title || row.url !== item.url || row.platform !== item.platform ||
+      row.source_name !== item.source_name || row.published_at !== item.published_at) return { ok: false, error: "input_changed" };
+  }
+  return { ok: true };
 }
 
 export async function appendEvidenceReceipt(sql: Queryable, input: {

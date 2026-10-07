@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -48,6 +49,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/healthz", s.handleHealth)
 	mux.HandleFunc("/readyz", s.handleReady)
 	mux.HandleFunc("/v1/execute", s.handleExecute)
+	mux.HandleFunc("/v1/review", s.handleReview)
 	return mux
 }
 
@@ -57,26 +59,43 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleReady(w http.ResponseWriter, _ *http.Request) {
-	if s.cfg.ServiceToken == "" || s.cfg.ModelBaseURL == "" || s.cfg.ModelName == "" || s.cfg.ModelAPIKey == "" {
+	validEndpoint := func(value string) bool {
+		u, err := url.Parse(value)
+		return err == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Hostname() != "" && u.User == nil && u.Fragment == ""
+	}
+	if s.cfg.ServiceToken == "" || !validEndpoint(s.cfg.ModelBaseURL) || s.cfg.ModelName == "" || s.cfg.ModelAPIKey == "" || s.cfg.ModelTimeout < 0 || s.cfg.ExecutionTimeout < 0 || s.cfg.ModelTimeout > s.cfg.executionTimeout() {
 		http.Error(w, `{"ok":false,"error":"unconfigured"}`, http.StatusServiceUnavailable)
 		return
 	}
-	if os.Getenv("AGENT_WORKER_ENABLED") == "true" && (s.cfg.DataURL == "" || s.cfg.DataToken == "") {
+	if os.Getenv("AGENT_WORKER_ENABLED") == "true" && (!validEndpoint(s.cfg.DataURL) || s.cfg.DataToken == "") {
 		http.Error(w, `{"ok":false,"error":"worker_unconfigured"}`, http.StatusServiceUnavailable)
 		return
 	}
+	ctx := context.Background()
+	skillsStatus := "disabled"
 	if s.cfg.SkillsDir != "" {
-		if st, err := os.Stat(s.cfg.SkillsDir); err != nil || !st.IsDir() {
+		var err error
+		ctx, err = withSkillSnapshot(ctx, s.cfg)
+		if err != nil {
 			http.Error(w, `{"ok":false,"error":"skills_unreadable"}`, http.StatusServiceUnavailable)
 			return
 		}
-		if _, _, err := loadSkillHandler(context.Background(), s.cfg); err != nil {
+		if _, _, err := loadSkillHandler(ctx, s.cfg); err != nil {
 			http.Error(w, `{"ok":false,"error":"skills_invalid"}`, http.StatusServiceUnavailable)
 			return
 		}
+		for _, name := range []string{"industry-analysis", "briefing-writing", "cross-source-check"} {
+			if _, err := loadFixedSkill(ctx, s.cfg, name); err != nil {
+				http.Error(w, `{"ok":false,"error":"required_skill_unavailable"}`, http.StatusServiceUnavailable)
+				return
+			}
+		}
+		skillsStatus = "ready"
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(`{"ok":true}`))
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok": true, "protocol_version": schemaVersion, "skill_snapshot_digest": skillSnapshotDigest(ctx),
+		"checks": map[string]string{"configuration": "ready", "skills": skillsStatus, "model_capability": "not_probed", "mcp_capability": "not_probed"},
+	})
 }
 
 func (s *Server) RunBounded(parent context.Context, req ExecuteRequest) (ExecuteResponse, error) {
@@ -90,7 +109,7 @@ func (s *Server) RunBounded(parent context.Context, req ExecuteRequest) (Execute
 	default:
 		return fail(req.RunID, "capacity_exceeded", true, false), fmt.Errorf("capacity_exceeded")
 	}
-	execDeadline := time.Now().Add(ExecuteTimeout)
+	execDeadline := time.Now().Add(s.cfg.executionTimeout())
 	if deadline.Before(execDeadline) {
 		execDeadline = deadline
 	}
@@ -186,7 +205,7 @@ func (s *Server) ListenAndServe() error {
 		Addr:              s.cfg.ListenAddr,
 		Handler:           s.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
-		WriteTimeout:      50 * time.Second,
+		WriteTimeout:      s.cfg.executionTimeout() + 10*time.Second,
 	}
 	log.Printf("agent listening on %s", s.cfg.ListenAddr)
 	return httpSrv.ListenAndServe()

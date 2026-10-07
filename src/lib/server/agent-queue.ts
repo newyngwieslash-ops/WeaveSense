@@ -9,6 +9,22 @@ import type { ItemRow } from "../types.ts";
 import { isPlatform } from "../platforms.ts";
 
 export const POLICY_VERSION = "loom-agent-v1";
+export type ResearchRuntime = "eino" | "opencode";
+
+function researchRuntime(value: unknown): ResearchRuntime {
+  if (value === "eino" || value === "opencode") return value;
+  throw new Error("unsupported_research_provider");
+}
+
+export function researchTimingFromEnv(): { executionTimeoutMs: number; queueTtlMs: number } {
+  const executionTimeoutMs = Number(process.env.AGENT_EXECUTE_TIMEOUT_MS ?? 120_000);
+  const queueTtlMs = Number(process.env.AGENT_RESEARCH_QUEUE_TTL_MS ?? 600_000);
+  if (!Number.isSafeInteger(executionTimeoutMs) || executionTimeoutMs < 1000 || executionTimeoutMs > 900_000 ||
+      !Number.isSafeInteger(queueTtlMs) || queueTtlMs < 1000 || queueTtlMs > 86_400_000) {
+    throw new Error("invalid_research_timeout");
+  }
+  return { executionTimeoutMs, queueTtlMs };
+}
 
 export type AutoAnalyzeConfig = {
   autoAnalyze: boolean;
@@ -28,6 +44,7 @@ export type AiJob = {
   policy_version: string;
   status: string;
   claim_token: string;
+  runtime_provider: ResearchRuntime;
   payload: Record<string, unknown>;
 };
 
@@ -43,6 +60,7 @@ function mapJob(row: Record<string, unknown>): AiJob {
     policy_version: String(row.policy_version),
     status: String(row.status),
     claim_token: String(row.claim_token),
+    runtime_provider: researchRuntime(row.runtime_provider),
     payload,
   };
 }
@@ -137,15 +155,19 @@ export async function claimAiJob(sql: Queryable, opts: {
   worker: string;
   leaseSeconds: number;
   kind?: "analyze" | "research";
+  provider?: ResearchRuntime;
 }): Promise<AiJob | null> {
   const claimToken = randomUUID();
   const kind = opts.kind ?? "analyze";
+  const provider = researchRuntime(opts.provider ?? "eino");
   const [row] = await sql.query<Record<string, unknown>>(
     `with candidate as (
-       select id from ai_jobs
-       where status = 'queued' and next_attempt_at <= now()
+       select j.id from ai_jobs j
+       where j.status = 'queued' and j.next_attempt_at <= now()
+         and j.runtime_provider = $4
+         and (j.run_id is null or exists (select 1 from ai_runs r where r.id=j.run_id and r.provider=$4))
          and case when $3 = 'research' then item_id like 'research:%' else item_id not like 'research:%' end
-       order by created_at, id
+       order by j.created_at, j.id
        for update skip locked
        limit 1
      )
@@ -158,42 +180,84 @@ export async function claimAiJob(sql: Queryable, opts: {
      from candidate as c
      where j.id = c.id and j.status = 'queued'
      returning j.*`,
-    [claimToken, opts.leaseSeconds, kind],
+    [claimToken, opts.leaseSeconds, kind, provider],
   );
   return row ? mapJob(row) : null;
 }
 
-export async function enqueueResearchJob(sql: Queryable, input: {
+type ResearchEnqueueInput = {
   question: string;
   requestId: string;
   materialHash: string;
   snapshot?: Record<string, unknown>;
-}): Promise<{ id: string; status: string; kind: "won" | "replay" | "conflict" } | null> {
-  const [existing] = await sql.query<Record<string, unknown>>("select id, status, payload from ai_jobs where request_id = $1", [input.requestId]);
+};
+type ResearchEnqueueResult = { id: string; status: string; kind: "won" | "replay" | "conflict" } | null;
+class ResearchBudgetDenied extends Error {}
+
+export async function enqueueResearchJob(sql: Queryable, input: ResearchEnqueueInput): Promise<ResearchEnqueueResult> {
+  if (!input.snapshot?.governed) return enqueueResearchJobInner(sql, input);
+  try { return await agentTransaction(sql, tx => enqueueResearchJobInner(tx, input)); }
+  catch (error) { if (error instanceof ResearchBudgetDenied) return null; throw error; }
+}
+
+async function enqueueResearchJobInner(sql: Queryable, input: ResearchEnqueueInput): Promise<ResearchEnqueueResult> {
+  const provider = researchRuntime(input.snapshot?.provider ?? "eino");
+  const [existing] = await sql.query<Record<string, unknown>>("select id, status, payload, runtime_provider from ai_jobs where request_id = $1", [input.requestId]);
   if (existing) {
     const payload = typeof existing.payload === "string" ? JSON.parse(existing.payload) : existing.payload as Record<string, unknown>;
-    if (String(payload?.question ?? "") !== input.question || ["provider", "mode", "scope", "range", "intent"].some(k =>
+    if (existing.runtime_provider !== (payload.provider ?? "eino") || String(payload?.question ?? "") !== input.question || ["governed", "provider", "mode", "scope", "range", "sources", "intent", "review_policy", "model_profile", "skill_snapshot_digest", "role_limits", "policy", "budget"].some(k =>
       input.snapshot?.[k] !== undefined && hashCanonical(payload[k]??null) !== hashCanonical(input.snapshot[k]))) return { id: String(existing.id), status: String(existing.status), kind: "conflict" };
     return { id: String(existing.id), status: String(existing.status), kind: "replay" };
   }
+  const timing = researchTimingFromEnv();
   const [row] = await sql.query<Record<string, unknown>>(
-    `insert into ai_jobs (id, item_id, material_hash, policy_version, status, payload, request_id)
-     values ($1,$2,$3,$4,'queued',$5::jsonb,$6)
+    `insert into ai_jobs (id, item_id, material_hash, policy_version, status, payload, request_id, runtime_provider)
+     values ($1,$2,$3,$4,'queued',$5::jsonb,$6,$7)
      on conflict (request_id) where request_id is not null do nothing
      returning id, status`,
     [randomUUID(), `research:${input.requestId}`, input.materialHash, POLICY_VERSION, JSON.stringify({
       provider: "eino", mode: "research", range: null, sources: [], scope: "corpus",
-      policy: { version: POLICY_VERSION, deadline_at: new Date(Date.now()+120000).toISOString(), max_model_calls: 6, max_tool_calls: 4, max_output_tokens_per_call: 1800 },
+      policy: { version: POLICY_VERSION, max_model_calls: 6, max_tool_calls: 4, max_output_tokens_per_call: 1800 },
       ...input.snapshot, question: input.question, request_id: input.requestId,
-    }), input.requestId],
+      execution_timeout_ms: timing.executionTimeoutMs,
+      queue_expires_at: new Date(Date.now() + timing.queueTtlMs).toISOString(),
+    }), input.requestId, provider],
   );
-  if (row) return { id: String(row.id), status: String(row.status), kind: "won" };
-  return enqueueResearchJob(sql, input);
+  if (row) {
+    if (input.snapshot?.governed) {
+      const budget = input.snapshot.budget as { dailyLimit: number; dailyBudgetRmb: number; priceVersion: string; worstCostRmb: number; pricing: Record<string, unknown> } | undefined;
+      if (!budget || !budget.pricing?.model || !Number.isFinite(budget.worstCostRmb) || budget.worstCostRmb <= 0) throw new ResearchBudgetDenied("research_budget_unconfigured");
+      const [clock] = await sql.query<{ day: string }>("select to_char(clock_timestamp() at time zone 'Asia/Shanghai','YYYY-MM-DD') as day");
+      if (!await admitBudgetDay(sql, clock.day, budget.priceVersion, budget.worstCostRmb, budget.dailyLimit, budget.dailyBudgetRmb)) throw new ResearchBudgetDenied("research_budget_exceeded");
+      await sql.query(`insert into ai_budget_reservations(id,job_id,day,price_version,reserved_rmb,status,pricing)
+        values($1,$2,$3,$4,$5,'reserved',$6::jsonb)`, [randomUUID(), row.id, clock.day, budget.priceVersion, budget.worstCostRmb,
+        JSON.stringify({ ...budget.pricing, daily_limit: budget.dailyLimit, daily_budget_rmb: budget.dailyBudgetRmb })]);
+    }
+    return { id: String(row.id), status: String(row.status), kind: "won" };
+  }
+  return enqueueResearchJobInner(sql, input);
 }
 
-export async function cancelQueuedResearchJobs(sql: Queryable) {
+export async function expireQueuedResearchJobs(sql: Queryable, provider: ResearchRuntime = "eino"): Promise<number> {
+  researchRuntime(provider);
+  return agentTransaction(sql, async tx => {
+    const jobs = await tx.query<{ id: string }>(`select id from ai_jobs
+      where status='queued' and run_id is null and item_id like 'research:%' and runtime_provider=$1
+        and coalesce(payload->>'queue_expires_at',payload#>>'{policy,deadline_at}')::timestamptz <= clock_timestamp()
+      order by id for update skip locked limit 40`, [provider]);
+    for (const job of jobs) {
+      await tx.query("update ai_jobs set status='failed',error_code='queue_expired',updated_at=clock_timestamp() where id=$1", [job.id]);
+      await tx.query("update ai_budget_reservations set dispatch_state='not_sent' where job_id=$1 and dispatch_state='unconfirmed'", [job.id]);
+      await settleJobBudget(tx, job.id);
+    }
+    return jobs.length;
+  });
+}
+
+export async function cancelQueuedResearchJobs(sql: Queryable, provider: ResearchRuntime = "eino") {
+  researchRuntime(provider);
   return agentTransaction(sql,async tx=>{
-    const jobs=await tx.query<{id:string}>("select id from ai_jobs where status='queued' and run_id is null and item_id like 'research:%' order by id for update skip locked limit 40");
+    const jobs=await tx.query<{id:string}>("select id from ai_jobs where status='queued' and run_id is null and item_id like 'research:%' and runtime_provider=$1 order by id for update skip locked limit 40", [provider]);
     for(const job of jobs) {
       await tx.query("update ai_jobs set status='failed',error_code='capability_disabled',updated_at=clock_timestamp() where id=$1",[job.id]);
       await tx.query("update ai_budget_reservations set dispatch_state='not_sent' where job_id=$1 and dispatch_state='unconfirmed'",[job.id]);

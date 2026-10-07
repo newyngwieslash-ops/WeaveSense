@@ -1,0 +1,304 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-10-07T05:45:33.132Z",
+  "head": "24d899023db08c8ea2e739b9c77a150743cc8bf6",
+  "working_tree": "shared uncommitted implementation at verification time",
+  "scope": "Actual application, PostgreSQL, Go runtime/Reviewer, native Linux OpenCode via trusted bridge. All model replies and pricing are authored local fixtures; no live quality/cost adoption claim.",
+  "runs": [
+    {
+      "runtime": "eino",
+      "mode": "dev",
+      "verified_at": "2026-10-07T05:31:16.514Z",
+      "passed": true,
+      "checks": [
+        "browser queued → governed Eino producer → immutable candidate → independent reviewer → one published note",
+        "blocking review retains visible unpublished draft and findings; mobile does not overflow",
+        "queued cancel sends no model request; running cancel revokes authority and worker terminates without publication",
+        "project browser-smoke desktop/mobile render and console checks, plus built/dev baseline comparison"
+      ],
+      "fake_model_requests": 5,
+      "paid_model_requests": 0,
+      "published_facts": null,
+      "development_warmup": [],
+      "native": null,
+      "screenshots": [
+        "screenshots/opencode-dev-queued-desktop.png",
+        "screenshots/opencode-dev-published-desktop.png",
+        "screenshots/opencode-dev-blocked-desktop.png",
+        "screenshots/opencode-dev-blocked-mobile.png",
+        "screenshots/opencode-dev-cancel-requested.png"
+      ],
+      "smoke": {
+        "viewports": {
+          "desktop": {
+            "status": 200,
+            "horizontalOverflow": false,
+            "consoleErrors": [],
+            "pageErrors": []
+          },
+          "mobile": {
+            "status": 200,
+            "horizontalOverflow": false,
+            "consoleErrors": [],
+            "pageErrors": []
+          }
+        },
+        "divergesFromBaseline": null,
+        "baselineReasons": []
+      },
+      "local_details": ".repo/opencode-e2e-c3710a94-d844-4efb-af59-8e0eee24ef30/verdict.json"
+    },
+    {
+      "runtime": "eino",
+      "mode": "built",
+      "verified_at": "2026-10-07T05:32:56.286Z",
+      "passed": true,
+      "checks": [
+        "npm run build succeeded with migration DSN restricted to this disposable schema",
+        "browser queued → governed Eino producer → immutable candidate → independent reviewer → one published note",
+        "blocking review retains visible unpublished draft and findings; mobile does not overflow",
+        "queued cancel sends no model request; running cancel revokes authority and worker terminates without publication",
+        "project browser-smoke desktop/mobile render and console checks, plus built/dev baseline comparison"
+      ],
+      "fake_model_requests": 5,
+      "paid_model_requests": 0,
+      "published_facts": null,
+      "development_warmup": [],
+      "native": null,
+      "screenshots": [
+        "screenshots/opencode-built-queued-desktop.png",
+        "screenshots/opencode-built-published-desktop.png",
+        "screenshots/opencode-built-blocked-desktop.png",
+        "screenshots/opencode-built-blocked-mobile.png",
+        "screenshots/opencode-built-cancel-requested.png"
+      ],
+      "smoke": {
+        "viewports": {
+          "desktop": {
+            "status": 200,
+            "horizontalOverflow": false,
+            "consoleErrors": [],
+            "pageErrors": []
+          },
+          "mobile": {
+            "status": 200,
+            "horizontalOverflow": false,
+            "consoleErrors": [],
+            "pageErrors": []
+          }
+        },
+        "divergesFromBaseline": false,
+        "baselineReasons": []
+      },
+      "local_details": ".repo/opencode-e2e-1b4ad3ab-166c-4e19-a285-8ab4d9ecb4a6/verdict.json"
+    },
+    {
+      "runtime": "opencode",
+      "mode": "dev",
+      "verified_at": "2026-10-07T05:40:53.310Z",
+      "passed": true,
+      "checks": [
+        "browser queued → governed opencode producer → immutable candidate → independent reviewer → one published note",
+        "blocking review retains visible unpublished draft and findings; mobile does not overflow",
+        "queued cancel sends no model request; running cancel revokes authority and worker terminates without publication",
+        "project browser-smoke desktop/mobile render and console checks, plus built/dev baseline comparison"
+      ],
+      "fake_model_requests": 9,
+      "paid_model_requests": 0,
+      "published_facts": {
+        "ledger": [
+          {
+            "role": "producer",
+            "state": "completed",
+            "input_tokens": 100,
+            "output_tokens": 20
+          },
+          {
+            "role": "producer",
+            "state": "completed",
+            "input_tokens": 100,
+            "output_tokens": 20
+          },
+          {
+            "role": "producer",
+            "state": "completed",
+            "input_tokens": 100,
+            "output_tokens": 20
+          },
+          {
+            "role": "reviewer",
+            "state": "completed",
+            "input_tokens": 100,
+            "output_tokens": 20
+          }
+        ],
+        "reservation": {
+          "status": "settled",
+          "actual_rmb": "0.0000056"
+        },
+        "candidateCount": 1,
+        "noteCount": 1
+      },
+      "development_warmup": [],
+      "native": {
+        "runtimeImage": "sha256:583b20b3112abf7dd20ccabf49636807eb6a37098378d8aa5c7904a6ddf64738",
+        "label": "weavesense.fullchain=d69036b9",
+        "sandbox": "loom-oc-full-sandbox-d69036b9",
+        "trusted": "loom-oc-full-trusted-d69036b9",
+        "networkChecks": [
+          {
+            "name": "bridge",
+            "allowed": true
+          },
+          {
+            "name": "vendor_bypass",
+            "allowed": false
+          },
+          {
+            "name": "app_bypass",
+            "allowed": false
+          },
+          {
+            "name": "public_egress",
+            "allowed": false
+          }
+        ],
+        "noRuntimeHostBindsOrPortsOrSupplierKeys": true
+      },
+      "screenshots": [
+        "screenshots/opencode-native-dev-queued-desktop.png",
+        "screenshots/opencode-native-dev-published-desktop.png",
+        "screenshots/opencode-native-dev-blocked-desktop.png",
+        "screenshots/opencode-native-dev-blocked-mobile.png",
+        "screenshots/opencode-native-dev-cancel-requested.png"
+      ],
+      "smoke": {
+        "viewports": {
+          "desktop": {
+            "status": 200,
+            "horizontalOverflow": false,
+            "consoleErrors": [],
+            "pageErrors": []
+          },
+          "mobile": {
+            "status": 200,
+            "horizontalOverflow": false,
+            "consoleErrors": [],
+            "pageErrors": []
+          }
+        },
+        "divergesFromBaseline": null,
+        "baselineReasons": []
+      },
+      "local_details": ".repo/opencode-e2e-d69036b9-0962-4039-b15e-2ad0018645e4/verdict.json"
+    },
+    {
+      "runtime": "opencode",
+      "mode": "built",
+      "verified_at": "2026-10-07T05:42:52.892Z",
+      "passed": true,
+      "checks": [
+        "npm run build succeeded with migration DSN restricted to this disposable schema",
+        "browser queued → governed opencode producer → immutable candidate → independent reviewer → one published note",
+        "blocking review retains visible unpublished draft and findings; mobile does not overflow",
+        "queued cancel sends no model request; running cancel revokes authority and worker terminates without publication",
+        "project browser-smoke desktop/mobile render and console checks, plus built/dev baseline comparison"
+      ],
+      "fake_model_requests": 9,
+      "paid_model_requests": 0,
+      "published_facts": {
+        "ledger": [
+          {
+            "role": "producer",
+            "state": "completed",
+            "input_tokens": 100,
+            "output_tokens": 20
+          },
+          {
+            "role": "producer",
+            "state": "completed",
+            "input_tokens": 100,
+            "output_tokens": 20
+          },
+          {
+            "role": "producer",
+            "state": "completed",
+            "input_tokens": 100,
+            "output_tokens": 20
+          },
+          {
+            "role": "reviewer",
+            "state": "completed",
+            "input_tokens": 100,
+            "output_tokens": 20
+          }
+        ],
+        "reservation": {
+          "status": "settled",
+          "actual_rmb": "0.0000056"
+        },
+        "candidateCount": 1,
+        "noteCount": 1,
+        "toolCalls": 2
+      },
+      "development_warmup": [],
+      "native": {
+        "runtimeImage": "sha256:583b20b3112abf7dd20ccabf49636807eb6a37098378d8aa5c7904a6ddf64738",
+        "label": "weavesense.fullchain=3f524fe1",
+        "sandbox": "loom-oc-full-sandbox-3f524fe1",
+        "trusted": "loom-oc-full-trusted-3f524fe1",
+        "networkChecks": [
+          {
+            "name": "bridge",
+            "allowed": true
+          },
+          {
+            "name": "vendor_bypass",
+            "allowed": false
+          },
+          {
+            "name": "app_bypass",
+            "allowed": false
+          },
+          {
+            "name": "public_egress",
+            "allowed": false
+          }
+        ],
+        "noRuntimeHostBindsOrPortsOrSupplierKeys": true
+      },
+      "screenshots": [
+        "screenshots/opencode-native-built-queued-desktop.png",
+        "screenshots/opencode-native-built-published-desktop.png",
+        "screenshots/opencode-native-built-blocked-desktop.png",
+        "screenshots/opencode-native-built-blocked-mobile.png",
+        "screenshots/opencode-native-built-cancel-requested.png"
+      ],
+      "smoke": {
+        "viewports": {
+          "desktop": {
+            "status": 200,
+            "horizontalOverflow": false,
+            "consoleErrors": [],
+            "pageErrors": []
+          },
+          "mobile": {
+            "status": 200,
+            "horizontalOverflow": false,
+            "consoleErrors": [],
+            "pageErrors": []
+          }
+        },
+        "divergesFromBaseline": false,
+        "baselineReasons": []
+      },
+      "local_details": ".repo/opencode-e2e-3f524fe1-2fc2-43a4-8339-d9bbe8296469/verdict.json"
+    }
+  ],
+  "caveats": [
+    "Earlier cold Vite optimization failures are retained in baseline.md; formal tests use fresh contexts after a separately recorded dev warmup. Production gets no warmup exemption.",
+    "Native development passed before the final tool-count reporting regression was added; native production includes that assertion and validates both ai_runs and response_json runtime counts equal the two authoritative tool rows.",
+    "Desktop/mobile scenario screenshots were visually inspected.",
+    "Test app/worker/runtime containers, networks, and per-run schemas are removed; the shared disposable PostgreSQL container remains at the coordinator request. Docker test images are cached."
+  ]
+}

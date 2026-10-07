@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { randomBytes, randomUUID } from "node:crypto";
 import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
-import { beginRun } from "./agent-runs.ts";
+import { beginRun, receiptsForRun, validateEvidenceSnapshot } from "./agent-runs.ts";
 import { handleAgentData, hashRunToken } from "./agent-data.ts";
 import { materialFingerprint } from "./agent-context.ts";
 
@@ -160,4 +160,54 @@ test("unknown action is rejected", async () => {
   });
   assert.equal(result.status, 400);
   await pg.close();
+});
+
+test("corpus tool receipts preserve trusted metadata and publication detects version-only changes", async () => {
+  const f = await setup();
+  try {
+    const range = { from: "2026-10-01T00:00:00.000Z", to: "2026-10-02T00:00:00.000Z" };
+    await f.sql.query("update items set body=$1,published_at='2026-10-01T01:00:00.123Z' where id='item-1'", ["😀\r\n电池" + "正文".repeat(2400)]);
+    await f.sql.query("update ai_runs set request_json=$1::jsonb where id=$2", [JSON.stringify({ range }), f.runId]);
+    const call = (action: string, params: Record<string, unknown>) => handleAgentData({ sql: f.sql, serviceToken: token, providedServiceToken: token, runToken: f.runToken, runId: f.runId, action, params });
+    assert.equal((await call("search_items", { query: "电池" })).status, 200);
+    const read = await call("get_item", { item_id: "item-1", start: 2 });
+    assert.equal(read.status, 200);
+    const receipts = await receiptsForRun(f.sql, f.runId);
+    assert.equal(receipts.size, 2);
+    for (const receipt of receipts.values()) {
+      assert.match(receipt.material_fingerprint!, /^[a-f0-9]{64}$/);
+      assert.equal(receipt.material_version, 1);
+      assert.deepEqual(receipt.authorized_range, range);
+      assert.equal(receipt.published_at, "2026-10-01T01:00:00.123Z");
+      assert.equal(receipt.coverage, "partial");
+      assert.equal(receipt.end! - receipt.start!, Array.from(receipt.text).length);
+    }
+    assert.deepEqual(await f.sql.transaction(tx => validateEvidenceSnapshot(tx, [...receipts.values()])), { ok: true });
+    await f.sql.query("update items set material_version=material_version+1 where id='item-1'");
+    assert.deepEqual(await f.sql.transaction(tx => validateEvidenceSnapshot(tx, [...receipts.values()])), { ok: false, error: "input_changed" });
+  } finally { await f.pg.close(); }
+});
+
+test("snapshot validation rejects legacy, forged spans and escaped authorized range without inventing metadata", async () => {
+  const f = await setup();
+  try {
+    const read = await handleAgentData({ sql: f.sql, serviceToken: token, providedServiceToken: token, runToken: f.runToken, runId: f.runId, action: "get_item", params: { item_id: "item-1" } });
+    assert.equal(read.status, 200);
+    const receipt = (await receiptsForRun(f.sql, f.runId)).get(String(read.body.evidence_id))!;
+    const validate = (evidence: typeof receipt[]) => f.sql.transaction(tx => validateEvidenceSnapshot(tx, evidence));
+    assert.deepEqual(await validate([receipt]), { ok: true });
+    assert.deepEqual(await validate([{ ...receipt, text: "伪造" }]), { ok: false, error: "input_changed" });
+    assert.deepEqual(await validate([{ ...receipt, coverage: "partial" }]), { ok: false, error: "input_changed" });
+    assert.deepEqual(await validate([{ ...receipt, authorized_range: { from: "2000-01-01T00:00:00.000Z", to: "2000-01-02T00:00:00.000Z" } }]), { ok: false, error: "out_of_range" });
+    await f.sql.query("update sources set name='已更新信源' where id='s'");
+    assert.deepEqual(await validate([receipt]), { ok: false, error: "input_changed" });
+    const legacy = { type: "evidence", evidence_id: "old", item_id: "item-1", text: "正文", origin: "internal" };
+    await f.sql.query("update ai_runs set events_json=$1::jsonb where id=$2", [JSON.stringify([legacy]), f.runId]);
+    const old = (await receiptsForRun(f.sql, f.runId)).get("old")!;
+    assert.equal("material_version" in old, false);
+    assert.equal("material_fingerprint" in old, false);
+    assert.equal("authorized_range" in old, false);
+    assert.deepEqual(await validate([old]), { ok: false, error: "incomplete_evidence_metadata" });
+    assert.equal((await handleAgentData({ sql: f.sql, serviceToken: token, providedServiceToken: token, runToken: f.runToken, runId: f.runId, action: "get_item", params: { item_id: "item-1", start: 0.5 } })).status, 400);
+  } finally { await f.pg.close(); }
 });

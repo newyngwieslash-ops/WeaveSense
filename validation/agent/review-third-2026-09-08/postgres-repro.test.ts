@@ -23,7 +23,7 @@ export async function setup(t: { after: (fn: () => Promise<void>) => void }) {
   const control = await connect("followup-control");
   await control.query(`create schema ${schema}`);
   await control.query(`set search_path to ${schema}`);
-  for (const name of ["0002_schema.sql","0004_production.sql","0011_ai_runs.sql","0012_ai_jobs.sql","0013_agent_checkpoints.sql","0014_agent_integrity.sql","0015_agent_budget_reservations.sql","0016_agent_terminal_states.sql","0017_agent_call_receipts.sql","0018_agent_checkpoint_facts.sql","0019_agent_material_revision.sql","0020_agent_daily_admission.sql"])
+  for (const name of ["0002_schema.sql","0004_production.sql","0011_ai_runs.sql","0012_ai_jobs.sql","0013_agent_checkpoints.sql","0014_agent_integrity.sql","0015_agent_budget_reservations.sql","0016_agent_terminal_states.sql","0017_agent_call_receipts.sql","0018_agent_checkpoint_facts.sql","0019_agent_material_revision.sql","0020_agent_daily_admission.sql","0022_research_review.sql","0023_research_runtime.sql","0024_research_call_roles.sql","0025_research_tool_calls.sql"])
     await control.query(readFileSync(new URL(`../../../migrations/${name}`, import.meta.url), "utf8"));
   async function scoped(name: string) { const c = await connect(name); await c.query(`set search_path to ${schema}`); return c; }
   const a = await scoped("followup-a"), b = await scoped("followup-b"), locker = await scoped("followup-locker");

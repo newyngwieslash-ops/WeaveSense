@@ -211,3 +211,20 @@ export type AskResult = {
   external_citations?: { title: string; url: string; quote: string }[];
   insufficient_evidence?: boolean;
 };
+
+export type ResearchStatus = {
+  ok: true;
+  job_id: string;
+  status: string;
+  phase: "queued" | "researching" | "reviewing" | "published" | "blocked" | "outcome_unknown" | "cancel_requested";
+  terminal: boolean;
+  can_cancel: boolean;
+  review_mode: "off" | "shadow" | "enforce";
+  error_code?: string;
+  note_id?: string;
+  candidate?: { content: string; citations: { evidence_id: string; quote: string }[] };
+  review?: {
+    checks: { id: string; status: "pass" | "fail" | "not_checked" }[];
+    findings: { code: string; severity: "blocking" | "advisory"; claim: string; evidence_ids: string[]; reason: string; suggestion: string }[];
+  };
+};

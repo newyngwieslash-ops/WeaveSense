@@ -8,22 +8,28 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"sync/atomic"
 	"time"
 )
 
 const runtimeVersion = "eino-v0.9.19"
 
 type jobClaim struct {
-	JobID           string       `json:"job_id"`
-	RunID           string       `json:"run_id"`
-	ClaimToken      string       `json:"claim_token"`
-	DataAccessToken string       `json:"data_access_token"`
-	Mode            Mode         `json:"mode"`
-	Question        string       `json:"question"`
-	Input           ExecuteInput `json:"input"`
-	Policy          Policy       `json:"policy"`
-	Resume          bool         `json:"resume"`
-	Sequence        int          `json:"sequence"`
+	JobID               string       `json:"job_id"`
+	RunID               string       `json:"run_id"`
+	ClaimToken          string       `json:"claim_token"`
+	DataAccessToken     string       `json:"data_access_token"`
+	Mode                Mode         `json:"mode"`
+	Question            string       `json:"question"`
+	Input               ExecuteInput `json:"input"`
+	Policy              Policy       `json:"policy"`
+	Resume              bool         `json:"resume"`
+	Sequence            int          `json:"sequence"`
+	Governed            bool         `json:"governed"`
+	ProducerDeadlineAt  string       `json:"producer_deadline_at"`
+	SkillSnapshotDigest string       `json:"skill_snapshot_digest"`
+	ProducerModelCalls  int          `json:"producer_model_calls"`
+	Phase               string       `json:"phase"`
 }
 
 type workerContextKey struct{}
@@ -83,7 +89,7 @@ func (s *httpStore) Get(ctx context.Context, checkPointID string) ([]byte, bool,
 			return nil, false, fmt.Errorf("checkpoint_version_mismatch")
 		}
 		if len(env.Skills) > 0 {
-			versions, err := skillVersions(s.cfg.SkillsDir)
+			versions, err := skillVersionsFor(ctx, s.cfg)
 			if err != nil {
 				return nil, false, err
 			}
@@ -172,8 +178,11 @@ func postJobs(ctx context.Context, cfg Config, body []byte) ([]byte, int, error)
 		return nil, 0, err
 	}
 	defer res.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(res.Body, 300*1024))
-	return raw, res.StatusCode, nil
+	raw, readErr := io.ReadAll(io.LimitReader(res.Body, MaxRequestBytes+1025))
+	if len(raw) > MaxRequestBytes+1024 {
+		return nil, res.StatusCode, fmt.Errorf("jobs_response_too_large")
+	}
+	return raw, res.StatusCode, readErr
 }
 
 func trimSuffix(s, suffix string) string {
@@ -226,6 +235,9 @@ func RunWorkerOnce(ctx context.Context, cfg Config, execute func(context.Context
 	if claim.Policy.Version != "" {
 		req.Policy = claim.Policy
 		req.Input = claim.Input
+	}
+	if claim.Governed {
+		return runGovernedClaim(ctx, cfg, claim, req, execute)
 	}
 	execCtx, cancel := context.WithCancel(ctx)
 	execCtx = context.WithValue(execCtx, workerContextKey{}, claim)
@@ -300,4 +312,177 @@ func RunWorkerOnce(ctx context.Context, cfg Config, execute func(context.Context
 		case <-timer.C:
 		}
 	}
+}
+
+// Persistence retries keep the original envelope; they never repeat model execution.
+func postGovernedJobs(ctx context.Context, cfg Config, body []byte) ([]byte, error) {
+	for attempt := 0; ; attempt++ {
+		raw, status, err := postJobs(ctx, cfg, body)
+		if err == nil && status == http.StatusOK {
+			var ack struct {
+				OK bool `json:"ok"`
+			}
+			if json.Unmarshal(raw, &ack) == nil && ack.OK {
+				return raw, nil
+			}
+		}
+		if err == nil && status >= 400 && status < 500 && status != http.StatusTooManyRequests {
+			return nil, fmt.Errorf("governed_job_denied: %d", status)
+		}
+		timer := time.NewTimer(time.Duration(min(attempt+1, 8)) * 250 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func runGovernedClaim(parent context.Context, cfg Config, claim jobClaim, req ExecuteRequest, execute func(context.Context, ExecuteRequest) (ExecuteResponse, error)) error {
+	deadline, err := time.Parse(time.RFC3339, claim.Policy.DeadlineAt)
+	if err != nil || !deadline.After(time.Now()) {
+		return fmt.Errorf("invalid_claim_deadline")
+	}
+	if claim.Phase != "producer" && claim.Phase != "review" && claim.Phase != "finalize" {
+		return fmt.Errorf("invalid_claim_phase")
+	}
+	// Renewal keeps running during review and persistence. User cancellation stops
+	// execution, while the still-leased run context can acknowledge its outcome.
+	runCtx, stopRun := context.WithDeadline(parent, deadline)
+	execCtx, stopExecution := context.WithCancel(runCtx)
+	execCtx = context.WithValue(execCtx, workerContextKey{}, claim)
+	var cancellation atomic.Bool
+	renewDone := make(chan struct{})
+	defer func() { stopExecution(); stopRun(); <-renewDone }()
+	envelope := func(action string) map[string]any {
+		return map[string]any{"action": action, "job_id": claim.JobID, "run_id": claim.RunID, "claim_token": claim.ClaimToken}
+	}
+	post := func(body map[string]any) ([]byte, error) {
+		raw, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		return postGovernedJobs(runCtx, cfg, raw)
+	}
+	go func() {
+		defer close(renewDone)
+		tick := time.NewTicker(5 * time.Second)
+		defer tick.Stop()
+		for {
+			select {
+			case <-runCtx.Done():
+				return
+			case <-tick.C:
+				body, _ := json.Marshal(envelope("renew"))
+				raw, status, renewErr := postJobs(runCtx, cfg, body)
+				var ack struct {
+					OK              bool `json:"ok"`
+					CancelRequested bool `json:"cancel_requested"`
+				}
+				if renewErr != nil || status != http.StatusOK || json.Unmarshal(raw, &ack) != nil || !ack.OK {
+					stopRun()
+					return
+				}
+				if ack.CancelRequested {
+					cancellation.Store(true)
+					stopExecution()
+				}
+			}
+		}
+	}()
+	if claim.Phase == "producer" {
+		producerDeadline, parseErr := time.Parse(time.RFC3339, claim.ProducerDeadlineAt)
+		var response ExecuteResponse
+		var executeErr error
+		if parseErr != nil || !producerDeadline.After(time.Now()) || producerDeadline.After(deadline) || claim.ProducerModelCalls < 1 || claim.ProducerModelCalls > req.Policy.MaxModelCalls {
+			response = fail(claim.RunID, "invalid_producer_policy", false, false)
+		} else {
+			frozen, snapshotErr := withSkillSnapshot(execCtx, cfg)
+			if snapshotErr != nil || !reviewDigestRE.MatchString(claim.SkillSnapshotDigest) || skillSnapshotDigest(frozen) != claim.SkillSnapshotDigest {
+				response = fail(claim.RunID, "skill_snapshot_mismatch", false, false)
+			} else {
+				producerCtx, stopProducer := withGovernedExecution(frozen, producerDeadline)
+				req.Policy.MaxModelCalls = claim.ProducerModelCalls
+				response, executeErr = execute(producerCtx, req)
+				stopProducer()
+			}
+		}
+		if cancellation.Load() {
+			response = fail(claim.RunID, "cancelled", false, true)
+			executeErr = nil
+		}
+		if executeErr != nil || !response.OK {
+			body := envelope("complete")
+			body["status"] = "failed"
+			if executeErr != nil {
+				body["status"] = "outcome_unknown"
+				body["error_code"] = "outcome_unknown"
+			} else {
+				body["response"] = response
+				if response.Error != nil {
+					body["error_code"] = response.Error.Code
+					if response.Error.OutcomeUnknown {
+						body["status"] = "outcome_unknown"
+					}
+				}
+			}
+			_, err = post(body)
+			return err
+		}
+		body := envelope("candidate")
+		body["response"] = response
+		if _, err = post(body); err != nil {
+			return err
+		}
+	}
+	if claim.Phase != "finalize" {
+		var result ReviewResponse
+		if cancellation.Load() {
+			result = ReviewResponse{Error: &ReviewError{Code: "cancelled", OutcomeUnknown: true}}
+		} else {
+			raw, startErr := post(envelope("review_start"))
+			if startErr != nil {
+				return startErr
+			}
+			var start struct {
+				OK      bool            `json:"ok"`
+				Skip    bool            `json:"skip"`
+				Request json.RawMessage `json:"request"`
+			}
+			if json.Unmarshal(raw, &start) != nil {
+				return fmt.Errorf("invalid_review_start")
+			}
+			if !start.Skip {
+				reviewRequest, parseErr := ParseReviewRequest(start.Request)
+				if parseErr != nil || reviewRequest.RunID != claim.RunID {
+					result = ReviewResponse{Error: &ReviewError{Code: "invalid_review_request"}}
+				} else {
+					result, err = Review(execCtx, cfg, reviewRequest)
+					if err != nil {
+						result = ReviewResponse{Error: &ReviewError{Code: "review_outcome_unknown", OutcomeUnknown: true}}
+					}
+				}
+			}
+		}
+		if cancellation.Load() {
+			result = ReviewResponse{Error: &ReviewError{Code: "cancelled", OutcomeUnknown: true}}
+		}
+		if result.OK && result.Report != nil {
+			body := envelope("review_result")
+			body["report"] = result.Report
+			if _, err = post(body); err != nil {
+				return err
+			}
+		} else if result.Error != nil {
+			body := envelope("review_error")
+			body["error_code"] = result.Error.Code
+			body["outcome_unknown"] = result.Error.OutcomeUnknown
+			if _, err = post(body); err != nil {
+				return err
+			}
+		}
+	}
+	_, err = post(envelope("finalize"))
+	return err
 }

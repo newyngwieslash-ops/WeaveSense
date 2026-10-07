@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -53,5 +54,54 @@ func TestReadinessRejectsConfigurationWithoutExecution(t *testing.T) {
 				t.Fatal("missing required config accepted")
 			}
 		})
+	}
+}
+
+func TestReadinessRequiredSkillsAndProtocol(t *testing.T) {
+	t.Setenv("AGENT_WORKER_ENABLED", "false")
+	root := t.TempDir()
+	cfg := testConfig()
+	cfg.SkillsDir = root
+	calls := 0
+	model := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls++ }))
+	defer model.Close()
+	cfg.ModelBaseURL = model.URL
+	for _, name := range []string{"industry-analysis", "briefing-writing", "cross-source-check"} {
+		out := httptest.NewRecorder()
+		NewServer(cfg, nil).Handler().ServeHTTP(out, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+		if out.Code != http.StatusServiceUnavailable {
+			t.Fatalf("missing %s accepted: %d %s", name, out.Code, out.Body.String())
+		}
+		writeSkill(t, root, name, "---\nname: "+name+"\ndescription: d\n---\n\nRequired rule.\n")
+	}
+	out := httptest.NewRecorder()
+	NewServer(cfg, nil).Handler().ServeHTTP(out, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	var result struct {
+		OK                  bool   `json:"ok"`
+		ProtocolVersion     int    `json:"protocol_version"`
+		SkillSnapshotDigest string `json:"skill_snapshot_digest"`
+	}
+	if err := json.Unmarshal(out.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if out.Code != http.StatusOK || !result.OK || result.ProtocolVersion != 1 || len(result.SkillSnapshotDigest) != 64 || calls != 0 {
+		t.Fatalf("ready=%+v calls=%d status=%d", result, calls, out.Code)
+	}
+}
+
+func TestReadinessRejectsInvalidEndpointAndTimeout(t *testing.T) {
+	t.Setenv("AGENT_WORKER_ENABLED", "false")
+	for _, modify := range []func(*Config){
+		func(c *Config) { c.ModelBaseURL = "file:///secret" },
+		func(c *Config) { c.ModelBaseURL = "https://user:secret@example.com" },
+		func(c *Config) { c.ModelTimeout = c.executionTimeout() + 1 },
+	} {
+		cfg := testConfig()
+		modify(&cfg)
+		out := httptest.NewRecorder()
+		NewServer(cfg, nil).Handler().ServeHTTP(out, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+		if out.Code != http.StatusServiceUnavailable {
+			t.Fatalf("invalid configuration accepted: %d", out.Code)
+		}
 	}
 }

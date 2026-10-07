@@ -1,0 +1,229 @@
+{
+  "version": "1.3.13",
+  "source": "https://registry.npmjs.org/opencode-linux-x64/-/opencode-linux-x64-1.3.13.tgz",
+  "npm_integrity": "sha512-zL+gG/TnevdTgbc6z3RwYXIpaodmdt2IqHF+CAQuf8Ayzx1LF0SvkkiclIEz12kdjlfttjNOxuRFWCJLzQIJIw==",
+  "license": "MIT",
+  "binary_sha256": "58b9e43f2bfa25ee7daa748ecf1a9169b66e350c3c2f64e60b2bc5318f4baf9e",
+  "base_image": "public.ecr.aws/docker/library/node:22.22.3-bookworm-slim@sha256:e21fc383b50d5347dc7a9f1cae45b8f4e2f0d39f7ade28e4eef7d2934522b752",
+  "probe_image_id": "sha256:0fe9bdc15bda7074dc45cc5b7daa993ad185baed7706f571a73b25759940d883",
+  "runtime_image_id": "sha256:583b20b3112abf7dd20ccabf49636807eb6a37098378d8aa5c7904a6ddf64738",
+  "runtime_image_digest": null,
+  "runtime_local_repo_digests": [
+    "weavesense-opencode-runtime@sha256:583b20b3112abf7dd20ccabf49636807eb6a37098378d8aa5c7904a6ddf64738"
+  ],
+  "runtime_image_reference": "local build: weavesense-opencode-runtime:1.3.13; no published/pullable registry manifest attested",
+  "production_artifact": {
+    "binary_sha256": "58b9e43f2bfa25ee7daa748ecf1a9169b66e350c3c2f64e60b2bc5318f4baf9e",
+    "wrapper_sha256": "64a0043cb979144e15075d96762429680de56d38f1b527e7a40ab0ad1ca5c559",
+    "test_fixtures_absent": true
+  },
+  "docker_version": "28.5.2",
+  "network_isolation_verified": true,
+  "network_profile": {
+    "internal": true,
+    "gateway_mode_ipv4": "isolated",
+    "docker_network_options": {
+      "com.docker.network.bridge.gateway_mode_ipv4": "isolated",
+      "com.docker.network.enable_ipv4": "true",
+      "com.docker.network.enable_ipv6": "false"
+    }
+  },
+  "network_checks": [
+    {
+      "name": "approved_bridge",
+      "hostname": "fixture-bridge",
+      "address": "172.24.0.1",
+      "port": 8792,
+      "allowed": true
+    },
+    {
+      "name": "public_ipv4",
+      "hostname": "1.1.1.1",
+      "address": "1.1.1.1",
+      "port": 80,
+      "allowed": false,
+      "error": "ENETUNREACH"
+    },
+    {
+      "name": "public_ipv6",
+      "hostname": "2606:4700:4700::1111",
+      "address": "2606:4700:4700::1111",
+      "port": 80,
+      "allowed": false,
+      "error": "ENETUNREACH"
+    },
+    {
+      "name": "host_alias",
+      "hostname": "host.docker.internal",
+      "address": "host.docker.internal",
+      "port": 56275,
+      "allowed": false,
+      "error": "EAI_AGAIN"
+    },
+    {
+      "name": "host_numeric_canary",
+      "hostname": "192.168.65.254",
+      "address": "192.168.65.254",
+      "port": 56275,
+      "allowed": false,
+      "error": "ENETUNREACH"
+    },
+    {
+      "name": "host_numeric_model_port",
+      "hostname": "192.168.65.254",
+      "address": "192.168.65.254",
+      "port": 8792,
+      "allowed": false,
+      "error": "ENETUNREACH"
+    },
+    {
+      "name": "link_local_metadata",
+      "hostname": "169.254.169.254",
+      "address": "169.254.169.254",
+      "port": 80,
+      "allowed": false,
+      "error": "ENETUNREACH"
+    }
+  ],
+  "positive_host_control": {
+    "status": 200,
+    "text": "forbidden-host-canary",
+    "address": "192.168.65.254"
+  },
+  "security": {
+    "user": "node",
+    "read_only": true,
+    "cap_drop": [
+      "ALL"
+    ],
+    "security_opt": [
+      "no-new-privileges"
+    ],
+    "pids_limit": 64,
+    "memory": 805306368,
+    "host_binds": null,
+    "exposed_host_ports": {}
+  },
+  "real_runtime_probe": {
+    "version": "1.3.13",
+    "platform": "linux-x64",
+    "source": "npm:opencode-ai@1.3.13",
+    "binary_artifact": "opencode",
+    "license": "MIT",
+    "binary_sha256": "58b9e43f2bfa25ee7daa748ecf1a9169b66e350c3c2f64e60b2bc5318f4baf9e",
+    "config_sha256": "b23945b2b6920272dbe10df9f0bf25acfa97d1865ea2070a7b3083f7d82ccd7c",
+    "openapi_sha256": "5d1b724068d39e8a706617545db42bc51850ce611da37f03fcfab7f77a26316e",
+    "observed_at": "2026-10-07T05:50:22.368Z",
+    "offline_feasible": true,
+    "live_accepted": false,
+    "model_protocol": "OpenAI-compatible /v1/chat/completions SSE, @ai-sdk/openai-compatible",
+    "mcp_tools": [
+      "corpus_search",
+      "corpus_get_item"
+    ],
+    "prompt_async_status": 204,
+    "session_abort_response": true,
+    "openapi_export": "opencode generate (complete); /doc contains only control-plane routes in 1.3.13",
+    "model_requests": 8,
+    "mcp_tool_calls": 2,
+    "real_paid_model_requests": 0,
+    "message_id_idempotency": {
+      "established": false,
+      "replayed_runtime_generated_message_id_added_model_requests": 0,
+      "directive": "Idle replay observation is insufficient to establish crash/dispatch idempotence; do not automatically resend uncertain submissions or invent arbitrary message IDs."
+    },
+    "approved_skills": [
+      {
+        "name": "industry-analysis",
+        "source": "workers/agent/skills/industry-analysis/SKILL.md",
+        "original_sha256": "1a357717500a5e4d099e1d2290432c22e5fe37138d11c707daeb26d07588f3a4",
+        "rendered_sha256": "1a357717500a5e4d099e1d2290432c22e5fe37138d11c707daeb26d07588f3a4"
+      },
+      {
+        "name": "cross-source-check",
+        "source": "workers/agent/skills/cross-source-check/SKILL.md",
+        "original_sha256": "a6dbb654aabc686036886bdaa9e0d1897a98b038b05ef233aa046be3d03a8501",
+        "rendered_sha256": "5d7aff92a7d6465d2f56401fdb37f216c0abe7f9e665f03b70e6f18bf35f5a2d"
+      }
+    ],
+    "isolation": {
+      "cwd": "temporary directory outside repository",
+      "home_xdg": "fresh temporary directories",
+      "environment": "allowlisted, no inherited provider credentials",
+      "providers_connected": [
+        "probe"
+      ],
+      "plugins": [],
+      "discovered_skills": [
+        "industry-analysis",
+        "cross-source-check"
+      ],
+      "ignored_canaries": [
+        "project opencode.json model/plugin",
+        "project .agents skill",
+        "home .agents skill"
+      ],
+      "permissions": {
+        "*": "deny",
+        "corpus_search": "allow",
+        "corpus_get_item": "allow",
+        "skill": {
+          "*": "deny",
+          "industry-analysis": "allow",
+          "cross-source-check": "allow"
+        }
+      },
+      "network_isolation_verified": false,
+      "network": "host loopback fixture only; OS network isolation NOT proven by this probe"
+    },
+    "checks": [
+      "health/version",
+      "Basic authentication",
+      "actual JSON OpenAPI export",
+      "session/prompt_async/message/status/abort",
+      "real fake-model research via remote HTTP MCP",
+      "default-deny forbidden bash failed without file write",
+      "structured model error",
+      "fresh config/provider/plugin/skill discovery with canaries",
+      "approved research Skill tool-name rendering and digests",
+      "SSE server.connected/session.status observed",
+      "same runtime-generated messageID replay observed after idle"
+    ],
+    "limitations": [
+      "Live model quality and costs not evaluated",
+      "Container network/process isolation requires Task 12 evidence",
+      "Auxiliary requests must be counted by the trusted model proxy",
+      "Native direct HTTP file/shell endpoints require host wrapper access control"
+    ],
+    "docs": [
+      "https://opencode.ai/docs/server/",
+      "https://opencode.ai/docs/config/",
+      "https://opencode.ai/docs/permissions/",
+      "https://opencode.ai/docs/mcp-servers/",
+      "https://raw.githubusercontent.com/anomalyco/opencode/v1.3.13/packages/opencode/src/flag/flag.ts"
+    ]
+  },
+  "wrapper_probe": {
+    "counts": {
+      "modelCalls": 3,
+      "toolCalls": 2
+    },
+    "version": "1.3.13",
+    "stop_confirmed": true,
+    "stale_epoch_rejected": true,
+    "forbidden_file_route_rejected": true,
+    "fresh_task_history_isolated": true
+  },
+  "process_tree": {
+    "parent_and_descendant_terminated": true
+  },
+  "deployment_host": {
+    "docker_id": "fb052a7a-66e8-4e2d-a07f-bec2de144e3f",
+    "docker_version": "28.5.2",
+    "platform": "linux/x86_64",
+    "verified_at": "2026-10-07T05:50:32.338Z"
+  },
+  "observed_at": "2026-10-07T05:50:32.338Z",
+  "scope": "Docker Desktop Linux bridge isolated profile; repeat on the deployment host before enabling live use",
+  "live_accepted": false
+}

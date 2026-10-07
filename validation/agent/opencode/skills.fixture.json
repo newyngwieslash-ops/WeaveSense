@@ -1,0 +1,18 @@
+[
+  {
+    "name": "industry-analysis",
+    "source": "workers/agent/skills/industry-analysis/SKILL.md",
+    "original_sha256": "1a357717500a5e4d099e1d2290432c22e5fe37138d11c707daeb26d07588f3a4",
+    "rendered_sha256": "1a357717500a5e4d099e1d2290432c22e5fe37138d11c707daeb26d07588f3a4",
+    "original": "---\r\nname: industry-analysis\r\ndescription: 从单条采集材料抽取对行业知识库有用的结构信息。\r\n---\r\n\r\n只根据提供的材料抽取 summary、topics、entities、insights 和 tags。\r\n每个关键判断使用运行时提供的 evidence_id，并摘录支持它的原文。\r\n材料没有给出的数字、日期与来源不要补写。\r\ncoverage 由程序提供，不得改成 full。\r\n没有足够材料时明确说明不足。\r\n",
+    "rendered": "---\r\nname: industry-analysis\r\ndescription: 从单条采集材料抽取对行业知识库有用的结构信息。\r\n---\r\n\r\n只根据提供的材料抽取 summary、topics、entities、insights 和 tags。\r\n每个关键判断使用运行时提供的 evidence_id，并摘录支持它的原文。\r\n材料没有给出的数字、日期与来源不要补写。\r\ncoverage 由程序提供，不得改成 full。\r\n没有足够材料时明确说明不足。\r\n"
+  },
+  {
+    "name": "cross-source-check",
+    "source": "workers/agent/skills/cross-source-check/SKILL.md",
+    "original_sha256": "a6dbb654aabc686036886bdaa9e0d1897a98b038b05ef233aa046be3d03a8501",
+    "rendered_sha256": "5d7aff92a7d6465d2f56401fdb37f216c0abe7f9e665f03b70e6f18bf35f5a2d",
+    "original": "---\r\nname: cross-source-check\r\ndescription: 比较多个媒体条目对同一行业事件的描述，找出一致、冲突与缺失证据。\r\n---\r\n\r\n使用 search_items 查找候选条目，再用 get_item 阅读支持结论的具体片段。\r\n区分原始发布与转载；多个转载不算多个独立信源。\r\n按“已知事实、存在分歧、尚缺证据”组织回答。\r\n每个关键事实使用运行时提供的 evidence_id，并摘录支持它的原文。\r\n材料没有给出的数字、日期与来源不要补写。\r\n没有足够材料时明确说明不足。\r\n",
+    "rendered": "---\r\nname: cross-source-check\r\ndescription: 比较多个媒体条目对同一行业事件的描述，找出一致、冲突与缺失证据。\r\n---\r\n\r\n使用 corpus_search 查找候选条目，再用 corpus_get_item 阅读支持结论的具体片段。\r\n区分原始发布与转载；多个转载不算多个独立信源。\r\n按“已知事实、存在分歧、尚缺证据”组织回答。\r\n每个关键事实使用运行时提供的 evidence_id，并摘录支持它的原文。\r\n材料没有给出的数字、日期与来源不要补写。\r\n没有足够材料时明确说明不足。\r\n"
+  }
+]

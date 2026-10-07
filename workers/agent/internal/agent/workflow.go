@@ -31,6 +31,11 @@ func Execute(ctx context.Context, cfg Config, req ExecuteRequest) (response Exec
 	if err := ValidateRequest(req); err != nil {
 		return fail(req.RunID, "invalid_request", false, false), nil
 	}
+	var err error
+	ctx, err = withSkillSnapshot(ctx, cfg)
+	if err != nil {
+		return fail(req.RunID, "skill_unavailable", false, false), nil
+	}
 	coverage := CoverageFull
 	for _, src := range req.Input.Sources {
 		if src.Coverage == CoveragePartial {
@@ -51,7 +56,6 @@ func Execute(ctx context.Context, cfg Config, req ExecuteRequest) (response Exec
 	if req.Mode == ModeBriefing {
 		skillName = "briefing-writing"
 	}
-	skillBody, _ := loadFixedSkill(ctx, cfg, skillName)
 	loadedSkillVersions := map[string]string{}
 	defer func() {
 		if !response.OK {
@@ -60,12 +64,16 @@ func Execute(ctx context.Context, cfg Config, req ExecuteRequest) (response Exec
 				InputTokens: i, OutputTokens: o, ModelCalls: req.Policy.MaxModelCalls - remaining, ToolCalls: req.Policy.MaxToolCalls - usage.toolLeft, Events: events}
 		}
 	}()
+	skillBody, err := loadFixedSkill(ctx, cfg, skillName)
+	if err != nil {
+		return fail(req.RunID, "skill_unavailable", false, false), nil
+	}
 	if cfg.SkillsDir != "" {
-		if versions, err := skillVersions(cfg.SkillsDir); err == nil {
-			if skillBody != "" {
-				loadedSkillVersions[skillName] = versions[skillName]
-			}
+		versions, err := skillVersionsFor(ctx, cfg)
+		if err != nil {
+			return fail(req.RunID, "skill_unavailable", false, false), nil
 		}
+		loadedSkillVersions[skillName] = versions[skillName]
 	}
 	sys := systemPrompt(req.Mode, coverage)
 	if skillBody != "" {

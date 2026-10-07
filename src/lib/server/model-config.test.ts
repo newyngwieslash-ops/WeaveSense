@@ -57,7 +57,7 @@ test("multi-profile document: create, activate, keep-key, delete and limits", as
     // Activate B; readModelConfig now returns B's config including its key.
     settings = activateModelProfile({ id: b.id, revision: settings.revision });
     assert.equal(settings.activeId, b.id);
-    let config = readModelConfig();
+    const config = readModelConfig();
     assert.equal(config.model, "xai/grok-4.5"); assert.equal(config.apiKey, "key-b");
     // Update B with empty key -> key preserved; update with new key -> replaced.
     settings = upsertModelProfile({ id: b.id, name: "网关B2", baseURL: "http://localhost:8317/v1", model: "xai/grok-4.5", apiKey: "", revision: settings.revision });

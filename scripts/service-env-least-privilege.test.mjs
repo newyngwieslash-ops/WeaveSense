@@ -27,7 +27,8 @@ function serviceBlocks(text) {
   const blocks = {};
   let current = null;
   for (const line of text.split(/\r?\n/)) {
-    const top = /^  ([a-z-]+):\s*$/.exec(line);
+    if (/^[a-z-]+:/.test(line) && line !== "services:") break;
+    const top = /^ {2}([a-z-]+):\s*$/.exec(line);
     if (top) {
       current = top[1];
       blocks[current] = [];
@@ -101,4 +102,36 @@ test("no credential appears in the repository tree", () => {
   // 不扫描文件内容（避免把一次性误读变成常态）。
   const repoLocal = /- \.\/[^:\n]*\.env/.exec(compose);
   assert.equal(repoLocal, null, `compose must not reference a repo-local env file: ${repoLocal?.[0]}`);
+});
+
+test("optional OpenCode runtime has only task credentials and an isolated network", () => {
+  const blocks = serviceBlocks(compose);
+  const runtime = blocks["opencode-runtime"].join("\n");
+  for (const text of ['profiles: ["opencode"]', 'networks: ["opencode-runtime"]', 'user: "1000:1000"', "read_only: true", 'cap_drop: ["ALL"]', 'security_opt: ["no-new-privileges:true"]', "pids_limit: 64", "mem_limit: 768m"]) {
+    assert.ok(runtime.includes(text), `runtime requires ${text}`);
+  }
+  assert.ok(!/^\s+(?:ports|volumes|env_file|extra_hosts):/m.test(runtime));
+  for (const secret of ["AGENT_MODEL_API_KEY", "XAI_API_KEY", "AGENT_DATA_TOKEN", "AGENT_SERVICE_TOKEN", "OPENCODE_WORKER_TOKEN", "OPENCODE_BRIDGE_CONTROL_TOKEN", "DATABASE_URL"]) {
+    assert.ok(!runtime.includes(secret), `runtime must not receive ${secret}`);
+  }
+  const names = [...runtime.matchAll(/^ {6}([A-Z_]+):/gm)].map(match => match[1]);
+  assert.deepEqual(names.sort(), ["OPENCODE_RUNTIME_TOKEN", "OPENCODE_BRIDGE_URL", "OPENCODE_MODEL_NAME"].sort());
+  assert.match(compose, /networks:\s*\n {2}opencode-runtime:\s*\n {4}internal: true\s*\n {4}driver_opts:\s*\n {6}com\.docker\.network\.bridge\.gateway_mode_ipv4: isolated/);
+});
+
+test("trusted OpenCode controls hold no supplier key and services stay disabled by default", () => {
+  const blocks = serviceBlocks(compose);
+  for (const service of ["agent-bridge", "opencode-worker"]) {
+    const body = blocks[service].join("\n");
+    assert.ok(body.includes('profiles: ["opencode"]'));
+    assert.ok(!/^\s+(?:ports|volumes|env_file):/m.test(body));
+    assert.ok(body.includes('networks: ["default", "opencode-runtime"]'));
+    assert.ok(body.includes("read_only: true"));
+  }
+  const worker = blocks["opencode-worker"].join("\n");
+  for (const secret of ["AGENT_MODEL_API_KEY", "XAI_API_KEY", "AGENT_DATA_TOKEN", "DATABASE_URL"]) assert.ok(!worker.includes(secret));
+  const app = blocks.app.join("\n");
+  assert.ok(app.includes("AGENT_RESEARCH_RUNTIME: ${AGENT_RESEARCH_RUNTIME:-eino}"));
+  assert.ok(app.includes("AGENT_OPENCODE_WORKER_ENABLED: ${AGENT_OPENCODE_WORKER_ENABLED:-false}"));
+  assert.ok(app.includes("AGENT_ASYNC_RESEARCH_ENABLED: ${AGENT_ASYNC_RESEARCH_ENABLED:-false}"));
 });
