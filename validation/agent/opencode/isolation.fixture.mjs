@@ -7,6 +7,7 @@ createServer(async (req, res) => {
   if (req.url === '/fixture/counts') return json(res, { modelCalls, toolCalls });
   if (req.headers.authorization !== `Bearer ${grant}`) return json(res, { error: 'invalid_grant' }, 401);
   if (req.method !== 'POST') return res.writeHead(405).end();
+  req.setEncoding('utf8');
   let text = ''; for await (const chunk of req) text += chunk;
   const input = JSON.parse(text);
   if (req.url === '/mcp') {

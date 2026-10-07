@@ -17,6 +17,7 @@ const fake = http.createServer(async (req,res) => {
   try {
     assert.equal(req.url, '/v1/chat/completions');
     assert.equal(req.method, 'POST');
+    req.setEncoding('utf8');
     let body = ''; for await(const chunk of req) { body += chunk; assert.ok(body.length < 500000); }
     const prompt = JSON.parse(body).messages[1].content;
     const sources = JSON.parse(prompt.split('素材 JSON：')[1]);

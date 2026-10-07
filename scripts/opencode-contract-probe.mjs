@@ -53,7 +53,7 @@ async function listen(handler) {
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   return { server, url: `http://127.0.0.1:${server.address().port}` };
 }
-async function body(req) { let text = ''; for await (const chunk of req) text += chunk; return JSON.parse(text || '{}'); }
+async function body(req) { req.setEncoding('utf8'); let text = ''; for await (const chunk of req) text += chunk; return JSON.parse(text || '{}'); }
 const json = (res, value, code = 200) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(value)); };
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function until(fn, timeout = 30000) {

@@ -30,7 +30,7 @@ const digest=v=>createHash('sha256').update(canonical(v)).digest('hex');
 const json=(res,value,status=200)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(value))};
 createServer(async(req,res)=>{
  if(req.url==='/stats')return json(res,{receipts,vendorRequests,modelCalls:[...calls.values()],toolCalls:[...toolCalls.values()],toolReads});
- let text='';for await(const b of req)text+=b;const input=JSON.parse(text);
+ req.setEncoding('utf8');let text='';for await(const b of req)text+=b;const input=JSON.parse(text);
  if(req.url==='/agent-data'){
   assert.equal(req.headers.authorization,'Bearer ${appToken}');assert.equal(req.headers['x-agent-run-token'],'${runToken}');
   assert.ok(/^[a-f0-9-]{36}$/.test(input.run_id));assert.ok(/^[a-f0-9-]{36}$/.test(input.claim_token));

@@ -14,6 +14,7 @@ export default tseslint.config(
       ".vercel/**",
       ".nitro/**",
       ".repo/**",
+      "artifacts/**",
       "node_modules/**",
       "src/routeTree.gen.ts",
       // Vendored local Comet bundle and generated orchestration state are not app source.

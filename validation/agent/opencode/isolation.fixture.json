@@ -5,11 +5,11 @@
   "license": "MIT",
   "binary_sha256": "58b9e43f2bfa25ee7daa748ecf1a9169b66e350c3c2f64e60b2bc5318f4baf9e",
   "base_image": "public.ecr.aws/docker/library/node:22.22.3-bookworm-slim@sha256:e21fc383b50d5347dc7a9f1cae45b8f4e2f0d39f7ade28e4eef7d2934522b752",
-  "probe_image_id": "sha256:0fe9bdc15bda7074dc45cc5b7daa993ad185baed7706f571a73b25759940d883",
-  "runtime_image_id": "sha256:583b20b3112abf7dd20ccabf49636807eb6a37098378d8aa5c7904a6ddf64738",
+  "probe_image_id": "sha256:ffbd20aa5df113090b527aee09667d25f577d8a975695512a85d98e38aa26524",
+  "runtime_image_id": "sha256:969fc1f4311859db1e042e59271265eec56abdeb467a2833ebecd0278e6452a1",
   "runtime_image_digest": null,
   "runtime_local_repo_digests": [
-    "weavesense-opencode-runtime@sha256:583b20b3112abf7dd20ccabf49636807eb6a37098378d8aa5c7904a6ddf64738"
+    "weavesense-opencode-runtime@sha256:969fc1f4311859db1e042e59271265eec56abdeb467a2833ebecd0278e6452a1"
   ],
   "runtime_image_reference": "local build: weavesense-opencode-runtime:1.3.13; no published/pullable registry manifest attested",
   "production_artifact": {
@@ -32,7 +32,7 @@
     {
       "name": "approved_bridge",
       "hostname": "fixture-bridge",
-      "address": "172.24.0.1",
+      "address": "192.168.16.1",
       "port": 8792,
       "allowed": true
     },
@@ -56,7 +56,7 @@
       "name": "host_alias",
       "hostname": "host.docker.internal",
       "address": "host.docker.internal",
-      "port": 56275,
+      "port": 59522,
       "allowed": false,
       "error": "EAI_AGAIN"
     },
@@ -64,7 +64,7 @@
       "name": "host_numeric_canary",
       "hostname": "192.168.65.254",
       "address": "192.168.65.254",
-      "port": 56275,
+      "port": 59522,
       "allowed": false,
       "error": "ENETUNREACH"
     },
@@ -113,7 +113,7 @@
     "binary_sha256": "58b9e43f2bfa25ee7daa748ecf1a9169b66e350c3c2f64e60b2bc5318f4baf9e",
     "config_sha256": "b23945b2b6920272dbe10df9f0bf25acfa97d1865ea2070a7b3083f7d82ccd7c",
     "openapi_sha256": "5d1b724068d39e8a706617545db42bc51850ce611da37f03fcfab7f77a26316e",
-    "observed_at": "2026-10-07T05:50:22.368Z",
+    "observed_at": "2026-10-07T08:47:10.845Z",
     "offline_feasible": true,
     "live_accepted": false,
     "model_protocol": "OpenAI-compatible /v1/chat/completions SSE, @ai-sdk/openai-compatible",
@@ -221,9 +221,9 @@
     "docker_id": "fb052a7a-66e8-4e2d-a07f-bec2de144e3f",
     "docker_version": "28.5.2",
     "platform": "linux/x86_64",
-    "verified_at": "2026-10-07T05:50:32.338Z"
+    "verified_at": "2026-10-07T08:47:20.208Z"
   },
-  "observed_at": "2026-10-07T05:50:32.338Z",
+  "observed_at": "2026-10-07T08:47:20.208Z",
   "scope": "Docker Desktop Linux bridge isolated profile; repeat on the deployment host before enabling live use",
   "live_accepted": false
 }

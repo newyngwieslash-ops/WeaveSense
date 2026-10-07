@@ -25,7 +25,7 @@ function stop(p){if(!p||p.exitCode!==null||p.signalCode!==null)return;if(windows
 function npm(script,portNo,env,label){return windows?launch('cmd.exe',['/d','/s','/c',`npm run ${script} -- --host 127.0.0.1 --port ${portNo} --strictPort`],env,label):launch('npm',['run',script,'--','--host','127.0.0.1','--port',String(portNo),'--strictPort'],env,label);}
 async function until(fn,label,ms=60000){const end=Date.now()+ms;while(Date.now()<end){if(await fn())return;await pause(100);}throw Error(`timeout: ${label}`);}
 async function serve(handler){const s=http.createServer(handler);await new Promise(r=>s.listen(0,'127.0.0.1',r));servers.push(s);return `http://127.0.0.1:${s.address().port}`;}
-async function jsonBody(req){let text='';for await(const chunk of req){text+=chunk;if(text.length>1024*1024)throw Error('request too large');}return JSON.parse(text||'{}');}
+async function jsonBody(req){req.setEncoding('utf8');let text='';for await(const chunk of req){text+=chunk;if(text.length>1024*1024)throw Error('request too large');}return JSON.parse(text||'{}');}
 const json=(res,body,status=200)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));};
 const testToken=`offline-${randomUUID()}`;
 try {

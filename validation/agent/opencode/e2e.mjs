@@ -79,6 +79,7 @@ async function freePort() {
   const port = s.address().port; await new Promise(r => s.close(r)); return port;
 }
 async function body(req) {
+  req.setEncoding('utf8');
   let text = ''; for await (const chunk of req) { text += chunk; assert.ok(text.length <= 1024 * 1024); }
   return JSON.parse(text || '{}');
 }

@@ -60,6 +60,7 @@ export async function runLiveAdapterSmoke() {
     model = http.createServer(async (req, res) => {
       try {
         assert.equal(req.headers.authorization, 'Bearer ' + token); assert.equal(req.url, '/v1/chat/completions');
+        req.setEncoding('utf8');
         let raw = ''; for await (const chunk of req) { raw += chunk; assert.ok(raw.length < 1024 * 1024); }
         const input = JSON.parse(raw), answer = fakeReply(input); assert.equal(Boolean(input.stream), false);
         result.calls.push({ role: answer.role });

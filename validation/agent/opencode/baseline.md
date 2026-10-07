@@ -291,3 +291,7 @@ aliases; fixing only that harness setup produced the passing rerun. Compact
 non-secret evidence is `live-adapter-smoke.fixture.json`; local details are
 `.repo/live-adapter-smoke-4d6bfd7a-7975-4493-9342-f12ff926cbac/verdict.json`.
 This is one authored question, not a quality comparison or adoption decision.
+
+Go ModelProxy integration (2026-10-07T08:45:52.901Z): actual pinned Linux OpenCode completed 3 admitted model sends and 2 corpus tools through the production Go bridge. Natural SDK max_tokens was 1800 on every send; exact bounded request digests and completed usage receipts matched the fake ledger. Runtime vendor bypass/public egress were denied; no vendor/app credentials, host binds or published ports existed in runtime. Labelled test resources were removed. Paid requests: 0. This covers fake-ledger integration only, not real-DB end-to-end publication or model quality.
+
+Go ModelProxy integration (2026-10-07T08:49:54.511Z): actual pinned Linux OpenCode completed 3 admitted model sends and 2 corpus tools through the production Go bridge. Natural SDK max_tokens was 1800 on every send; exact bounded request digests and completed usage receipts matched the fake ledger. Runtime vendor bypass/public egress were denied; no vendor/app credentials, host binds or published ports existed in runtime. Labelled test resources were removed. Paid requests: 0. This covers fake-ledger integration only, not real-DB end-to-end publication or model quality.
