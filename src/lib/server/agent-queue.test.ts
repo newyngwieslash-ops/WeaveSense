@@ -203,7 +203,7 @@ test("runtime migration proves old ownership and preserves linked runs", async (
   const f = await setup(false);
   try {
     await f.sql.query("insert into ai_runs(id,request_id,mode,provider,input_hash,material_hash,policy_version,request_json,status,claim_token,expires_at) values('linked-run','linked-request','research','eino','h','m','v','{\"provider\":\"eino\",\"mode\":\"research\"}','running','claim',now()+interval '1 minute')");
-    await f.sql.query("insert into ai_jobs(id,item_id,material_hash,policy_version,status,payload,run_id) values('auto-old','item-old','h','v','queued','{}',null),('research-old','research:old','h','v','queued','{\"provider\":\"eino\",\"mode\":\"research\"}',null),('linked-old','research:linked','h','v','running','{}','linked-run')");
+    await f.sql.query("insert into ai_jobs(id,item_id,material_hash,policy_version,status,payload,run_id,job_kind) values('auto-old','item-old','h','v','queued','{}',null,'analyze_item'),('research-old','research:old','h','v','queued','{\"provider\":\"eino\",\"mode\":\"research\"}',null,'research'),('linked-old','research:linked','h','v','running','{}','linked-run','research')");
     await f.pg.transaction(tx => tx.exec(readFileSync(new URL("../../../migrations/0023_research_runtime.sql", import.meta.url), "utf8")));
     const jobs = await f.sql.query<{ runtime_provider: string }>("select runtime_provider from ai_jobs order by id");
     assert.deepEqual(jobs.map(row => row.runtime_provider), ["eino", "eino", "eino"]);
@@ -225,7 +225,7 @@ test("runtime migration aborts unknown or contradictory historical ownership wit
     const f = await setup(false);
     try {
       if (fixture.linked) await f.sql.query("insert into ai_runs(id,request_id,mode,provider,input_hash,material_hash,policy_version,request_json,status,claim_token,expires_at) values('linked-run','linked-request','research','eino','h','m','v','{}','running','claim',now()+interval '1 minute')");
-      await f.sql.query("insert into ai_jobs(id,item_id,material_hash,policy_version,status,payload,run_id) values($1,$2,'h','v','queued',$3::jsonb,$4)", [fixture.id, fixture.item, fixture.payload, fixture.linked ? "linked-run" : null]);
+      await f.sql.query("insert into ai_jobs(id,item_id,material_hash,policy_version,status,payload,run_id,job_kind) values($1,$2,'h','v','queued',$3::jsonb,$4,$5)", [fixture.id, fixture.item, fixture.payload, fixture.linked ? "linked-run" : null, fixture.item.startsWith("research:") ? "research" : "analyze_item"]);
       await assert.rejects(f.pg.transaction(tx => tx.exec(readFileSync(new URL("../../../migrations/0023_research_runtime.sql", import.meta.url), "utf8"))), new RegExp(fixture.id));
       assert.equal((await f.sql.query("select column_name from information_schema.columns where table_name='ai_jobs' and column_name='runtime_provider'")).length, 0);
       assert.equal((await f.sql.query("select id from ai_jobs where id=$1", [fixture.id])).length, 1);

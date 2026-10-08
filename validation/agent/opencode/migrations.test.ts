@@ -23,7 +23,9 @@ async function legacy(db: Db) {
     insert into ai_model_calls(run_id,call_id,model,policy_version,execution_day,state,input_tokens,output_tokens)
       values('legacy-run','old-call','old-model','old-policy','2026-10-06','completed',20,10);
     insert into ai_jobs(id,item_id,material_hash,policy_version,status,run_id,payload)
-      values('conflicting-job','research:legacy','material','old-policy','succeeded','legacy-run','{"provider":"unknown","mode":"research"}');`);
+      values('conflicting-job','research:legacy','material','old-policy','succeeded','legacy-run','{"provider":"unknown","mode":"research"}');
+    insert into ai_jobs(id,item_id,material_hash,policy_version,status,payload)
+      values('no-kind-job','research:nokind','material','old-policy','queued','{}');`);
 }
 
 async function records(db: Db) {

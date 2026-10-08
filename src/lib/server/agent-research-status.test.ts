@@ -28,7 +28,7 @@ test("status reads are side-effect free; unauthorized cancellation never queries
   const { pg, sql: db } = await researchTestDb();
   try {
     const id = randomUUID();
-    await db.query("insert into ai_jobs(id,item_id,material_hash,policy_version,status) values($1,'research:read','h','v1','queued')", [id]);
+    await db.query("insert into ai_jobs(id,item_id,material_hash,policy_version,status,job_kind) values($1,'research:read','h','v1','queued','research')", [id]);
     assert.equal((await getResearchStatus(db, id))?.phase, "queued");
     assert.equal((await getResearchStatus(db, id))?.status, "queued");
     assert.equal((await db.query<{ status: string }>("select status from ai_jobs where id=$1", [id]))[0].status, "queued");
@@ -57,7 +57,7 @@ test("queued unclaimed cancellation releases only a proven unsent reservation an
   const { pg, sql } = await researchTestDb();
   try {
     const id = randomUUID();
-    await sql.query("insert into ai_jobs(id,item_id,material_hash,policy_version,status) values($1,'research:cancel','h','v1','queued')", [id]);
+    await sql.query("insert into ai_jobs(id,item_id,material_hash,policy_version,status,job_kind) values($1,'research:cancel','h','v1','queued','research')", [id]);
     await sql.query("insert into ai_budget_days(day,price_version,reserved_count,reserved_rmb) values('2026-10-07','v1',1,2)");
     await sql.query("insert into ai_budget_reservations(id,job_id,day,price_version,reserved_rmb,status,pricing) values($1,$2,'2026-10-07','v1',2,'reserved','{}')", [randomUUID(), id]);
     const cancelled = await cancelResearchJob(sql, id, true);
@@ -107,7 +107,7 @@ test("an offline worker's expired run converges without cancelling another job o
     const digest = "a".repeat(64);
     await sql.query("insert into ai_research_candidates(run_id,result_json,evidence_json,candidate_digest,evidence_digest,policy_digest,frozen_policy) values($1,'{\"content\":\"已保存草稿\"}','[]',$2,$2,$2,'{}')", [run.runId, digest]);
     const other = randomUUID();
-    await sql.query("insert into ai_jobs(id,item_id,material_hash,policy_version,status) values($1,'research:unrelated','h','v1','queued')", [other]);
+    await sql.query("insert into ai_jobs(id,item_id,material_hash,policy_version,status,job_kind) values($1,'research:unrelated','h','v1','queued','research')", [other]);
     await sql.query("update ai_runs set expires_at=clock_timestamp()-interval '1 second' where id=$1", [run.runId]);
     await sql.query("update ai_jobs set lease_until=clock_timestamp()-interval '1 second' where id=$1", [job.id]);
     const status = await getResearchStatus(sql, job.id);

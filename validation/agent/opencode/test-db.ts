@@ -32,8 +32,8 @@ export async function testResearchRun(sql: Awaited<ReturnType<typeof researchTes
   let jobId: string | undefined;
   if (requestJson.governed) {
     jobId = randomUUID();
-    await sql.query(`insert into ai_jobs(id,item_id,material_hash,policy_version,status,claim_token,lease_until,runtime_provider,payload)
-      values($1,$2,'materials',$3,'running',$4,clock_timestamp()+interval '60 seconds',$5,$6::jsonb)`,
+    await sql.query(`insert into ai_jobs(id,item_id,material_hash,policy_version,status,claim_token,lease_until,runtime_provider,job_kind,payload)
+      values($1,$2,'materials',$3,'running',$4,clock_timestamp()+interval '60 seconds',$5,'research',$6::jsonb)`,
     [jobId, "research:" + runId, policy.version, claimToken, overrides.provider ?? "eino", JSON.stringify(requestJson)]);
     const [clock] = await sql.query<{ day: string }>("select to_char(clock_timestamp() at time zone 'Asia/Shanghai','YYYY-MM-DD') as day");
     await sql.query("insert into ai_budget_days(day,price_version,reserved_count,reserved_rmb) values($1,'test-price',1,10) on conflict(day,price_version) do update set reserved_count=ai_budget_days.reserved_count+1,reserved_rmb=ai_budget_days.reserved_rmb+10", [clock.day]);

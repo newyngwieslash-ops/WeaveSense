@@ -111,8 +111,8 @@ export async function enqueueReadyAnalyses(
     });
     if (!reserved) return false;
     const inserted = await sql.query<{ id: string }>(
-      `insert into ai_jobs (id, item_id, material_hash, policy_version, status)
-       values ($1,$2,$3,$4,'queued')
+      `insert into ai_jobs (id, item_id, material_hash, policy_version, status, job_kind)
+       values ($1,$2,$3,$4,'queued','analyze_item')
        on conflict (item_id, material_hash, policy_version) do nothing
        returning id`,
       [randomUUID(), item.id, hash, POLICY_VERSION],
@@ -211,8 +211,8 @@ async function enqueueResearchJobInner(sql: Queryable, input: ResearchEnqueueInp
   }
   const timing = researchTimingFromEnv();
   const [row] = await sql.query<Record<string, unknown>>(
-    `insert into ai_jobs (id, item_id, material_hash, policy_version, status, payload, request_id, runtime_provider)
-     values ($1,$2,$3,$4,'queued',$5::jsonb,$6,$7)
+    `insert into ai_jobs (id, item_id, material_hash, policy_version, status, payload, request_id, runtime_provider, job_kind)
+     values ($1,$2,$3,$4,'queued',$5::jsonb,$6,$7,'research')
      on conflict (request_id) where request_id is not null do nothing
      returning id, status`,
     [randomUUID(), `research:${input.requestId}`, input.materialHash, POLICY_VERSION, JSON.stringify({
