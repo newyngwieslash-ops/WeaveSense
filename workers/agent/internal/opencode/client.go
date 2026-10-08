@@ -39,6 +39,7 @@ type RuntimeState struct {
 	SkillSnapshotDigest string            `json:"skill_snapshot_digest"`
 	SkillVersions       map[string]string `json:"skill_versions"`
 	Status              string            `json:"status"`
+	Profile             string            `json:"profile,omitempty"`
 	DispatchState       string            `json:"dispatch_state"`
 	ProcessRunning      bool              `json:"process_running"`
 	Stopped             bool              `json:"stopped,omitempty"`
@@ -135,13 +136,36 @@ func decodeState(raw []byte, b *Binding) (RuntimeState, error) {
 	return s, nil
 }
 func (c *Client) Prepare(ctx context.Context, runID, grant, claim string) (RuntimeState, error) {
-	raw, _, err := c.request(ctx, "POST", "/prepare", map[string]string{"run_id": runID, "grant": grant, "claim_token": claim})
+	return c.PrepareProfile(ctx, runID, grant, claim, "research")
+}
+
+// PrepareProfile carries the trusted host profile with the prepare request.
+// Research (the default) keeps its original three-skill manifest check; the
+// assistant profile must present exactly its own single approved skill, so a
+// prepared response from the wrong profile can never be swapped in (§4.3).
+func (c *Client) PrepareProfile(ctx context.Context, runID, grant, claim, profile string) (RuntimeState, error) {
+	if profile != "research" && profile != "assistant" {
+		return RuntimeState{}, errors.New("invalid_profile")
+	}
+	raw, _, err := c.request(ctx, "POST", "/prepare", map[string]string{"run_id": runID, "grant": grant, "claim_token": claim, "profile": profile})
 	if err != nil {
 		return RuntimeState{}, err
 	}
 	s, err := decodeState(raw, nil)
-	if err == nil && (s.RunID != runID || s.Status != "prepared" || !digestRE.MatchString(s.ConfigDigest) || !digestRE.MatchString(s.SkillSnapshotDigest) || len(s.SkillVersions) != 3) {
-		err = errors.New("invalid_prepared_binding")
+	if err == nil {
+		wantSkills := 3
+		if profile == "assistant" {
+			wantSkills = 1
+		}
+		if s.RunID != runID || s.Status != "prepared" || !digestRE.MatchString(s.ConfigDigest) || !digestRE.MatchString(s.SkillSnapshotDigest) || len(s.SkillVersions) != wantSkills {
+			err = errors.New("invalid_prepared_binding")
+		} else if profile == "assistant" {
+			if _, ok := s.SkillVersions["project-assistant"]; !ok {
+				err = errors.New("invalid_prepared_binding")
+			}
+		} else if _, mixed := s.SkillVersions["project-assistant"]; mixed {
+			err = errors.New("invalid_prepared_binding")
+		}
 	}
 	return s, err
 }
@@ -379,6 +403,125 @@ func TerminalResult(raw []byte, session, model string) (*agent.AgentResult, bool
 		return nil, false, errors.New("invalid_terminal_result")
 	}
 	if err := agent.ValidateResult(result, agent.ModeResearch); err != nil {
+		return nil, false, err
+	}
+	return &result, true, nil
+}
+
+// AssistantTerminalResult is the §4.3 sibling of TerminalResult: it validates
+// an assistant-profile turn (agent='assistant') whose final text must parse as
+// the host's AssistantResult contract. The research decoder refuses assistant
+// messages and vice versa, so a profile swap cannot smuggle a payload through.
+func AssistantTerminalResult(raw []byte, session, model string) (*agent.AssistantResult, bool, error) {
+	if len(raw) > MaxRuntimeBytes || !sessionRE.MatchString(session) {
+		return nil, false, errors.New("invalid_messages")
+	}
+	type infoShape = struct {
+		ID, Role, Agent, Finish string
+		SessionID  string          `json:"sessionID"`
+		ProviderID string          `json:"providerID"`
+		ModelID    string          `json:"modelID"`
+		Error      json.RawMessage `json:"error"`
+		Time       struct {
+			Completed int64 `json:"completed"`
+		} `json:"time"`
+	}
+	type partShape = struct {
+		Type, Text string
+		SessionID string `json:"sessionID"`
+		MessageID string `json:"messageID"`
+	}
+	var payload struct {
+		Messages []struct {
+			Info  infoShape
+			Parts []partShape
+		}
+	}
+	// Accept either the raw array or an event-wrapped envelope.
+	var rawMessages []struct {
+		Info  json.RawMessage `json:"info"`
+		Parts json.RawMessage `json:"parts"`
+	}
+	if json.Unmarshal(raw, &rawMessages) != nil || len(rawMessages) > 256 {
+		return nil, false, errors.New("invalid_messages")
+	}
+	var last = -1
+	for i, m := range rawMessages {
+		var info struct {
+			ID, Role, Agent, Finish string
+			SessionID               string          `json:"sessionID"`
+			ProviderID              string          `json:"providerID"`
+			ModelID                 string          `json:"modelID"`
+			Error                   json.RawMessage `json:"error"`
+			Time                    struct {
+				Completed int64 `json:"completed"`
+			} `json:"time"`
+		}
+		if json.Unmarshal(m.Info, &info) != nil {
+			return nil, false, errors.New("invalid_messages")
+		}
+		if info.SessionID != session || !messageRE.MatchString(info.ID) {
+			return nil, false, errors.New("foreign_session_message")
+		}
+		var parts []struct {
+			Type, Text string
+			SessionID  string `json:"sessionID"`
+			MessageID  string `json:"messageID"`
+		}
+		if json.Unmarshal(m.Parts, &parts) != nil {
+			return nil, false, errors.New("invalid_messages")
+		}
+		for _, p := range parts {
+			if p.SessionID != session || p.MessageID != info.ID {
+				return nil, false, errors.New("foreign_message_part")
+			}
+		}
+		if info.Role == "assistant" {
+			last = i
+		}
+		payload.Messages = append(payload.Messages, struct {
+			Info  struct {
+				ID, Role, Agent, Finish string
+				SessionID               string          `json:"sessionID"`
+				ProviderID              string          `json:"providerID"`
+				ModelID                 string          `json:"modelID"`
+				Error                   json.RawMessage `json:"error"`
+				Time                    struct {
+					Completed int64 `json:"completed"`
+				} `json:"time"`
+			}
+			Parts []struct {
+				Type, Text string
+				SessionID  string `json:"sessionID"`
+				MessageID  string `json:"messageID"`
+			}
+		}{info, parts})
+	}
+	if last < 0 {
+		return nil, false, nil
+	}
+	m := payload.Messages[last]
+	if len(m.Info.Error) > 0 && string(m.Info.Error) != "null" {
+		return nil, false, errors.New("runtime_model_error")
+	}
+	if m.Info.Time.Completed <= 0 || m.Info.Finish == "" || m.Info.Finish == "tool-calls" || m.Info.Finish == "unknown" {
+		return nil, false, nil
+	}
+	if m.Info.Finish != "stop" || m.Info.Agent != "assistant" || m.Info.ProviderID != "bridge" || m.Info.ModelID != model {
+		return nil, false, errors.New("invalid_terminal_message")
+	}
+	var texts []string
+	for _, p := range m.Parts {
+		if p.Type == "text" {
+			texts = append(texts, p.Text)
+		}
+	}
+	if len(texts) != 1 || len(texts[0]) > agent.MaxResponseBytes {
+		return nil, false, errors.New("invalid_terminal_result")
+	}
+	var result agent.AssistantResult
+	result, err := agent.ParseAssistantResult([]byte(texts[0]))
+	if err != nil {
 		return nil, false, err
 	}
 	return &result, true, nil

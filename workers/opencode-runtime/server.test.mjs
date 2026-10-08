@@ -16,7 +16,13 @@ async function fixture(t, options = {}) {
   runtime.stdout = new EventEmitter(); runtime.stderr = new EventEmitter();
   const app = createRuntimeServer({ stateRoot: root, token: 'control-fixture-token', bridgeURL: 'http://bridge:8792', modelName: 'fixture',
     approvedSkillRoot: fileURLToPath(new URL('../agent/skills/', import.meta.url)),
-    spawnRuntime(binary, args, config) { calls.push({ binary, args, config }); return runtime; },
+    spawnRuntime(binary, args, config) {
+      // Each run gets a fresh child: the fixture reuses one EventEmitter for
+      // exit events, but exitCode must reset per spawned instance.
+      calls.push({ binary, args, config });
+      runtime.exitCode = null;
+      return runtime;
+    },
     fetchRuntime: async (url, options) => {
       calls.push({ url, options });
       if (url.endsWith('/prompt_async')) return new Response(null, { status: 204 });
@@ -170,4 +176,64 @@ test('stable redacted config binds all approved raw skills and caps model output
   await f.request('/stop', 'POST', {instance_id:first.instance_id,epoch:first.epoch});
   const second = (await f.prepare()).body;
   assert.equal(second.config_digest, first.config_digest);
+});
+
+// --- Task 8: assistant profile (plan §4.3) ---------------------------------
+
+test('profile defaults to research; assistant profile renders its own skill and tools', async (t) => {
+  const f = await fixture(t);
+  // Omitted profile stays strictly research (echoed explicitly in summary).
+  const research = (await f.prepare()).body;
+  assert.equal(research.profile, 'research');
+  await f.request('/stop', 'POST', { instance_id: research.instance_id, epoch: research.epoch });
+  // Assistant profile prepares with the project-assistant skill only.
+  const assistant = (await f.request('/prepare', 'POST', { run_id: 'run-assistant', claim_token: 'claim-fixture-token', grant: 'opaque-run-grant-fixture', profile: 'assistant' })).body;
+  assert.equal(assistant.profile, 'assistant');
+  assert.deepEqual(Object.keys(assistant.skill_versions), ['project-assistant']);
+  await f.request('/start', 'POST', { instance_id: assistant.instance_id, epoch: assistant.epoch });
+  // The spawn call is the second binary entry (first was the research start).
+  const spawned = f.calls.filter((c) => c.binary).pop();
+  const config = JSON.parse(await readFile(spawned.config.env.OPENCODE_CONFIG, 'utf8'));
+  assert.equal(config.default_agent, 'assistant');
+  assert.equal(config.permission['*'], 'deny');
+  assert.equal(config.permission.corpus_search_items, undefined, 'assistant has no corpus tools');
+  assert.ok(config.permission.project_overview === 'allow', 'assistant read tools allowed');
+  assert.equal(config.permission.skill['project-assistant'], 'allow');
+  await f.request('/stop', 'POST', { instance_id: assistant.instance_id, epoch: assistant.epoch });
+});
+
+test('unknown profiles are refused before any runtime work', async (t) => {
+  const f = await fixture(t);
+  const res = await f.request('/prepare', 'POST', { run_id: 'run-x', claim_token: 'claim-fixture-token', grant: 'opaque-run-grant-fixture', profile: 'admin' });
+  assert.equal(res.status, 400);
+  assert.equal(f.calls.length, 0);
+});
+
+test('research instance cannot dispatch with the assistant agent and vice versa', async (t) => {
+  const f = await fixture(t);
+  const { body: p } = await f.prepare();
+  const identity = { instance_id: p.instance_id, epoch: p.epoch };
+  await f.request('/start', 'POST', identity);
+  await f.request('/forward', 'POST', { ...identity, method: 'POST', path: '/session', body: {} });
+  const prompt = { ...identity, method: 'POST', path: '/session/ses_fixture/prompt_async', body: { parts: [{ type: 'text', text: 'Hi' }], agent: 'assistant' } };
+  assert.equal((await f.request('/forward', 'POST', prompt)).status, 400, 'research profile rejects assistant agent');
+  await f.request('/stop', 'POST', identity);
+  // Assistant profile rejects the research agent. (The prior dispatch already
+  // consumed the one-shot slot, so the fresh run below uses its own slot.)
+  const a = (await f.request('/prepare', 'POST', { run_id: 'run-assistant2', claim_token: 'claim-fixture-token', grant: 'opaque-run-grant-fixture', profile: 'assistant' })).body;
+  const aid = { instance_id: a.instance_id, epoch: a.epoch };
+  await f.request('/start', 'POST', aid);
+  await f.request('/forward', 'POST', { ...aid, method: 'POST', path: '/session', body: {} });
+  const rprompt = { ...aid, method: 'POST', path: '/session/ses_fixture/prompt_async', body: { parts: [{ type: 'text', text: 'Hi' }], agent: 'research' } };
+  assert.equal((await f.request('/forward', 'POST', rprompt)).status, 400, 'assistant profile rejects research agent');
+});
+
+test('assistant skill digest covers its own manifest only', async (t) => {
+  const f = await fixture(t);
+  const a = (await f.request('/prepare', 'POST', { run_id: 'run-assistant3', claim_token: 'claim-fixture-token', grant: 'opaque-run-grant-fixture', profile: 'assistant' })).body;
+  const rel = 'project-assistant/SKILL.md';
+  const raw = await readFile(new URL(`../agent/skills/${rel}`, import.meta.url));
+  const version = createHash('sha256').update(rel).update(raw).digest('hex');
+  assert.equal(a.skill_versions['project-assistant'], version);
+  assert.equal(a.skill_snapshot_digest, createHash('sha256').update(`project-assistant\0${version}\n`).digest('hex'));
 });

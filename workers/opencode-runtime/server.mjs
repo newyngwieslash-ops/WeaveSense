@@ -61,7 +61,7 @@ export function createRuntimeServer({ stateRoot = '/state', token = process.env.
   function summary(instance) {
     return { instance_id: instance.id, epoch: instance.epoch, run_id: instance.runID,
       version: VERSION, config_digest: instance.digest, status: instance.status,
-      skill_snapshot_digest: instance.skillDigest, skill_versions: instance.skillVersions,
+      profile: instance.profile, skill_snapshot_digest: instance.skillDigest, skill_versions: instance.skillVersions,
       dispatch_state: instance.dispatchState, session_id: instance.session?.id || null, process_running: !!instance.child && instance.child.exitCode === null };
   }
   function bound(input) {
@@ -69,9 +69,12 @@ export function createRuntimeServer({ stateRoot = '/state', token = process.env.
     return active;
   }
   async function prepare(input) {
-    exactKeys(input, ['run_id', 'grant', 'claim_token']);
+    exactKeys(input, ['run_id', 'grant', 'claim_token', ...(input?.profile !== undefined ? ['profile'] : [])]);
     if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{1,127}$/.test(input.run_id || '') || !/^[a-zA-Z0-9._~-]{16,2048}$/.test(input.grant || '') || !/^[a-zA-Z0-9._~-]{16,2048}$/.test(input.claim_token || '')) throw failure('invalid_prepare');
-    const binding = hash(JSON.stringify(input));
+    // Profile is a trusted host enum; the browser/model can never pick one.
+    const profile = input.profile === undefined ? 'research' : input.profile;
+    if (profile !== 'research' && profile !== 'assistant') throw failure('invalid_profile');
+    const binding = hash(JSON.stringify({ run_id: input.run_id, grant: input.grant, claim_token: input.claim_token, profile }));
     if (active) {
       if (active.binding === binding && active.status !== 'stopping') return summary(active);
       throw failure('runtime_busy', 409);
@@ -82,7 +85,10 @@ export function createRuntimeServer({ stateRoot = '/state', token = process.env.
       for (const dir of ['work', 'home', 'config', 'data', 'cache', 'state', 'temp']) await mkdir(path.join(root, dir));
       const skillPath = path.join(root, 'approved-skills');
       const skillInstructions = [], skillVersions = {};
-      for (const name of ['briefing-writing', 'cross-source-check', 'industry-analysis']) {
+      // Each profile renders its own explicit manifest; digests cover exactly
+      // what that profile mounts (§4.3).
+      const skillNames = profile === 'assistant' ? ['project-assistant'] : ['briefing-writing', 'cross-source-check', 'industry-analysis'];
+      for (const name of skillNames) {
         let original;
         try {
           const dir = path.join(approvedSkillRoot, name), file = path.join(dir, 'SKILL.md');
@@ -93,16 +99,23 @@ export function createRuntimeServer({ stateRoot = '/state', token = process.env.
         catch { throw failure('required_skill_missing', 503); }
         skillVersions[name] = hash(`${name}/SKILL.md${original}`);
         if (name === 'briefing-writing') continue;
-        const rendered = original.replaceAll('search_items', 'corpus_search_items').replaceAll('get_item', 'corpus_get_item');
+        const rendered = profile === 'assistant' ? original
+          : original.replaceAll('search_items', 'corpus_search_items').replaceAll('get_item', 'corpus_get_item');
         await mkdir(path.join(skillPath, name), { recursive: true });
         await writeFile(path.join(skillPath, name, 'SKILL.md'), rendered, { mode: 0o600 });
         skillInstructions.push(rendered);
       }
+      const agentPrompt = profile === 'assistant'
+        ? 'You are the read-only project assistant. Gather data ONLY with the host read tools. Never invoke shell, external websites, sub-agents or write files. Propose every write as a structured action in your final JSON for host-side approval.\n' + skillInstructions.join('\n')
+        : 'Research only the approved corpus using corpus_search_items and corpus_get_item. Never invoke shell, external websites, sub-agents or write files. Return the requested structured AgentResult JSON.\n' + skillInstructions.join('\n');
+      const assistantTools = { project_overview: 'allow', list_keywords: 'allow', list_sources: 'allow', search_items: 'allow', get_item: 'allow', list_notes: 'allow', get_note: 'allow', list_collection_jobs: 'allow', get_collection_job: 'allow', get_research_status: 'allow', get_operation: 'allow', get_service_status: 'allow' };
       const config = { $schema: 'https://opencode.ai/config.json', model: `bridge/${modelName}`, small_model: `bridge/${modelName}`,
         enabled_providers: ['bridge'], plugin: [], share: 'disabled', autoupdate: false, compaction: { auto: false, prune: false },
-        permission: { '*': 'deny', corpus_search_items: 'allow', corpus_get_item: 'allow', skill: { '*': 'deny', 'industry-analysis': 'allow', 'cross-source-check': 'allow' } },
-        default_agent: 'research', skills: { paths: [skillPath] },
-        agent: { research: { mode: 'primary', steps: 16, prompt: 'Research only the approved corpus using corpus_search_items and corpus_get_item. Never invoke shell, external websites, sub-agents or write files. Return the requested structured AgentResult JSON.\n' + skillInstructions.join('\n') }, title: { disable: true }, summary: { disable: true }, compaction: { disable: true }, explore: { disable: true }, general: { disable: true } },
+        permission: profile === 'assistant'
+          ? { '*': 'deny', ...assistantTools, skill: { '*': 'deny', 'project-assistant': 'allow' } }
+          : { '*': 'deny', corpus_search_items: 'allow', corpus_get_item: 'allow', skill: { '*': 'deny', 'industry-analysis': 'allow', 'cross-source-check': 'allow' } },
+        default_agent: profile === 'assistant' ? 'assistant' : 'research', skills: { paths: [skillPath] },
+        agent: { [profile === 'assistant' ? 'assistant' : 'research']: { mode: 'primary', steps: 16, prompt: agentPrompt }, title: { disable: true }, summary: { disable: true }, compaction: { disable: true }, explore: { disable: true }, general: { disable: true } },
         provider: { bridge: { npm: '@ai-sdk/openai-compatible', name: 'Trusted research bridge', options: { baseURL: `${bridge.origin}/v1`, apiKey: input.grant }, models: { [modelName]: { name: modelName, limit: { context: 32768, output: 1800 } } } } },
         mcp: { corpus: { type: 'remote', url: `${bridge.origin}/mcp`, oauth: false, enabled: true, headers: { Authorization: `Bearer ${input.grant}` } } } };
       const serialized = JSON.stringify(config);
@@ -110,7 +123,7 @@ export function createRuntimeServer({ stateRoot = '/state', token = process.env.
       // Hash a redacted config so status exposes no reusable credential digest.
       const publicConfig = structuredClone(config); publicConfig.provider.bridge.options.apiKey = '[grant]'; publicConfig.mcp.corpus.headers.Authorization = 'Bearer [grant]';
       publicConfig.skills.paths = ['[approved-skills]']; publicConfig.approved_skill_versions = skillVersions;
-      active = { id: randomUUID(), epoch: randomUUID(), root, runID: input.run_id, binding,
+      active = { id: randomUUID(), epoch: randomUUID(), root, runID: input.run_id, binding, profile,
         status: 'prepared', dispatchState: 'prepared', password: randomUUID(), child: null, digest: hash(JSON.stringify(publicConfig)),
         skillVersions, skillDigest: hash(Object.entries(skillVersions).map(([name, version]) => `${name}\0${version}\n`).join('')) };
       lastStopped = null;
@@ -167,7 +180,8 @@ export function createRuntimeServer({ stateRoot = '/state', token = process.env.
     if (abort) exactKeys(input.body || {}, []);
     if (prompt) {
       exactKeys(input.body, ['parts', 'messageID', 'agent', 'model']);
-      if (input.body.agent !== undefined && input.body.agent !== 'research') throw failure('invalid_agent');
+      const expectedAgent = instance.profile === 'assistant' ? 'assistant' : 'research';
+      if (input.body.agent !== undefined && input.body.agent !== expectedAgent) throw failure('invalid_agent');
       if (input.body.model !== undefined) {
         exactKeys(input.body.model, ['providerID', 'modelID']);
         if (input.body.model.providerID !== 'bridge' || input.body.model.modelID !== modelName) throw failure('invalid_model');
@@ -177,7 +191,7 @@ export function createRuntimeServer({ stateRoot = '/state', token = process.env.
       exactKeys(input.body.parts[0], ['type', 'text']);
       if (input.body.parts[0].type !== 'text' || !boundedString(input.body.parts[0].text, 1, 256 * 1024)) throw failure('invalid_prompt_text');
     }
-    return { instance, prompt, create, stream: route === '/event', route, method, body: prompt ? { ...input.body, agent: 'research', model: { providerID: 'bridge', modelID: modelName } } : input.body };
+    return { instance, prompt, create, stream: route === '/event', route, method, body: prompt ? { ...input.body, agent: instance.profile === 'assistant' ? 'assistant' : 'research', model: { providerID: 'bridge', modelID: modelName } } : input.body };
   }
   async function forward(input, req, res) {
     const target = forwardInput(input), controller = new AbortController();

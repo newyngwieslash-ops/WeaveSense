@@ -381,3 +381,100 @@ func ParseAnalysis(data []byte) (Analysis, error) {
 	}
 	return analysis, ValidateAnalysis(analysis)
 }
+
+// --- Assistant result contract (plan §5.2/§4.3) ----------------------------
+
+// AssistantAction mirrors the browser-contract write-action union. Unknown
+// fields are refused by decodeStrict; the host, not the model, executes.
+type AssistantAction struct {
+	Ordinal int             `json:"ordinal"`
+	Kind    string          `json:"kind"`
+	Args    json.RawMessage `json:"args"`
+}
+
+type AssistantReference struct {
+	Kind string `json:"kind"`
+	ID   string `json:"id"`
+}
+
+type AssistantClarification struct {
+	Question string   `json:"question"`
+	Options  []string `json:"options"`
+}
+
+type AssistantResult struct {
+	Version       int                     `json:"version"`
+	Answer        string                  `json:"answer"`
+	Citations     []AssistantReference    `json:"citations"`
+	Actions       []AssistantAction       `json:"actions"`
+	Clarification *AssistantClarification `json:"clarification,omitempty"`
+}
+
+var assistantActionKinds = map[string]bool{
+	"keyword.create": true, "keyword.update": true, "keyword.set_enabled": true, "keyword.collect_once": true,
+	"source.create": true, "source.set_enabled": true, "source.collect_once": true,
+	"research.start": true, "research.cancel": true,
+}
+
+func ValidateAssistantResult(result AssistantResult) error {
+	if result.Version != schemaVersion {
+		return errors.New("invalid_schema_version")
+	}
+	n := runeLen(strings.TrimSpace(result.Answer))
+	if n < 1 || n > 12000 {
+		return errors.New("invalid_answer")
+	}
+	if len(result.Citations) > 12 || len(result.Actions) > 4 {
+		return errors.New("assistant_result_too_large")
+	}
+	for _, c := range result.Citations {
+		if strings.TrimSpace(c.Kind) == "" || strings.TrimSpace(c.ID) == "" || runeLen(c.ID) > 128 {
+			return errors.New("invalid_citation")
+		}
+	}
+	argKeys := map[string][]string{
+		"keyword.create":       {"keyword", "platforms", "interval", "enabled"},
+		"keyword.update":       {"keyword_id", "interval", "platforms"},
+		"keyword.set_enabled":  {"keyword_id", "enabled"},
+		"keyword.collect_once": {"keyword_id", "source_id", "keyword", "source"},
+		"source.create":        {"url", "enabled"},
+		"source.set_enabled":   {"source_id", "enabled"},
+		"source.collect_once":  {"keyword_id", "source_id", "keyword", "source"},
+		"research.start":       {"question"},
+		"research.cancel":      {"job_id"},
+	}
+	for i, a := range result.Actions {
+		if a.Ordinal != i || !assistantActionKinds[a.Kind] || len(a.Args) == 0 {
+			return errors.New("invalid_assistant_action")
+		}
+		var args map[string]json.RawMessage
+		dec := json.NewDecoder(bytes.NewReader(a.Args))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&args); err != nil {
+			return errors.New("invalid_assistant_action_args")
+		}
+		allowed := map[string]bool{}
+		for _, k := range argKeys[a.Kind] { allowed[k] = true }
+		for k := range args {
+			if !allowed[k] { return errors.New("invalid_assistant_action_args") }
+		}
+		if len(args) == 0 { return errors.New("invalid_assistant_action_args") }
+	}
+	if result.Clarification != nil && len(result.Actions) > 0 {
+		return errors.New("clarification_xor_actions")
+	}
+	if result.Clarification != nil {
+		if strings.TrimSpace(result.Clarification.Question) == "" || len(result.Clarification.Options) < 2 || len(result.Clarification.Options) > 6 {
+			return errors.New("invalid_clarification")
+		}
+	}
+	return nil
+}
+
+func ParseAssistantResult(data []byte) (AssistantResult, error) {
+	var result AssistantResult
+	if err := decodeStrict(data, &result); err != nil {
+		return result, err
+	}
+	return result, ValidateAssistantResult(result)
+}
