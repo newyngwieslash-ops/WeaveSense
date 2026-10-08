@@ -45,6 +45,7 @@ type Grant struct {
 	Model                  string    `json:"model"`
 	PolicyVersion          string    `json:"policy_version"`
 	MaxOutputTokensPerCall int       `json:"max_output_tokens_per_call"`
+	Profile                string    `json:"profile,omitempty"`
 	key                    string
 }
 
@@ -63,6 +64,32 @@ type Bridge struct {
 
 type bridgeGrantContext struct{}
 
+// assistantReadToolNames is the §3.1 read-only whitelist the assistant
+// profile may reach. Research keeps corpus_search_items/corpus_get_item only.
+var assistantReadToolNames = []string{
+	"project_overview", "list_keywords", "list_sources",
+	"list_notes", "get_note", "list_collection_jobs", "get_collection_job",
+	"get_research_status", "get_operation", "get_service_status",
+}
+
+func assistantToolSchema(name string) json.RawMessage {
+	args := map[string]string{}
+	switch name {
+	case "search_items":
+		args = map[string]string{"query": `{"type":"string","minLength":2,"maxLength":200}`, "limit": `{"type":"integer","minimum":1,"maximum":8}`}
+	case "get_item", "get_note", "get_collection_job", "get_research_status", "get_operation", "project_overview", "get_service_status", "list_notes", "list_collection_jobs", "list_keywords", "list_sources":
+		for key, constraint := range map[string]string{
+			"item_id": `{"type":"string","minLength":1,"maxLength":128}`, "note_id": `{"type":"string","minLength":1,"maxLength":128}`,
+			"job_id": `{"type":"string","minLength":1,"maxLength":128}`, "action_id": `{"type":"string","minLength":1,"maxLength":128}`,
+			"query": `{"type":"string","maxLength":200}`, "limit": `{"type":"integer","minimum":1,"maximum":50}`,
+		} {
+			args[key] = constraint
+		}
+	}
+	properties, _ := json.Marshal(args)
+	return json.RawMessage(`{"type":"object","additionalProperties":false,"properties":` + string(properties) + `}`)
+}
+
 func NewBridge(cfg BridgeConfig) *Bridge {
 	if cfg.HTTPClient == nil {
 		cfg.HTTPClient = &http.Client{Timeout: 8 * time.Second}
@@ -76,6 +103,16 @@ func NewBridge(cfg BridgeConfig) *Bridge {
 	for _, tool := range []mcp.Tool{search, get} {
 		tool.Annotations = mcp.ToolAnnotation{ReadOnlyHint: mcp.ToBoolPtr(true), DestructiveHint: mcp.ToBoolPtr(false), OpenWorldHint: mcp.ToBoolPtr(false)}
 		srv.AddTool(tool, b.callCorpusTool)
+	}
+	// Assistant read tools are registered once; per-grant profile filtering
+	// happens at tools/list AND tools/call time (filtering the listing alone
+	// is not authorization, §4.3). search_items/get_item keep their corpus
+	// registration and route by profile inside callCorpusTool.
+	for _, name := range assistantReadToolNames {
+		tool := mcp.NewToolWithRawSchema(name, "Read this run's authorized project data; the host decides scope",
+			assistantToolSchema(name))
+		tool.Annotations = mcp.ToolAnnotation{ReadOnlyHint: mcp.ToBoolPtr(true), DestructiveHint: mcp.ToBoolPtr(false), OpenWorldHint: mcp.ToBoolPtr(false)}
+		srv.AddTool(tool, b.callAssistantTool)
 	}
 	b.mcp = mcpserver.NewStreamableHTTPServer(srv, mcpserver.WithStateLess(true), mcpserver.WithDisableStreaming(true))
 	return b
@@ -158,6 +195,59 @@ func (b *Bridge) serveHTTP(w http.ResponseWriter, req *http.Request) {
 	defer func() { stop(); cancel() }()
 	req = req.WithContext(context.WithValue(ctx, bridgeGrantContext{}, grant))
 	req.Body = io.NopCloser(bytes.NewReader(raw))
+	// tools/list must reflect the grant's profile; tools/call re-checks inside
+	// the handlers (filtering the listing alone is not authorization, §4.3).
+	if grant.profileOf() == "research" {
+		b.serveFilteredMCP(w, req, raw, researchListedTools())
+		return
+	}
+	b.serveFilteredMCP(w, req, raw, assistantListedTools())
+}
+
+func corpusListEntry(name, description, schema string) map[string]any {
+	return map[string]any{"name": name, "description": description,
+		"inputSchema": json.RawMessage(schema),
+		"annotations": map[string]any{"readOnlyHint": true, "destructiveHint": false, "openWorldHint": false}}
+}
+
+func researchListedTools() []map[string]any {
+	return []map[string]any{
+		corpusListEntry("search_items", "Search only this run's authorized corpus",
+			`{"type":"object","additionalProperties":false,"required":["query"],"properties":{"query":{"type":"string","minLength":2,"maxLength":200},"limit":{"type":"integer","minimum":1,"maximum":8}}}`),
+		corpusListEntry("get_item", "Read one authorized corpus fragment; coverage and evidence IDs come from the host",
+			`{"type":"object","additionalProperties":false,"required":["item_id"],"properties":{"item_id":{"type":"string","minLength":1,"maxLength":256},"start":{"type":"integer","minimum":0,"maximum":9007199254740991}}}`),
+	}
+}
+
+func assistantListedTools() []map[string]any {
+	tools := []map[string]any{}
+	for _, name := range assistantReadToolNames {
+		description := "Read this run's authorized project data; the host decides scope"
+		if name == "search_items" {
+			description = "Search this run's authorized project content"
+		}
+		if name == "get_item" {
+			description = "Read one authorized project item fragment"
+		}
+		tools = append(tools, corpusListEntry(name, description, string(assistantToolSchema(name))))
+	}
+	return tools
+}
+
+// serveFilteredMCP answers tools/list with the profile's exact tool surface
+// and delegates everything else to the shared MCP server.
+func (b *Bridge) serveFilteredMCP(w http.ResponseWriter, req *http.Request, raw []byte, listed []map[string]any) {
+	var probe struct {
+		Method string          `json:"method"`
+		ID     json.RawMessage `json:"id"`
+	}
+	if json.Unmarshal(raw, &probe) == nil && probe.Method == "tools/list" && probe.ID != nil {
+		bridgeJSON(w, 200, map[string]any{
+			"jsonrpc": "2.0", "id": probe.ID,
+			"result": map[string]any{"tools": listed},
+		})
+		return
+	}
 	b.mcp.ServeHTTP(w, req)
 }
 
@@ -173,7 +263,30 @@ func validGrant(grant Grant) bool {
 	return validOpaqueGrant(grant.Grant) && canonicalUUID(grant.RunID) && canonicalUUID(grant.ClaimToken) && canonicalUUID(grant.InstanceID) && canonicalUUID(grant.Epoch) &&
 		grant.ExpiresAt.After(time.Now()) && time.Until(grant.ExpiresAt) <= 15*time.Minute && validOpaqueGrant(grant.DataAccessToken) && len(grant.DataAccessToken) <= 128 &&
 		len(grant.Model) >= 1 && len(grant.Model) <= 128 && fixedProfileRE.MatchString(grant.Model) && len(grant.PolicyVersion) >= 1 && len(grant.PolicyVersion) <= 64 && fixedProfileRE.MatchString(grant.PolicyVersion) &&
-		grant.MaxOutputTokensPerCall >= 1 && grant.MaxOutputTokensPerCall <= 8000
+		grant.MaxOutputTokensPerCall >= 1 && grant.MaxOutputTokensPerCall <= 8000 &&
+		(grant.Profile == "" || grant.Profile == "research" || grant.Profile == "assistant")
+}
+
+// profileOf normalizes an omitted profile to research (§4.3: omission is
+// strictly research, never an escape hatch).
+func (g Grant) profileOf() string {
+	if g.Profile == "assistant" {
+		return "assistant"
+	}
+	return "research"
+}
+
+// researchTool / assistantTool membership used by both tools/list filtering
+// and per-call re-checks.
+func researchTool(name string) bool { return name == "search_items" || name == "get_item" }
+
+func assistantTool(name string) bool {
+	for _, candidate := range assistantReadToolNames {
+		if candidate == name {
+			return true
+		}
+	}
+	return false
 }
 
 func validOpaqueGrant(token string) bool {
@@ -367,8 +480,101 @@ func toolParameters(name string, args map[string]any) (map[string]any, bool) {
 
 func (b *Bridge) callCorpusTool(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	grant, ok := ctx.Value(bridgeGrantContext{}).(Grant)
+	if !ok || !researchTool(req.Params.Name) {
+		return mcp.NewToolResultError("tool_denied"), nil
+	}
+	// search_items/get_item exist on both profiles: research reads the
+	// authorized corpus, assistant reads project data. Route by profile.
+	if grant.profileOf() == "assistant" {
+		req.Params.Name = "assistant_" + req.Params.Name
+		return b.callAssistantTool(ctx, req)
+	}
 	params, valid := toolParameters(req.Params.Name, req.GetArguments())
 	if !ok || !valid {
+		return mcp.NewToolResultError("tool_denied"), nil
+	}
+	digest, err := canonicalHash(map[string]any{"tool": req.Params.Name, "params": params})
+	if err != nil {
+		return mcp.NewToolResultError("invalid_tool_intent"), nil
+	}
+	callID := uuid.NewString()
+	receipt := map[string]any{"call_id": callID, "tool": req.Params.Name, "request_digest": digest}
+	ack, err := b.postData(ctx, grant, "tool_start", receipt)
+	if err != nil || ack["ok"] != true || ack["disposition"] != "send_once" {
+		return mcp.NewToolResultError("tool_admission_denied"), nil
+	}
+	params["call_id"], params["request_digest"] = callID, digest
+	result, err := b.postData(ctx, grant, req.Params.Name, params)
+	if err != nil {
+		return mcp.NewToolResultError("tool_outcome_unknown"), nil
+	}
+	resultDigest, err := canonicalHash(result)
+	if err != nil {
+		return mcp.NewToolResultError("invalid_tool_result"), nil
+	}
+	receipt["result_digest"] = resultDigest
+	ack, err = b.postData(ctx, grant, "tool_complete", receipt)
+	if err != nil || ack["ok"] != true {
+		return mcp.NewToolResultError("tool_outcome_unknown"), nil
+	}
+	raw, err := canonicalJSON(result)
+	if err != nil {
+		return mcp.NewToolResultError("invalid_tool_result"), nil
+	}
+	return mcp.NewToolResultText(string(raw)), nil
+}
+
+// assistantToolArgWhitelist fixes the args each assistant read tool accepts;
+// request-supplied routing (data_url, tokens, profile) can never pass.
+var assistantToolArgWhitelist = map[string][]string{
+	"project_overview":     {},
+	"list_keywords":        {"limit"},
+	"list_sources":         {"limit"},
+	"search_items":         {"query", "limit"},
+	"get_item":             {"item_id"},
+	"list_notes":           {"limit"},
+	"get_note":             {"note_id"},
+	"list_collection_jobs": {"limit"},
+	"get_collection_job":   {"job_id"},
+	"get_research_status":  {"job_id"},
+	"get_operation":        {"action_id"},
+	"get_service_status":   {},
+}
+
+func assistantToolParameters(name string, args map[string]any) (map[string]any, bool) {
+	if args == nil {
+		args = map[string]any{}
+	}
+	allowed := map[string]bool{}
+	for _, key := range assistantToolArgWhitelist[name] {
+		allowed[key] = true
+	}
+	params := map[string]any{}
+	for key, value := range args {
+		if !allowed[key] {
+			return nil, false
+		}
+		params[key] = value
+	}
+	if name == "search_items" {
+		query, ok := params["query"].(string)
+		if !ok || len([]rune(query)) < 2 || len([]rune(query)) > 200 {
+			return nil, false
+		}
+	}
+	return params, true
+}
+
+// callAssistantTool serves one read-only assistant tool: same receipted
+// start/read/complete discipline as research tools, restricted to assistant
+// grants, and always posting to the fixed AppDataURL (§4.3).
+func (b *Bridge) callAssistantTool(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	grant, ok := ctx.Value(bridgeGrantContext{}).(Grant)
+	if !ok || grant.profileOf() != "assistant" || !assistantTool(req.Params.Name) {
+		return mcp.NewToolResultError("tool_denied"), nil
+	}
+	params, valid := assistantToolParameters(req.Params.Name, req.GetArguments())
+	if !valid {
 		return mcp.NewToolResultError("tool_denied"), nil
 	}
 	digest, err := canonicalHash(map[string]any{"tool": req.Params.Name, "params": params})
