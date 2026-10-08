@@ -418,18 +418,18 @@ func AssistantTerminalResult(raw []byte, session, model string) (*agent.Assistan
 	}
 	type infoShape = struct {
 		ID, Role, Agent, Finish string
-		SessionID  string          `json:"sessionID"`
-		ProviderID string          `json:"providerID"`
-		ModelID    string          `json:"modelID"`
-		Error      json.RawMessage `json:"error"`
-		Time       struct {
+		SessionID               string          `json:"sessionID"`
+		ProviderID              string          `json:"providerID"`
+		ModelID                 string          `json:"modelID"`
+		Error                   json.RawMessage `json:"error"`
+		Time                    struct {
 			Completed int64 `json:"completed"`
 		} `json:"time"`
 	}
 	type partShape = struct {
 		Type, Text string
-		SessionID string `json:"sessionID"`
-		MessageID string `json:"messageID"`
+		SessionID  string `json:"sessionID"`
+		MessageID  string `json:"messageID"`
 	}
 	var payload struct {
 		Messages []struct {
@@ -480,7 +480,7 @@ func AssistantTerminalResult(raw []byte, session, model string) (*agent.Assistan
 			last = i
 		}
 		payload.Messages = append(payload.Messages, struct {
-			Info  struct {
+			Info struct {
 				ID, Role, Agent, Finish string
 				SessionID               string          `json:"sessionID"`
 				ProviderID              string          `json:"providerID"`

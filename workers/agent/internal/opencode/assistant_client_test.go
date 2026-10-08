@@ -26,7 +26,9 @@ func TestPrepareProfileManifestExactness(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			var gotBody struct{ Profile string `json:"profile"` }
+			var gotBody struct {
+				Profile string `json:"profile"`
+			}
 			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				_ = json.NewDecoder(r.Body).Decode(&gotBody)
 				w.Header().Set("Content-Type", "application/json")

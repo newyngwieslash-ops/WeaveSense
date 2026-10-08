@@ -1,0 +1,280 @@
+package opencode
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"strings"
+	"sync/atomic"
+	"time"
+
+	"loom.local/agent/internal/agent"
+)
+
+// Assistant worker execution (plan Task 10 / §4.2–§4.4).
+//
+// RunAssistantWorkerOnce mirrors RunWorkerOnce for job_kind='assistant'
+// claims but diverges where the products differ: no candidate, no reviewer,
+// and the terminal payload is the AssistantResult contract decoded by
+// AssistantTerminalResult and submitted via the assistant_result action.
+// The claim parser is separate from the research one so a research claim can
+// never be executed as an assistant run and vice versa. Recovery observes the
+// saved binding without ever re-prompting.
+
+func RunAssistantWorkerOnce(parent context.Context, cfg WorkerConfig) (runErr error) {
+	if err := validateWorkerConfig(cfg); err != nil {
+		return err
+	}
+	raw, status, err := workerHTTP(parent, cfg, "POST", cfg.JobsURL, cfg.WorkerToken, []byte(`{"action":"assistant_claim"}`), agent.MaxRequestBytes)
+	if err == nil && (status == 204 || status == 404) {
+		return nil
+	}
+	if err != nil || status != 200 {
+		return errors.New("assistant_claim_unavailable")
+	}
+	var claim Claim
+	if strictJSON(raw, &claim) != nil || !canonicalUUID(claim.JobID) || !canonicalUUID(claim.RunID) || !canonicalUUID(claim.ClaimToken) ||
+		!claim.Governed || claim.Mode != agent.ModeResearch || claim.Profile != "assistant" || claim.RuntimeVersion != RuntimeVersion ||
+		claim.ModelProfile.Model != cfg.ModelName || !digestRE.MatchString(claim.SkillSnapshotDigest) {
+		return errors.New("invalid_assistant_claim")
+	}
+	if err := agent.ValidateRequest(agent.ExecuteRequest{SchemaVersion: 1, RunID: claim.RunID, Mode: claim.Mode, Input: agent.ExecuteInput{Question: "assistant"}, Policy: claim.Policy}); err != nil {
+		return errors.New("invalid_assistant_policy")
+	}
+	if claim.Phase != "producer" && claim.Phase != "reconcile" {
+		return errors.New("invalid_assistant_phase")
+	}
+	deadline, err := time.Parse(time.RFC3339, claim.Policy.DeadlineAt)
+	if err != nil || !deadline.After(time.Now()) {
+		return errors.New("invalid_claim_deadline")
+	}
+	runCtx, endRun := context.WithDeadline(parent, deadline)
+	execCtx, endExec := context.WithCancel(runCtx)
+	var cancelled atomic.Bool
+	done := make(chan struct{})
+	defer func() { endExec(); endRun(); <-done }()
+	go func() {
+		defer close(done)
+		interval := cfg.HeartbeatInterval
+		if interval <= 0 {
+			interval = 5 * time.Second
+		}
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-runCtx.Done():
+				return
+			case <-ticker.C:
+				body, _ := json.Marshal(jobEnvelope(claim, "renew"))
+				hbRaw, hbStatus, e := workerHTTP(runCtx, cfg, "POST", cfg.JobsURL, cfg.WorkerToken, body, 4096)
+				var ack struct {
+					OK     bool `json:"ok"`
+					Cancel bool `json:"cancel_requested"`
+				}
+				if e != nil || hbStatus != 200 || json.Unmarshal(hbRaw, &ack) != nil || !ack.OK {
+					cancelled.Store(true)
+					endExec()
+					return
+				}
+				if ack.Cancel {
+					cancelled.Store(true)
+					endExec()
+					return
+				}
+			}
+		}
+	}()
+
+	post := func(action string, extra map[string]any) (json.RawMessage, error) {
+		body := jobEnvelope(claim, action)
+		for key, value := range extra {
+			body[key] = value
+		}
+		payload, _ := json.Marshal(body)
+		raw, status, err := workerHTTP(execCtx, cfg, "POST", cfg.JobsURL, cfg.WorkerToken, payload, agent.MaxResponseBytes)
+		if err != nil {
+			return nil, err
+		}
+		if status != 200 {
+			return nil, errors.New("job_action_denied")
+		}
+		return raw, nil
+	}
+	complete := func(code string, unknown bool) error {
+		extra := map[string]any{"status": "failed", "error_code": code, "outcome_unknown": unknown}
+		_, err := post("assistant_result", extra)
+		return err
+	}
+	var grant string
+	var binding Binding
+	var skillVersions map[string]string
+	cleanup := func() error {
+		if !validBinding(binding) {
+			return nil
+		}
+		if _, _, err := runtimeRequest(execCtx, cfg, "POST", "/forward", map[string]any{"instance_id": binding.InstanceID, "epoch": binding.Epoch, "method": "POST", "path": "/session/" + binding.SessionID + "/abort", "body": map[string]any{}}); err != nil {
+			return errors.New("runtime_abort_failed")
+		}
+		if _, _, err := runtimeRequest(execCtx, cfg, "POST", "/stop", map[string]any{"instance_id": binding.InstanceID, "epoch": binding.Epoch}); err != nil {
+			return errors.New("runtime_stop_failed")
+		}
+		if err := workerBridgeControl(execCtx, cfg, "DELETE", map[string]string{"instance_id": binding.InstanceID, "epoch": binding.Epoch}); err != nil {
+			return errors.New("grant_revoke_failed")
+		}
+		binding = Binding{}
+		return nil
+	}
+	defer func() {
+		if validBinding(binding) {
+			if err := cleanup(); err != nil {
+				runErr = err
+			}
+		}
+	}()
+
+	if claim.Phase == "producer" || claim.Phase == "reconcile" {
+		failNow := func(code string, unknown bool) error {
+			if unknown {
+				_, _ = post("dispatch_unknown", map[string]any{"error_code": code})
+			}
+			if err := cleanup(); err != nil {
+				return err
+			}
+			return complete(code, unknown)
+		}
+		producerCtx := execCtx
+		var cancelProducer context.CancelFunc = func() {}
+		defer cancelProducer()
+		if claim.Phase == "producer" {
+			if claim.Resume || claim.RuntimeBinding != nil {
+				return complete("unsafe_assistant_resume", true)
+			}
+			producerDeadline, e := time.Parse(time.RFC3339, claim.ProducerDeadlineAt)
+			if e != nil || !producerDeadline.After(time.Now()) || producerDeadline.After(deadline) || claim.ProducerModelCalls < 1 || claim.ProducerModelCalls > claim.Policy.MaxModelCalls || claim.Policy.MaxOutputTokensPerCall != 1800 {
+				return complete("invalid_assistant_policy", false)
+			}
+			producerCtx, cancelProducer = context.WithDeadline(execCtx, producerDeadline)
+			defer cancelProducer()
+			if err := clientHealth(producerCtx, cfg); err != nil {
+				return complete("runtime_unavailable", false)
+			}
+			secret := make([]byte, 32)
+			if _, err := rand.Read(secret); err != nil {
+				return err
+			}
+			grant = hex.EncodeToString(secret)
+			client := func() *Client { c, _ := NewClient(cfg.RuntimeURL, cfg.RuntimeToken, cfg.HTTPTransport); return c }()
+			prepared, e := client.PrepareProfile(producerCtx, claim.RunID, grant, claim.ClaimToken, "assistant")
+			if validBinding(prepared.Binding) {
+				binding = prepared.Binding
+			}
+			if e != nil {
+				return failNow("runtime_prepare_failed", false)
+			}
+			skillVersions = prepared.SkillVersions
+			if _, ok := skillVersions["project-assistant"]; !ok || len(skillVersions) != 1 {
+				return failNow("runtime_snapshot_mismatch", false)
+			}
+			if prepared.SkillSnapshotDigest != claim.SkillSnapshotDigest {
+				return failNow("runtime_snapshot_mismatch", false)
+			}
+			auth := Grant{Grant: grant, RunID: claim.RunID, ClaimToken: claim.ClaimToken, InstanceID: binding.InstanceID, Epoch: binding.Epoch, ExpiresAt: producerDeadline, DataAccessToken: claim.DataAccessToken, Model: claim.ModelProfile.Model, PolicyVersion: claim.Policy.Version, MaxOutputTokensPerCall: 1800, Profile: "assistant"}
+			if err := workerBridgeControl(producerCtx, cfg, "POST", auth); err != nil {
+				return failNow("bridge_register_failed", false)
+			}
+			started, e := client.Start(producerCtx, binding)
+			if e != nil || started.Status != "running" || !started.ProcessRunning {
+				return failNow("runtime_start_failed", false)
+			}
+			session, e := client.Session(producerCtx, binding)
+			if e != nil {
+				return failNow("runtime_session_failed", false)
+			}
+			binding.SessionID = session
+			if _, e = post("bind", map[string]any{"instance_id": binding.InstanceID, "epoch": binding.Epoch, "session_id": session, "runtime_version": RuntimeVersion, "config_digest": prepared.ConfigDigest, "profile": "assistant"}); e != nil {
+				return failNow("runtime_bind_denied", false)
+			}
+			if _, e = post("dispatching", nil); e != nil {
+				return failNow("runtime_dispatch_denied", true)
+			}
+			prompt := `You are the read-only project assistant. Gather data ONLY with the host read tools. Propose every write as a structured action in your final JSON. Return exactly one AssistantResult JSON object: version 1, answer string, citations:[{kind,id}], actions:[{ordinal,kind,args}], optional clarification{question,options:[...]}. No Markdown fences, shell, or extra keys.`
+			if e = client.Prompt(producerCtx, binding, prompt); e != nil {
+				return failNow("runtime_dispatch_unknown", true)
+			}
+			if _, e = post("submitted", nil); e != nil {
+				return failNow("runtime_submit_ack_unknown", true)
+			}
+		} else {
+			saved := claim.RuntimeBinding
+			if saved == nil || saved.RunID != claim.RunID || saved.Provider != "opencode" || !canonicalUUID(saved.DispatchID) || saved.RuntimeVersion != RuntimeVersion || !validBinding(saved.Binding) || !sessionRE.MatchString(saved.SessionID) || !digestRE.MatchString(saved.ConfigDigest) || saved.State != "submitted" && saved.State != "dispatch_unknown" {
+				return complete("runtime_recovery_unsafe", true)
+			}
+			binding = saved.Binding
+			client := func() *Client { c, _ := NewClient(cfg.RuntimeURL, cfg.RuntimeToken, cfg.HTTPTransport); return c }()
+			observed, e := client.Status(execCtx, binding)
+			if e != nil || observed.Version != saved.RuntimeVersion || observed.ConfigDigest != saved.ConfigDigest || observed.SessionID != binding.SessionID || observed.SkillSnapshotDigest != claim.SkillSnapshotDigest {
+				return failNow("runtime_recovery_unsafe", true)
+			}
+			skillVersions = observed.SkillVersions
+		}
+		client := func() *Client { c, _ := NewClient(cfg.RuntimeURL, cfg.RuntimeToken, cfg.HTTPTransport); return c }()
+		var answer *agent.AssistantResult
+		for {
+			rawBytes, _, e := client.Forward(producerCtx, binding, "GET", "/session/"+binding.SessionID+"/message", nil)
+			if e != nil {
+				return failNow("runtime_read_unknown", true)
+			}
+			parsed, ready, e := AssistantTerminalResult(rawBytes, binding.SessionID, claim.ModelProfile.Model)
+			if e != nil {
+				return failNow("invalid_assistant_result", true)
+			}
+			if ready {
+				answer = parsed
+				break
+			}
+			if claim.Phase == "reconcile" {
+				return failNow("runtime_recovery_pending", true)
+			}
+			interval := cfg.PollInterval
+			if interval <= 0 {
+				interval = 500 * time.Millisecond
+			}
+			timer := time.NewTimer(interval)
+			select {
+			case <-producerCtx.Done():
+				timer.Stop()
+				return failNow("runtime_deadline_unknown", true)
+			case <-timer.C:
+			}
+		}
+		payload := map[string]any{
+			"schema_version":  1,
+			"conversation_id": strings.TrimPrefix(claim.ItemID, "assistant:"),
+			"turn_id":         strings.TrimPrefix(claim.ItemID, "assistant:"),
+			"result":          answer,
+			"runtime":         map[string]any{"model": claim.ModelProfile.Model, "prompt_version": "opencode-assistant-v1", "skill_versions": skillVersions, "input_tokens": nil, "output_tokens": nil, "model_calls": 1, "tool_calls": 0, "events": []any{}},
+		}
+		if _, err := post("assistant_result", payload); err != nil {
+			return failNow("assistant_result_denied", true)
+		}
+		if err := cleanup(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// runtimeRequest posts directly to the runtime control endpoints (abort/stop)
+// through the shared transport helpers.
+func runtimeRequest(ctx context.Context, cfg WorkerConfig, method, path string, body any) ([]byte, int, error) {
+	raw, _ := json.Marshal(body)
+	return workerHTTP(ctx, cfg, method, cfg.RuntimeURL+path, cfg.RuntimeToken, raw, MaxRuntimeBytes)
+}
+
+func clientHealth(ctx context.Context, cfg WorkerConfig) error {
+	client := func() *Client { c, _ := NewClient(cfg.RuntimeURL, cfg.RuntimeToken, cfg.HTTPTransport); return c }()
+	return client.Health(ctx)
+}

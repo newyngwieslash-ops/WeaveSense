@@ -54,6 +54,7 @@ type Claim struct {
 	Sequence             int                `json:"sequence"`
 	Governed             bool               `json:"governed"`
 	Phase                string             `json:"phase"`
+	Profile              string             `json:"profile,omitempty"`
 	ProducerDeadlineAt   string             `json:"producer_deadline_at"`
 	SkillSnapshotDigest  string             `json:"skill_snapshot_digest"`
 	ProducerModelCalls   int                `json:"producer_model_calls"`
