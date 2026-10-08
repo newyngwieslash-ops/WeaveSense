@@ -166,7 +166,9 @@ export async function claimAiJob(sql: Queryable, opts: {
        where j.status = 'queued' and j.next_attempt_at <= now()
          and j.runtime_provider = $4
          and (j.run_id is null or exists (select 1 from ai_runs r where r.id=j.run_id and r.provider=$4))
-         and case when $3 = 'research' then item_id like 'research:%' else item_id not like 'research:%' end
+         -- Explicit job_kind dispatch (plan §4.2): analyze and research claims
+         -- can never take assistant jobs, whatever the item_id prefix is.
+         and case when $3 = 'research' then j.job_kind = 'research' else j.job_kind = 'analyze_item' end
        order by j.created_at, j.id
        for update skip locked
        limit 1
@@ -242,7 +244,7 @@ export async function expireQueuedResearchJobs(sql: Queryable, provider: Researc
   researchRuntime(provider);
   return agentTransaction(sql, async tx => {
     const jobs = await tx.query<{ id: string }>(`select id from ai_jobs
-      where status='queued' and run_id is null and item_id like 'research:%' and runtime_provider=$1
+      where status='queued' and run_id is null and job_kind='research' and runtime_provider=$1
         and coalesce(payload->>'queue_expires_at',payload#>>'{policy,deadline_at}')::timestamptz <= clock_timestamp()
       order by id for update skip locked limit 40`, [provider]);
     for (const job of jobs) {
@@ -257,7 +259,7 @@ export async function expireQueuedResearchJobs(sql: Queryable, provider: Researc
 export async function cancelQueuedResearchJobs(sql: Queryable, provider: ResearchRuntime = "eino") {
   researchRuntime(provider);
   return agentTransaction(sql,async tx=>{
-    const jobs=await tx.query<{id:string}>("select id from ai_jobs where status='queued' and run_id is null and item_id like 'research:%' and runtime_provider=$1 order by id for update skip locked limit 40", [provider]);
+    const jobs=await tx.query<{id:string}>("select id from ai_jobs where status='queued' and run_id is null and job_kind='research' and runtime_provider=$1 order by id for update skip locked limit 40", [provider]);
     for(const job of jobs) {
       await tx.query("update ai_jobs set status='failed',error_code='capability_disabled',updated_at=clock_timestamp() where id=$1",[job.id]);
       await tx.query("update ai_budget_reservations set dispatch_state='not_sent' where job_id=$1 and dispatch_state='unconfirmed'",[job.id]);
