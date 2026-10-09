@@ -22,11 +22,21 @@ import { Route as PrdRouteImport } from './routes/prd'
 import { Route as SourcesRouteImport } from './routes/sources'
 import { Route as ApiModelSettingsRouteImport } from './routes/api/model-settings'
 import { Route as InboxItemIdRouteImport } from './routes/inbox.$itemId'
+import { Route as ApiAssistantCapabilitiesRouteImport } from './routes/api/assistant/capabilities'
+import { Route as ApiAssistantConversationsRouteImport } from './routes/api/assistant/conversations'
 import { Route as ApiCronTickRouteImport } from './routes/api/cron/tick'
 import { Route as ApiInternalAgentDataRouteImport } from './routes/api/internal/agent-data'
 import { Route as ApiInternalAgentJobsRouteImport } from './routes/api/internal/agent-jobs'
 import { Route as ApiInternalAgentReviewRouteImport } from './routes/api/internal/agent-review'
+import { Route as ApiInternalAssistantActionsRouteImport } from './routes/api/internal/assistant-actions'
 import { Route as ApiInternalOpencodeJobsRouteImport } from './routes/api/internal/opencode-jobs'
+import { Route as ApiAssistantActionsActionIdRouteImport } from './routes/api/assistant/actions/$actionId'
+import { Route as ApiAssistantConversationsConversationIdRouteImport } from './routes/api/assistant/conversations/$conversationId'
+import { Route as ApiAssistantTurnsTurnIdRouteImport } from './routes/api/assistant/turns/$turnId'
+import { Route as ApiAssistantActionsActionIdDecisionRouteImport } from './routes/api/assistant/actions/$actionId/decision'
+import { Route as ApiAssistantConversationsConversationIdEventsRouteImport } from './routes/api/assistant/conversations/$conversationId/events'
+import { Route as ApiAssistantConversationsConversationIdMessagesRouteImport } from './routes/api/assistant/conversations/$conversationId/messages'
+import { Route as ApiAssistantTurnsTurnIdCancelRouteImport } from './routes/api/assistant/turns/$turnId/cancel'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -93,6 +103,18 @@ const InboxItemIdRoute = InboxItemIdRouteImport.update({
   path: '/$itemId',
   getParentRoute: () => InboxRoute,
 } as any)
+const ApiAssistantCapabilitiesRoute =
+  ApiAssistantCapabilitiesRouteImport.update({
+    id: '/api/assistant/capabilities',
+    path: '/api/assistant/capabilities',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiAssistantConversationsRoute =
+  ApiAssistantConversationsRouteImport.update({
+    id: '/api/assistant/conversations',
+    path: '/api/assistant/conversations',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiCronTickRoute = ApiCronTickRouteImport.update({
   id: '/api/cron/tick',
   path: '/api/cron/tick',
@@ -113,11 +135,58 @@ const ApiInternalAgentReviewRoute = ApiInternalAgentReviewRouteImport.update({
   path: '/api/internal/agent-review',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiInternalAssistantActionsRoute =
+  ApiInternalAssistantActionsRouteImport.update({
+    id: '/api/internal/assistant-actions',
+    path: '/api/internal/assistant-actions',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiInternalOpencodeJobsRoute = ApiInternalOpencodeJobsRouteImport.update({
   id: '/api/internal/opencode-jobs',
   path: '/api/internal/opencode-jobs',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAssistantActionsActionIdRoute =
+  ApiAssistantActionsActionIdRouteImport.update({
+    id: '/api/assistant/actions/$actionId',
+    path: '/api/assistant/actions/$actionId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiAssistantConversationsConversationIdRoute =
+  ApiAssistantConversationsConversationIdRouteImport.update({
+    id: '/$conversationId',
+    path: '/$conversationId',
+    getParentRoute: () => ApiAssistantConversationsRoute,
+  } as any)
+const ApiAssistantTurnsTurnIdRoute = ApiAssistantTurnsTurnIdRouteImport.update({
+  id: '/api/assistant/turns/$turnId',
+  path: '/api/assistant/turns/$turnId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAssistantActionsActionIdDecisionRoute =
+  ApiAssistantActionsActionIdDecisionRouteImport.update({
+    id: '/decision',
+    path: '/decision',
+    getParentRoute: () => ApiAssistantActionsActionIdRoute,
+  } as any)
+const ApiAssistantConversationsConversationIdEventsRoute =
+  ApiAssistantConversationsConversationIdEventsRouteImport.update({
+    id: '/events',
+    path: '/events',
+    getParentRoute: () => ApiAssistantConversationsConversationIdRoute,
+  } as any)
+const ApiAssistantConversationsConversationIdMessagesRoute =
+  ApiAssistantConversationsConversationIdMessagesRouteImport.update({
+    id: '/messages',
+    path: '/messages',
+    getParentRoute: () => ApiAssistantConversationsConversationIdRoute,
+  } as any)
+const ApiAssistantTurnsTurnIdCancelRoute =
+  ApiAssistantTurnsTurnIdCancelRouteImport.update({
+    id: '/cancel',
+    path: '/cancel',
+    getParentRoute: () => ApiAssistantTurnsTurnIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -133,11 +202,21 @@ export interface FileRoutesByFullPath {
   '/sources': typeof SourcesRoute
   '/api/model-settings': typeof ApiModelSettingsRoute
   '/inbox/$itemId': typeof InboxItemIdRoute
+  '/api/assistant/capabilities': typeof ApiAssistantCapabilitiesRoute
+  '/api/assistant/conversations': typeof ApiAssistantConversationsRouteWithChildren
   '/api/cron/tick': typeof ApiCronTickRoute
   '/api/internal/agent-data': typeof ApiInternalAgentDataRoute
   '/api/internal/agent-jobs': typeof ApiInternalAgentJobsRoute
   '/api/internal/agent-review': typeof ApiInternalAgentReviewRoute
+  '/api/internal/assistant-actions': typeof ApiInternalAssistantActionsRoute
   '/api/internal/opencode-jobs': typeof ApiInternalOpencodeJobsRoute
+  '/api/assistant/actions/$actionId': typeof ApiAssistantActionsActionIdRouteWithChildren
+  '/api/assistant/conversations/$conversationId': typeof ApiAssistantConversationsConversationIdRouteWithChildren
+  '/api/assistant/turns/$turnId': typeof ApiAssistantTurnsTurnIdRouteWithChildren
+  '/api/assistant/actions/$actionId/decision': typeof ApiAssistantActionsActionIdDecisionRoute
+  '/api/assistant/conversations/$conversationId/events': typeof ApiAssistantConversationsConversationIdEventsRoute
+  '/api/assistant/conversations/$conversationId/messages': typeof ApiAssistantConversationsConversationIdMessagesRoute
+  '/api/assistant/turns/$turnId/cancel': typeof ApiAssistantTurnsTurnIdCancelRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -153,11 +232,21 @@ export interface FileRoutesByTo {
   '/sources': typeof SourcesRoute
   '/api/model-settings': typeof ApiModelSettingsRoute
   '/inbox/$itemId': typeof InboxItemIdRoute
+  '/api/assistant/capabilities': typeof ApiAssistantCapabilitiesRoute
+  '/api/assistant/conversations': typeof ApiAssistantConversationsRouteWithChildren
   '/api/cron/tick': typeof ApiCronTickRoute
   '/api/internal/agent-data': typeof ApiInternalAgentDataRoute
   '/api/internal/agent-jobs': typeof ApiInternalAgentJobsRoute
   '/api/internal/agent-review': typeof ApiInternalAgentReviewRoute
+  '/api/internal/assistant-actions': typeof ApiInternalAssistantActionsRoute
   '/api/internal/opencode-jobs': typeof ApiInternalOpencodeJobsRoute
+  '/api/assistant/actions/$actionId': typeof ApiAssistantActionsActionIdRouteWithChildren
+  '/api/assistant/conversations/$conversationId': typeof ApiAssistantConversationsConversationIdRouteWithChildren
+  '/api/assistant/turns/$turnId': typeof ApiAssistantTurnsTurnIdRouteWithChildren
+  '/api/assistant/actions/$actionId/decision': typeof ApiAssistantActionsActionIdDecisionRoute
+  '/api/assistant/conversations/$conversationId/events': typeof ApiAssistantConversationsConversationIdEventsRoute
+  '/api/assistant/conversations/$conversationId/messages': typeof ApiAssistantConversationsConversationIdMessagesRoute
+  '/api/assistant/turns/$turnId/cancel': typeof ApiAssistantTurnsTurnIdCancelRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -174,11 +263,21 @@ export interface FileRoutesById {
   '/sources': typeof SourcesRoute
   '/api/model-settings': typeof ApiModelSettingsRoute
   '/inbox/$itemId': typeof InboxItemIdRoute
+  '/api/assistant/capabilities': typeof ApiAssistantCapabilitiesRoute
+  '/api/assistant/conversations': typeof ApiAssistantConversationsRouteWithChildren
   '/api/cron/tick': typeof ApiCronTickRoute
   '/api/internal/agent-data': typeof ApiInternalAgentDataRoute
   '/api/internal/agent-jobs': typeof ApiInternalAgentJobsRoute
   '/api/internal/agent-review': typeof ApiInternalAgentReviewRoute
+  '/api/internal/assistant-actions': typeof ApiInternalAssistantActionsRoute
   '/api/internal/opencode-jobs': typeof ApiInternalOpencodeJobsRoute
+  '/api/assistant/actions/$actionId': typeof ApiAssistantActionsActionIdRouteWithChildren
+  '/api/assistant/conversations/$conversationId': typeof ApiAssistantConversationsConversationIdRouteWithChildren
+  '/api/assistant/turns/$turnId': typeof ApiAssistantTurnsTurnIdRouteWithChildren
+  '/api/assistant/actions/$actionId/decision': typeof ApiAssistantActionsActionIdDecisionRoute
+  '/api/assistant/conversations/$conversationId/events': typeof ApiAssistantConversationsConversationIdEventsRoute
+  '/api/assistant/conversations/$conversationId/messages': typeof ApiAssistantConversationsConversationIdMessagesRoute
+  '/api/assistant/turns/$turnId/cancel': typeof ApiAssistantTurnsTurnIdCancelRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -196,11 +295,21 @@ export interface FileRouteTypes {
     | '/sources'
     | '/api/model-settings'
     | '/inbox/$itemId'
+    | '/api/assistant/capabilities'
+    | '/api/assistant/conversations'
     | '/api/cron/tick'
     | '/api/internal/agent-data'
     | '/api/internal/agent-jobs'
     | '/api/internal/agent-review'
+    | '/api/internal/assistant-actions'
     | '/api/internal/opencode-jobs'
+    | '/api/assistant/actions/$actionId'
+    | '/api/assistant/conversations/$conversationId'
+    | '/api/assistant/turns/$turnId'
+    | '/api/assistant/actions/$actionId/decision'
+    | '/api/assistant/conversations/$conversationId/events'
+    | '/api/assistant/conversations/$conversationId/messages'
+    | '/api/assistant/turns/$turnId/cancel'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -216,11 +325,21 @@ export interface FileRouteTypes {
     | '/sources'
     | '/api/model-settings'
     | '/inbox/$itemId'
+    | '/api/assistant/capabilities'
+    | '/api/assistant/conversations'
     | '/api/cron/tick'
     | '/api/internal/agent-data'
     | '/api/internal/agent-jobs'
     | '/api/internal/agent-review'
+    | '/api/internal/assistant-actions'
     | '/api/internal/opencode-jobs'
+    | '/api/assistant/actions/$actionId'
+    | '/api/assistant/conversations/$conversationId'
+    | '/api/assistant/turns/$turnId'
+    | '/api/assistant/actions/$actionId/decision'
+    | '/api/assistant/conversations/$conversationId/events'
+    | '/api/assistant/conversations/$conversationId/messages'
+    | '/api/assistant/turns/$turnId/cancel'
   id:
     | '__root__'
     | '/'
@@ -236,11 +355,21 @@ export interface FileRouteTypes {
     | '/sources'
     | '/api/model-settings'
     | '/inbox/$itemId'
+    | '/api/assistant/capabilities'
+    | '/api/assistant/conversations'
     | '/api/cron/tick'
     | '/api/internal/agent-data'
     | '/api/internal/agent-jobs'
     | '/api/internal/agent-review'
+    | '/api/internal/assistant-actions'
     | '/api/internal/opencode-jobs'
+    | '/api/assistant/actions/$actionId'
+    | '/api/assistant/conversations/$conversationId'
+    | '/api/assistant/turns/$turnId'
+    | '/api/assistant/actions/$actionId/decision'
+    | '/api/assistant/conversations/$conversationId/events'
+    | '/api/assistant/conversations/$conversationId/messages'
+    | '/api/assistant/turns/$turnId/cancel'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -256,11 +385,16 @@ export interface RootRouteChildren {
   PrdRoute: typeof PrdRoute
   SourcesRoute: typeof SourcesRoute
   ApiModelSettingsRoute: typeof ApiModelSettingsRoute
+  ApiAssistantCapabilitiesRoute: typeof ApiAssistantCapabilitiesRoute
+  ApiAssistantConversationsRoute: typeof ApiAssistantConversationsRouteWithChildren
   ApiCronTickRoute: typeof ApiCronTickRoute
   ApiInternalAgentDataRoute: typeof ApiInternalAgentDataRoute
   ApiInternalAgentJobsRoute: typeof ApiInternalAgentJobsRoute
   ApiInternalAgentReviewRoute: typeof ApiInternalAgentReviewRoute
+  ApiInternalAssistantActionsRoute: typeof ApiInternalAssistantActionsRoute
   ApiInternalOpencodeJobsRoute: typeof ApiInternalOpencodeJobsRoute
+  ApiAssistantActionsActionIdRoute: typeof ApiAssistantActionsActionIdRouteWithChildren
+  ApiAssistantTurnsTurnIdRoute: typeof ApiAssistantTurnsTurnIdRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -356,6 +490,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InboxItemIdRouteImport
       parentRoute: typeof InboxRoute
     }
+    '/api/assistant/capabilities': {
+      id: '/api/assistant/capabilities'
+      path: '/api/assistant/capabilities'
+      fullPath: '/api/assistant/capabilities'
+      preLoaderRoute: typeof ApiAssistantCapabilitiesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/assistant/conversations': {
+      id: '/api/assistant/conversations'
+      path: '/api/assistant/conversations'
+      fullPath: '/api/assistant/conversations'
+      preLoaderRoute: typeof ApiAssistantConversationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/cron/tick': {
       id: '/api/cron/tick'
       path: '/api/cron/tick'
@@ -384,12 +532,68 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiInternalAgentReviewRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/internal/assistant-actions': {
+      id: '/api/internal/assistant-actions'
+      path: '/api/internal/assistant-actions'
+      fullPath: '/api/internal/assistant-actions'
+      preLoaderRoute: typeof ApiInternalAssistantActionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/internal/opencode-jobs': {
       id: '/api/internal/opencode-jobs'
       path: '/api/internal/opencode-jobs'
       fullPath: '/api/internal/opencode-jobs'
       preLoaderRoute: typeof ApiInternalOpencodeJobsRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/api/assistant/actions/$actionId': {
+      id: '/api/assistant/actions/$actionId'
+      path: '/api/assistant/actions/$actionId'
+      fullPath: '/api/assistant/actions/$actionId'
+      preLoaderRoute: typeof ApiAssistantActionsActionIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/assistant/conversations/$conversationId': {
+      id: '/api/assistant/conversations/$conversationId'
+      path: '/$conversationId'
+      fullPath: '/api/assistant/conversations/$conversationId'
+      preLoaderRoute: typeof ApiAssistantConversationsConversationIdRouteImport
+      parentRoute: typeof ApiAssistantConversationsRoute
+    }
+    '/api/assistant/turns/$turnId': {
+      id: '/api/assistant/turns/$turnId'
+      path: '/api/assistant/turns/$turnId'
+      fullPath: '/api/assistant/turns/$turnId'
+      preLoaderRoute: typeof ApiAssistantTurnsTurnIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/assistant/actions/$actionId/decision': {
+      id: '/api/assistant/actions/$actionId/decision'
+      path: '/decision'
+      fullPath: '/api/assistant/actions/$actionId/decision'
+      preLoaderRoute: typeof ApiAssistantActionsActionIdDecisionRouteImport
+      parentRoute: typeof ApiAssistantActionsActionIdRoute
+    }
+    '/api/assistant/conversations/$conversationId/events': {
+      id: '/api/assistant/conversations/$conversationId/events'
+      path: '/events'
+      fullPath: '/api/assistant/conversations/$conversationId/events'
+      preLoaderRoute: typeof ApiAssistantConversationsConversationIdEventsRouteImport
+      parentRoute: typeof ApiAssistantConversationsConversationIdRoute
+    }
+    '/api/assistant/conversations/$conversationId/messages': {
+      id: '/api/assistant/conversations/$conversationId/messages'
+      path: '/messages'
+      fullPath: '/api/assistant/conversations/$conversationId/messages'
+      preLoaderRoute: typeof ApiAssistantConversationsConversationIdMessagesRouteImport
+      parentRoute: typeof ApiAssistantConversationsConversationIdRoute
+    }
+    '/api/assistant/turns/$turnId/cancel': {
+      id: '/api/assistant/turns/$turnId/cancel'
+      path: '/cancel'
+      fullPath: '/api/assistant/turns/$turnId/cancel'
+      preLoaderRoute: typeof ApiAssistantTurnsTurnIdCancelRouteImport
+      parentRoute: typeof ApiAssistantTurnsTurnIdRoute
     }
   }
 }
@@ -404,6 +608,68 @@ const InboxRouteChildren: InboxRouteChildren = {
 
 const InboxRouteWithChildren = InboxRoute._addFileChildren(InboxRouteChildren)
 
+interface ApiAssistantConversationsConversationIdRouteChildren {
+  ApiAssistantConversationsConversationIdEventsRoute: typeof ApiAssistantConversationsConversationIdEventsRoute
+  ApiAssistantConversationsConversationIdMessagesRoute: typeof ApiAssistantConversationsConversationIdMessagesRoute
+}
+
+const ApiAssistantConversationsConversationIdRouteChildren: ApiAssistantConversationsConversationIdRouteChildren =
+  {
+    ApiAssistantConversationsConversationIdEventsRoute:
+      ApiAssistantConversationsConversationIdEventsRoute,
+    ApiAssistantConversationsConversationIdMessagesRoute:
+      ApiAssistantConversationsConversationIdMessagesRoute,
+  }
+
+const ApiAssistantConversationsConversationIdRouteWithChildren =
+  ApiAssistantConversationsConversationIdRoute._addFileChildren(
+    ApiAssistantConversationsConversationIdRouteChildren,
+  )
+
+interface ApiAssistantConversationsRouteChildren {
+  ApiAssistantConversationsConversationIdRoute: typeof ApiAssistantConversationsConversationIdRouteWithChildren
+}
+
+const ApiAssistantConversationsRouteChildren: ApiAssistantConversationsRouteChildren =
+  {
+    ApiAssistantConversationsConversationIdRoute:
+      ApiAssistantConversationsConversationIdRouteWithChildren,
+  }
+
+const ApiAssistantConversationsRouteWithChildren =
+  ApiAssistantConversationsRoute._addFileChildren(
+    ApiAssistantConversationsRouteChildren,
+  )
+
+interface ApiAssistantActionsActionIdRouteChildren {
+  ApiAssistantActionsActionIdDecisionRoute: typeof ApiAssistantActionsActionIdDecisionRoute
+}
+
+const ApiAssistantActionsActionIdRouteChildren: ApiAssistantActionsActionIdRouteChildren =
+  {
+    ApiAssistantActionsActionIdDecisionRoute:
+      ApiAssistantActionsActionIdDecisionRoute,
+  }
+
+const ApiAssistantActionsActionIdRouteWithChildren =
+  ApiAssistantActionsActionIdRoute._addFileChildren(
+    ApiAssistantActionsActionIdRouteChildren,
+  )
+
+interface ApiAssistantTurnsTurnIdRouteChildren {
+  ApiAssistantTurnsTurnIdCancelRoute: typeof ApiAssistantTurnsTurnIdCancelRoute
+}
+
+const ApiAssistantTurnsTurnIdRouteChildren: ApiAssistantTurnsTurnIdRouteChildren =
+  {
+    ApiAssistantTurnsTurnIdCancelRoute: ApiAssistantTurnsTurnIdCancelRoute,
+  }
+
+const ApiAssistantTurnsTurnIdRouteWithChildren =
+  ApiAssistantTurnsTurnIdRoute._addFileChildren(
+    ApiAssistantTurnsTurnIdRouteChildren,
+  )
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   GuideRoute: GuideRoute,
@@ -417,11 +683,17 @@ const rootRouteChildren: RootRouteChildren = {
   PrdRoute: PrdRoute,
   SourcesRoute: SourcesRoute,
   ApiModelSettingsRoute: ApiModelSettingsRoute,
+  ApiAssistantCapabilitiesRoute: ApiAssistantCapabilitiesRoute,
+  ApiAssistantConversationsRoute: ApiAssistantConversationsRouteWithChildren,
   ApiCronTickRoute: ApiCronTickRoute,
   ApiInternalAgentDataRoute: ApiInternalAgentDataRoute,
   ApiInternalAgentJobsRoute: ApiInternalAgentJobsRoute,
   ApiInternalAgentReviewRoute: ApiInternalAgentReviewRoute,
+  ApiInternalAssistantActionsRoute: ApiInternalAssistantActionsRoute,
   ApiInternalOpencodeJobsRoute: ApiInternalOpencodeJobsRoute,
+  ApiAssistantActionsActionIdRoute:
+    ApiAssistantActionsActionIdRouteWithChildren,
+  ApiAssistantTurnsTurnIdRoute: ApiAssistantTurnsTurnIdRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

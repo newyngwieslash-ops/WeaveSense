@@ -134,7 +134,7 @@ async function handleAgentJobsInner(opts: {
     await expireQueuedResearchJobs(opts.sql, provider);
     const [expired] = await opts.sql.query<Record<string, any>>(`select * from ai_jobs
       where runtime_provider=$1 and exists(select 1 from ai_runs r where r.id=ai_jobs.run_id and r.provider=$1)
-        and status='running' and lease_until<=clock_timestamp() and item_id like 'research:%'
+        and status='running' and lease_until<=clock_timestamp() and job_kind='research'
       order by id for update skip locked limit 1`, [provider]);
     if (expired) {
       const locked = await lockRun(opts.sql, expired.run_id, expired.id);
