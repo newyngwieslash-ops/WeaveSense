@@ -19,7 +19,8 @@ type Db = {
 
 const files = readdirSync("migrations").filter((n) => /^\d+.*\.sql$/.test(n)).sort();
 const assistantFiles = files.filter((n) => n.startsWith("0026") || n.startsWith("0027"));
-const priorFiles = files.filter((n) => !n.startsWith("0026") && !n.startsWith("0027"));
+// 0028 (continuations) rides in the assistant batch too; priorFiles must exclude it.
+const priorFiles = files.filter((n) => !["0026","0027","0028"].some((p) => n.startsWith(p)));
 
 async function applyAll(db: Db, names: string[]) {
   for (const name of names) await db.exec(readFileSync("migrations/" + name, "utf8"));
