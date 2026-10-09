@@ -39,7 +39,7 @@ export function AssistantComposer({ page }: { page: string }) {
             : state.composerError === "request_conflict"
               ? "请求内容冲突，请重新输入"
               : state.composerError === "assistant_unavailable"
-                ? "助手引擎当前不可用（未配置模型服务或 Worker），消息未发送"
+                ? "助手执行器未就绪：需配置 Worker（AGENT_OPENCODE_WORKER_ENABLED + OPENCODE_WORKER_TOKEN）。模型设置页的档案不直接作为助手引擎（见 docs/operations/project-assistant.md §7.1）"
                 : "发送失败，请稍后重试"}
         </p>
       )}

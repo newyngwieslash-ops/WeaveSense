@@ -233,8 +233,40 @@ http://127.0.0.1:8080/api/assistant/capabilities
 
 ## 4. 第四阶段：真实模型多轮（可选，产生费用）
 
-> 前提：`LOOM_MODEL_CONFIG` 指向真实可用的模型配置（含 API Key），且你接受
-> §7.1 的预算规则。没有真实 Key 就跳过本章——前三章已覆盖全部 UI/幂等/边界。
+> **重要：模型设置页 ≠ 助手引擎。** 「模型设置」页的档案（如 local-web）是
+> 给旧分析/问答管道用的；助手对话走的是 `AGENT_*` 环境变量 + Worker 路径，
+> 二者不自动同步（计划 §7.1 明确此差异并要求如实展示）。这就是「模型已测试
+> 连通但助手仍报不可用」的原因——缺的是 **Worker**，不是模型档案。
+>
+> 另注：档案里 `baseURL` 若写 `http://localhost:7863`，从容器内无法到达（容器
+> 的 localhost 是容器自己）。需用宿主真实 LAN IP 或 `host.docker.internal`。
+
+### 4.0 启用助手执行器（三选一，按你的部署方式）
+
+**容器方式（restart.bat）**：在 `F:\loom-backups\env\app.env` 追加：
+
+```
+AGENT_OPENCODE_WORKER_ENABLED=true
+OPENCODE_WORKER_TOKEN=自选一串随机字符串
+```
+
+然后 `.\restart.bat`。同时确认 `docker-compose.yml` 中 app 服务的
+`AGENT_MODEL_NAME` 与你要用的真实模型一致（当前默认 grok-4.5；若用本地
+deepseek，请改为对应模型名并把 baseURL 指向可达地址）。
+
+**开发模式（npm run dev）**：PowerShell 里设
+
+```powershell
+$env:AGENT_OPENCODE_WORKER_ENABLED = "true"
+$env:OPENCODE_WORKER_TOKEN = "自选一串随机字符串"
+npm run dev
+```
+
+**验证**：提交消息后不再出现红色「执行器未就绪」提示，而是出现阶段标签
+（读取概览…）→ 助手气泡。
+
+> 产生费用提示：多轮对话按真实模型计费。没有可用模型/Key 时跳过本章，
+> 前三章已覆盖全部 UI/幂等/边界验收。
 
 ### 4.1 多轮追问（A08）
 
