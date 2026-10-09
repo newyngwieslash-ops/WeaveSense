@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { getRequestIP } from "@tanstack/react-start/server";
 import { getSql } from "@/lib/db";
 import { assistantAccessFromRequest } from "@/lib/server/assistant-access";
+import { assistantCapabilities } from "@/lib/server/assistant-capabilities";
+import { prod } from "@/lib/server/config";
 import { submitAssistantMessage } from "@/lib/server/assistant-events";
 import { assistantMessageInput, parseAssistantMessageInput } from "@/lib/assistant-contract";
 
@@ -31,6 +33,19 @@ export const Route = createFileRoute("/api/assistant/conversations/$conversation
         try { body = JSON.parse(raw); } catch { return Response.json({ error: "invalid_request" }, { status: 400, headers }); }
         const parsed = parseAssistantMessageInput(body);
         if (!parsed.ok) return Response.json({ error: "invalid_request", detail: parsed.error }, { status: 400, headers });
+        // Honest fast-fail (A01): without a configured engine/worker the turn
+        // would sit queued forever and block the conversation's active-turn
+        // slot, so refuse submission up front instead. Capabilities alone
+        // aren't enough — a submitted turn needs a worker that will actually
+        // claim it, so require the worker switch + token as well.
+        const caps = await assistantCapabilities();
+        const workerReady = prod.opencodeWorkerEnabled && Boolean(prod.opencodeWorkerToken || prod.assistantWorkerToken);
+        if (!caps.enabled || !workerReady) {
+          return Response.json({
+            error: "assistant_unavailable",
+            reason: caps.enabled ? "assistant_worker_not_running" : caps.reason,
+          }, { status: 503, headers });
+        }
         const sql = await getSql();
         const submission = await submitAssistantMessage(sql, conversationId, parsed.value);
         if (submission.kind === "conflict") {

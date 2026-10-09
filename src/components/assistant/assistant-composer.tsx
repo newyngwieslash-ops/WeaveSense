@@ -38,7 +38,9 @@ export function AssistantComposer({ page }: { page: string }) {
             ? "已有正在进行的对话轮次，请稍候或刷新"
             : state.composerError === "request_conflict"
               ? "请求内容冲突，请重新输入"
-              : "发送失败，请稍后重试"}
+              : state.composerError === "assistant_unavailable"
+                ? "助手引擎当前不可用（未配置模型服务或 Worker），消息未发送"
+                : "发送失败，请稍后重试"}
         </p>
       )}
       <div className="flex items-end gap-2">

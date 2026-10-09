@@ -38,6 +38,7 @@ export const prod = {
   agentResearchReview: parseResearchReview(read("AGENT_RESEARCH_REVIEW", "off")),
   assistantEnabled: read("AGENT_ASSISTANT_ENABLED", "false") === "true",
   assistantActionsEnabled: read("AGENT_ASSISTANT_ACTIONS_ENABLED", "false") === "true",
+  assistantWorkerToken: read("ASSISTANT_WORKER_TOKEN"),
   assistantMaxModelCalls: Math.max(1, Math.min(20, Number(read("AGENT_ASSISTANT_MAX_MODEL_CALLS", "6")) || 6)),
   assistantMaxToolCalls: Math.max(0, Math.min(40, Number(read("AGENT_ASSISTANT_MAX_TOOL_CALLS", "8")) || 8)),
   assistantDailyLimit: Math.max(0, Number(read("AGENT_ASSISTANT_DAILY_LIMIT", "20")) || 0),
