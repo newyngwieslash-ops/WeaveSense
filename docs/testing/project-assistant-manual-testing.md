@@ -243,6 +243,13 @@ http://127.0.0.1:8080/api/assistant/capabilities
 
 ### 4.0 启用助手执行器（三选一，按你的部署方式）
 
+> **沙箱/离线环境限制（2026-10-09）**：opencode-worker 镜像构建需要拉取
+> gcr.io 的 distroless 基础镜像，无外网环境无法完成。因此**无 Worker 时助手
+> 对话（§4.1–4.3）不可测**——submit 的 503 诚实拒绝本身就是 A01 的正确结果。
+> 动作链路（§2）不依赖模型 Worker，可正常测试：`AGENT_ASSISTANT_ACTIONS_ENABLED=true`
+> 已通过项目根 `.env` 生效（capabilities 现返回 `actions_enabled:true`），
+> 请继续 §2 的预览/确认测试。
+
 **容器方式（restart.bat）**：在 `F:\loom-backups\env\app.env` 追加：
 
 ```
