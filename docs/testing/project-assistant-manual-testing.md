@@ -76,6 +76,9 @@ npm start
   `docker compose build app` 强制重建后再 `.\restart.bat`。
 - 测试完成后回退：把 `F:\loom-backups\env\app.env` 里的
   `AGENT_ASSISTANT_ENABLED` 改回 `false`，再跑一次 `.\restart.bat`。
+- 历史版本曾因缺失 `:compose_ok` 标签报「系统找不到指定的批处理标签」并中止；
+  2026-10-09 已修复（顺带补回 `:try_legacy`、`:sleep` 与重复的 `:stack_started`）。
+  若你的本地副本仍报此错，先 `git pull` 拉取修复后的脚本。
 
 ### 0.3 确认助手开关已生效
 

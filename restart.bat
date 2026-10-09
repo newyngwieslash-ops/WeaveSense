@@ -85,6 +85,17 @@ call :configure_local_defaults
 set "COMPOSE_KIND=v2"
 docker compose version >nul 2>&1
 if errorlevel 1 goto try_legacy
+
+:compose_ok
+echo [2/5] Checking port %PORT% ownership...
+call :detect_port
+if "%APP_WAS_RUNNING%"=="1" goto port_ours
+if defined PORT_OWNER_PID goto err_portbusy
+goto port_free
+
+:try_legacy
+echo [WARN] docker compose v2 not available; trying docker-compose v1...
+set "COMPOSE_KIND=legacy"
 goto compose_ok
 
 :port_ours
@@ -100,6 +111,7 @@ echo       Port %PORT% is free.
 call :log "step 2: port %PORT% free - fresh start"
 goto port_checked
 
+:port_checked
 echo [2/5] Stop old stack, keep volumes...
 call :ensure_docker
 if errorlevel 1 goto err_nodaemon
@@ -114,7 +126,6 @@ if not errorlevel 1 goto stack_started
 echo [WARN] Build failed. Retrying with existing local images...
 call :compose up --no-build -d
 if errorlevel 1 goto err_up
-:stack_started
 
 :stack_started
 
@@ -242,6 +253,11 @@ rem --------------------------------- helpers ---------------------------------
 :log
 echo %~1
 >>"%LOG_FILE%" echo [%DATE% %TIME%] %~1
+exit /b 0
+
+:sleep
+rem %1 = seconds. Used by the readiness wait loop.
+powershell -NoProfile -Command "Start-Sleep -Seconds %~1" >nul 2>&1
 exit /b 0
 
 :compose
