@@ -35,17 +35,30 @@ $env:AGENT_PRICE_OUTPUT_RMB_PER_MILLION = "4"
 
 ### 0.2 启动应用
 
-两种方式任选其一：
+**方式 A：restart.bat（生产容器栈，本次首选）**
 
-**方式 A（推荐，开发模式，改代码即时生效）**
+直接双击 `restart.bat`（或在 PowerShell 执行 `.\restart.bat`）。它会
+`docker compose up --build -d` 重建应用容器——首次运行会重新构建镜像以包含助手
+代码，耗时约几分钟属正常。
+
+助手所需的开关已写入容器读取的环境文件
+`F:\loom-backups\env\app.env`（`AGENT_ASSISTANT_ENABLED=true`、
+`AGENT_ASSISTANT_ACTIONS_ENABLED=false`、治理变量与真实模型档案对齐），模型配置
+走 `F:\loom-backups\model-config\model.local.json` 卷挂载（已有真实 profile），
+因此**无需再设 §0.1 的 PowerShell 变量**。验证方式仍是 §0.3 的 capabilities URL。
+
+启动后浏览器打开 `http://127.0.0.1:8080` 即可。
+
+**方式 B（开发模式，改代码即时生效）**
 
 ```powershell
 npm run dev
 ```
 
 看到 `VITE ready` 与 `Local: http://localhost:8080` 即成功。**保持这个窗口不关**。
+若走方式 B，才需要先执行 §0.1 的 PowerShell 环境变量（容器方式已由 env_file 提供）。
 
-**方式 B（构建模式）**
+**方式 C（构建模式）**
 
 ```powershell
 npm run build
@@ -54,6 +67,15 @@ npm start
 
 > 构建模式会执行 `db:migrate`。**不要在生产 `DATABASE_URL` 的终端里跑**，本机
 > PGLite 模式无碍。
+
+### 0.2.1 restart.bat 注意事项
+
+- `restart.bat` 会重建并重启**整个容器栈**（postgres/minio/app/scheduler…），
+  是生产等价环境，数据来自容器卷。
+- 若启动后 §0.3 返回 404，说明镜像还是旧构建——在项目根执行
+  `docker compose build app` 强制重建后再 `.\restart.bat`。
+- 测试完成后回退：把 `F:\loom-backups\env\app.env` 里的
+  `AGENT_ASSISTANT_ENABLED` 改回 `false`，再跑一次 `.\restart.bat`。
 
 ### 0.3 确认助手开关已生效
 
