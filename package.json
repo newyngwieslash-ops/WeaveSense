@@ -38,7 +38,8 @@
     "agent:research:e2e": "node validation/agent/opencode/e2e.mjs --run",
     "agent:opencode:integration": "node validation/agent/opencode/e2e.mjs --run --opencode",
     "agent:research:pg": "node --experimental-strip-types --test --test-concurrency=1 validation/agent/opencode/faults.test.ts validation/agent/opencode/migrations.test.ts",
-    "agent:quality:smoke": "node --experimental-strip-types validation/agent/opencode/live-adapter-smoke.mjs --run"
+    "agent:quality:smoke": "node --experimental-strip-types validation/agent/opencode/live-adapter-smoke.mjs --run",
+    "test:assistant": "node --experimental-strip-types --test --test-concurrency=2 src/lib/assistant-contract.test.ts src/lib/server/assistant-access.test.ts src/lib/server/assistant-store.test.ts src/lib/server/assistant-context.test.ts src/lib/server/project-actions.test.ts src/lib/server/assistant-tools.test.ts src/lib/server/assistant-jobs.test.ts src/lib/server/assistant-actions.test.ts src/lib/server/assistant-action-preview.test.ts src/lib/server/assistant-collection.test.ts src/lib/server/assistant-research.test.ts src/lib/server/assistant-events.test.ts src/lib/assistant-state.test.ts src/lib/assistant-effects.test.ts src/lib/server/assistant-config.test.ts validation/agent/assistant/migrations.test.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.4",
