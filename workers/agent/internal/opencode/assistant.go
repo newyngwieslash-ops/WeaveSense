@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -99,7 +100,9 @@ func RunAssistantWorkerOnce(parent context.Context, cfg WorkerConfig) (runErr er
 			return nil, err
 		}
 		if status != 200 {
-			return nil, errors.New("job_action_denied")
+			// Surface which host action was denied and its status so
+			// operators can distinguish config drift from state conflicts.
+			return nil, fmt.Errorf("job_action_denied: %s -> %d", action, status)
 		}
 		return raw, nil
 	}

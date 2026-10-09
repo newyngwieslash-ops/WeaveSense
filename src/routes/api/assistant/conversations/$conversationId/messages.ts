@@ -55,8 +55,21 @@ export const Route = createFileRoute("/api/assistant/conversations/$conversation
             error_code: submission.reason === "request_conflict" ? "request_conflict" : "revision_or_active_conflict",
           }, { status: 409, headers });
         }
+        // Enqueue the model job for this turn (§4.1/§4.2): the turn row is
+        // the product record; the assistant ai_jobs row is what the Go
+        // worker claims. item_id follows the assistant:<turn_id> contract
+        // the 0027 trigger enforces.
+        const jobId = crypto.randomUUID();
+        await sql.query(
+          `insert into ai_jobs(id, item_id, material_hash, policy_version, status, runtime_provider, job_kind, payload)
+           values($1,$2,'assistant',$3,'queued','opencode','assistant',$4::jsonb)`,
+          [jobId, `assistant:${submission.turn.id}`, "loom-assistant-v1",
+            JSON.stringify({ provider: "opencode", question: parsed.value.text, turn_id: submission.turn.id })],
+        );
+        await sql.query("update assistant_turns set job_id=$2 where id=$1", [submission.turn.id, jobId]);
         return Response.json({
           turn_id: submission.turn.id,
+          job_id: jobId,
           status: submission.turn.status,
           revision: submission.revision,
           replay: submission.kind === "replay",

@@ -6,7 +6,10 @@ import { agentTransaction, lockRun, ownsRun, type AgentSql } from "./agent-trans
 const ids = z.object({ job_id: z.uuid(), run_id: z.uuid(), claim_token: z.uuid() });
 const bindingSchema = z.discriminatedUnion("action", [
   ids.extend({ action: z.literal("bind"), instance_id: z.uuid(), epoch: z.uuid(), session_id: z.string().regex(/^ses_[a-zA-Z0-9]+$/),
-    runtime_version: z.literal("1.3.13"), config_digest: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
+    runtime_version: z.literal("1.3.13"), config_digest: z.string().regex(/^[a-f0-9]{64}$/),
+    // The assistant profile binds with its profile marker (Task 8); the
+    // research worker omits it, so it stays optional here.
+    profile: z.literal("assistant").optional() }).strict(),
   ids.extend({ action: z.literal("dispatching") }).strict(),
   ids.extend({ action: z.literal("submitted") }).strict(),
   ids.extend({ action: z.literal("dispatch_unknown"), error_code: z.string().min(1).max(128).optional() }).strict(),
