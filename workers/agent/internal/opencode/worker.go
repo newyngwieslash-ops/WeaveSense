@@ -456,6 +456,17 @@ func RunWorkerOnce(parent context.Context, cfg WorkerConfig) (runErr error) {
 	return err
 }
 
+// RunWorkerLoopOnce validates the config and executes exactly one claim
+// pass. Exported for the alternating two-queue scheduler in
+// cmd/opencode-worker: it interleaves research and assistant passes itself
+// so neither queue starves the other (§4.2).
+func RunWorkerLoopOnce(ctx context.Context, cfg WorkerConfig) error {
+	if err := validateWorkerConfig(cfg); err != nil {
+		return err
+	}
+	return RunWorkerOnce(ctx, cfg)
+}
+
 func RunWorkerLoop(ctx context.Context, cfg WorkerConfig) error {
 	if err := validateWorkerConfig(cfg); err != nil {
 		return err
