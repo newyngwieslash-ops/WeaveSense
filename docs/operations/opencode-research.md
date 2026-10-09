@@ -123,3 +123,19 @@ console.log("grant revoked; process tree stop confirmed");'
 ```
 
 恢复 helper、provider drain/切换期间 Eino 继续工作、生产回滚尚未在部署栈实操。本轮运维核对和假供应商证据不能写作生产回滚通过。
+
+## 与助手（Project Assistant）的关系（2026-10-09 起）
+
+研究链路保持原语义不变；助手是叠加在同一条 OpenCode 基础设施上的第二个产品面：
+
+- **Runtime**：prepare 增加可信 `profile` 枚举，省略仍严格等于 research。research
+  三个批准 Skill、corpus 工具与结果协议不变；assistant 使用独立的
+  `project-assistant` Skill、只读工具面与结果解码器（详见
+  `docs/operations/project-assistant.md`）。
+- **队列**：`ai_jobs.job_kind` 显式分派（analyze_item/research/assistant），
+  0027 的触发器保证 assistant job 必须绑定真实会话轮次；旧研究 Worker 若不认识
+  assistant 行为，按 §回滚 的版本兼容约束处理，禁止直接回退到前缀判别的旧二进制。
+- **Worker 端点**：旧 `OPENCODE_JOBS_URL`（research/analyze）与新增
+  `ASSISTANT_JOBS_URL` 使用分离的服务令牌；两队列交替调度，互不饥饿。
+- **升级顺序**：先更 runtime/bridge/worker 镜像与批准 Skill（助手开关保持关闭），
+  验证本页全部既有检查通过后，再按 project-assistant.md §6 分阶段打开助手。

@@ -300,7 +300,7 @@ async function executeProposalAction(
         } else if (result.kind === "unchanged") {
           receipt = { action_id: actionId, status: "succeeded", effect: "unchanged", result_refs: [{ type: "keyword", id: result.keywordId }], changed_domains: [] };
         } else {
-          receipt = { action_id: actionId, status: "not_found", result_refs: [], changed_domains: [] };
+          receipt = { action_id: actionId, status: "not_found", result_refs: [], changed_domains: [], error_code: "not_found" };
         }
         break;
       }
@@ -311,7 +311,7 @@ async function executeProposalAction(
         } else if (result.kind === "unchanged") {
           receipt = { action_id: actionId, status: "succeeded", effect: "unchanged", result_refs: [{ type: "keyword", id: result.keywordId }], changed_domains: [] };
         } else {
-          receipt = { action_id: actionId, status: "not_found", result_refs: [], changed_domains: [] };
+          receipt = { action_id: actionId, status: "not_found", result_refs: [], changed_domains: [], error_code: "not_found" };
         }
         break;
       }
@@ -330,7 +330,7 @@ async function executeProposalAction(
         } else if (result.kind === "unchanged") {
           receipt = { action_id: actionId, status: "succeeded", effect: "unchanged", result_refs: [{ type: "source", id: result.sourceId }], changed_domains: [] };
         } else {
-          receipt = { action_id: actionId, status: "not_found", result_refs: [], changed_domains: [] };
+          receipt = { action_id: actionId, status: "not_found", result_refs: [], changed_domains: [], error_code: "not_found" };
         }
         break;
       }

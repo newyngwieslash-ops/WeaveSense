@@ -47,7 +47,14 @@ export function AssistantPanel() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   // One stable decision-request id per panel mount: every decision from this
   // panel session shares it, so a repeated decision replays server-side.
-  const decisionRequestIdRef = useRef(crypto.randomUUID());
+  // http:// LAN hosts are not a secure context, so crypto.randomUUID may be
+  // absent; fall back to random hex shaped as a UUID (uniqueness within the
+  // panel session is all the decision id needs).
+  const decisionRequestIdRef = useRef(
+    globalThis.crypto?.randomUUID?.() ??
+    Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0"))
+      .join("").replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, "$1-$2-$3-$4-$5"),
+  );
   const decisionRequestId = decisionRequestIdRef.current;
   if (!state.panelOpen) return null;
   const disabledReason = capabilities && !capabilities.enabled ? REASON_TEXT[capabilities.reason ?? ""] ?? "助手暂不可用" : null;
