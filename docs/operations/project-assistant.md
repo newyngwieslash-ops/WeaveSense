@@ -51,3 +51,28 @@
   跨崩溃 exactly-once。
 - 模型设置档案与 `AGENT_MODEL_*` 固定环境配置存在差异；助手使用后者并如实展示。
 - 会话归档不是数据删除；保留/删除策略需独立实现，UI 不承诺“彻底删除”。
+
+## 6. 分阶段试运行（交付流程）
+
+按顺序执行，每阶段有明确验收与回退开关；前一段未通过不进入下一段。
+
+| 阶段 | 开放范围 | 通过标准 | 回退 |
+| --- | --- | --- | --- |
+| 0 | 全部关闭 | 旧研究/分析链路回归全绿；`capabilities` 返回 `assistant_disabled` | 无需 |
+| 1 | `AGENT_ASSISTANT_ENABLED=true`（只读） | 面板可开；快照/事件轮询正常；读历史 0 模型调用（A01/A07/A08） | 关回 `false` |
+| 2 | + `AGENT_ASSISTANT_ACTIONS_ENABLED=true` | 关键词/信源预览→确认→真实写入→回执→缓存刷新（A09/A10/A11） | 先关本开关（阻止新批准），已批动作由 reconcile 收敛 |
+| 3 | 单次采集动作 | 稳定 jobs ID；断线重连只查不重采（A12/A13） | 同上 |
+| 4 | 研究子任务 | 子任务经既有 Reviewer 发布；取消只作用于本轮归属（A15/A16/A17） | 关总开关并 drain |
+
+每阶段记录：日期、操作者、HEAD、镜像 ID、profile/digest、观察结果。真实付费质量
+试运行（Q01）在所有阶段通过后单独执行，不以假模型结果替代。
+
+## 7. 交付清单（第一版实现）
+
+- 迁移：`migrations/0026_assistant_sessions.sql`、`migrations/0027_assistant_runtime.sql`
+- 服务端：`src/lib/server/assistant-{access,store,context,tools,jobs,actions,action-preview,action-dispatch,research,reconcile,events,capabilities,turn-status,action-receipt}.ts` + `project-actions.ts`
+- 合同：`src/lib/assistant-contract.ts`、`assistant-state.ts`、`assistant-client.ts`、`assistant-effects.ts`
+- 路由：`/api/assistant/*`（capabilities/conversations/messages/events/turns/actions）与 `/api/internal/assistant-actions`
+- UI：`src/components/assistant/*`（provider/launcher/panel/composer/message/action-card）
+- Go：runtime assistant profile + `project-assistant` Skill、Bridge profile 工具面、Worker 双队列执行
+- 文档：本指南、测试指南、验收 harness `validation/agent/assistant/e2e.mjs`

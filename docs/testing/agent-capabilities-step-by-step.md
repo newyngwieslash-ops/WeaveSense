@@ -1073,3 +1073,10 @@ Eino dev前两次[37665ada…](../../.repo/opencode-e2e-37665ada-1dca-4736-8304-
 助手只读核查：8080当时没有监听进程；`docker-compose.yml` 的app仍声明 `127.0.0.1:8080:8080`。执行 `docker compose config --quiet` 退出1，实际错误是 `F:/loom-backups/env/telethon.env` 不存在；另外确认 `app.env`、`minio.env`、`minio-init.env` 也不存在。没有读取或记录秘密内容。
 
 误报原因：`restart.bat` 先执行Compose配置解析并丢弃stderr，没有检查解析退出码，然后从空的结果查端口，落入“没有发布8080”分支。这个报错不能证明端口冲突。尚未修改启动器、补造部署凭据或启动/停止生产栈；本轮继续走独立假模型测试。若后续需要恢复常规部署，应从真实部署配置/备份恢复工作树外文件，并单独验证启动器；不能用假模型实验室密码或随机占位值顶替。
+
+
+---
+
+## 后续：织识助手（Project Assistant）
+
+2026-10-09 起的全局助手实现与验收另见 [project-assistant-step-by-step.md](project-assistant-step-by-step.md)（实现状态 + A01–A31 矩阵）。本文历史记录保持不变。

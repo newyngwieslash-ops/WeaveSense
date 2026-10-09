@@ -10,6 +10,22 @@
 - 禁止用生产 `DATABASE_URL` 试跑 build/migration（build 脚本含 `db:migrate`）。
 - 假模型优先；真实模型质量试运行（Q01）单列，需先冻结模型/样本/价格/限额配置。
 
+## 0.1 实现状态（2026-10-09，实施批次 1–18）
+
+第一版服务端与客户端已全部实现（基线 HEAD 起 18 个提交），每个模块带针对性测试：
+
+| 模块 | 验证 |
+| --- | --- |
+| 合同/迁移/门禁/存储/上下文/领域函数/只读工具 | `npm run test:assistant` 97/97 |
+| 队列 job_kind 分派、助手 finalizer、采集派发、研究子任务、reconcile | 同上 + e2e A04/A05/A12/A13/A30/A31 |
+| Runtime profile / Bridge 工具面 / Worker 双队列（Go） | `go test ./...` 全套通过 |
+| 公共 API 路由与面板 UI | typecheck + 生产构建；路由门禁经 curl 实测（403/200/401/400/404 路径） |
+| 验收 harness | `node validation/agent/assistant/e2e.mjs --run` 8/8 |
+
+**尚未执行（不视为已验收）**：真实 PostgreSQL 重启收敛（A27）、浏览器/IME/390px
+人工验收（A02/A03）、真实 OpenCode 二进制的助手 profile 端到端（A16/A19 完整链）、
+付费质量试运行 Q01。以下矩阵保持逐项人工执行。
+
 ## 1. 验收清单（§9 全量，A01–A31 + B01–B03 + Q01）
 
 | ID | 场景 | 必须观察到的事实 | 结果 |
