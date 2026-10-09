@@ -1,10 +1,12 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useReducer, useRef, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   assistantReducer, initialAssistantState,
   type AssistantConversationMeta, type AssistantEvent,
 } from "@/lib/assistant-state";
+import { effectQueryKeys } from "@/lib/assistant-effects";
 import { createConversation, fetchCapabilities, fetchEvents, fetchSnapshot, submitMessage, type Capabilities } from "@/lib/assistant-client";
 
 /**
@@ -33,6 +35,7 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(assistantReducer, undefined, initialAssistantState);
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const queryClient = useQueryClient();
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -79,10 +82,26 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
         dispatch({ type: "events/resync" });
         const snapshot = await fetchSnapshot(current.conversationId);
         dispatch({ type: "snapshot/loaded", conversationId: current.conversationId, snapshot });
+        // A resync means we may have missed entity changes: refresh every
+        // mapped domain once rather than guessing.
+        for (const key of [["keywords"], ["sources"], ["items"], ["jobs"], ["knowledge"], ["overview"]]) {
+          void queryClient.invalidateQueries({ queryKey: key });
+        }
         return;
       }
       if (page.events.length > 0) {
         dispatch({ type: "events/applied", events: page.events as AssistantEvent[], conversationId: current.conversationId });
+        // entity.changed → fixed domain → fixed query key (§6.1.7).
+        for (const e of page.events) {
+          if (e.type !== "entity.changed") continue;
+          const domain = (e.payload as { domain?: unknown }).domain;
+          if (typeof domain !== "string") continue;
+          try {
+            for (const key of effectQueryKeys([domain])) {
+              void queryClient.invalidateQueries({ queryKey: key });
+            }
+          } catch { /* unknown domain: contract violation, ignore */ }
+        }
       }
       // Pull messages when a turn finished so the answer renders.
       if (page.events.some((e) => e.type === "turn.finished")) {

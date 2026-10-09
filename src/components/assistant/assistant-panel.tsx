@@ -1,10 +1,12 @@
 "use client";
 
+import { useRef } from "react";
 import { useRouterState } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { useAssistant } from "./assistant-provider";
 import { AssistantComposer } from "./assistant-composer";
 import { AssistantMessages } from "./assistant-message";
+import { AssistantActionCard } from "./assistant-action-card";
 
 /**
  * Panel (§2.2): right-side dock ≥1280px, overlay below that, Radix-free
@@ -43,6 +45,10 @@ const REASON_TEXT: Record<string, string> = {
 export function AssistantPanel() {
   const { state, capabilities, closePanel, startNewConversation } = useAssistant();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  // One stable decision-request id per panel mount: every decision from this
+  // panel session shares it, so a repeated decision replays server-side.
+  const decisionRequestIdRef = useRef(crypto.randomUUID());
+  const decisionRequestId = decisionRequestIdRef.current;
   if (!state.panelOpen) return null;
   const disabledReason = capabilities && !capabilities.enabled ? REASON_TEXT[capabilities.reason ?? ""] ?? "助手暂不可用" : null;
   return (
@@ -83,7 +89,24 @@ export function AssistantPanel() {
           {disabledReason ? (
             <p className="px-4 py-6 text-sm text-muted">{disabledReason}</p>
           ) : (
-            <AssistantMessages />
+            <>
+              <AssistantMessages />
+              {state.proposals.length > 0 && (
+                <div className="space-y-3 px-4 pb-4" aria-label="待确认操作">
+                  {state.proposals.map((proposal) => (
+                    <AssistantActionCard
+                      key={proposal.action_id}
+                      actionId={proposal.action_id}
+                      kind={proposal.kind}
+                      previewText={proposal.preview_text ?? "等待预览内容"}
+                      previewDigest={proposal.preview_digest ?? ""}
+                      expiresAt={proposal.expires_at ?? null}
+                      requestId={decisionRequestId}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
         {disabledReason ? null : <AssistantComposer page={pageOf(pathname)} />}

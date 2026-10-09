@@ -21,7 +21,7 @@ export type AssistantEvent = {
 
 export type StageMarker = { call_id: string; tool: string; state: "running" | "done" | "failed" };
 
-export type ProposalRef = { action_id: string; kind: string; status: string };
+export type ProposalRef = { action_id: string; kind: string; status: string; preview_text?: string; preview_digest?: string; expires_at?: string | null };
 
 export type AssistantMessageView = { id: string; role: string; ordinal: number; content: Record<string, unknown> };
 
@@ -114,7 +114,13 @@ function applyEvent(state: AssistantState, e: AssistantEvent): AssistantState {
       break;
     }
     case "action.proposed":
-      next = { ...next, proposals: [...state.proposals, { action_id: String(e.payload.action_id ?? ""), kind: String(e.payload.kind ?? ""), status: String(e.payload.status ?? "proposed") }] };
+      next = { ...next, proposals: [...state.proposals, {
+        action_id: String(e.payload.action_id ?? ""), kind: String(e.payload.kind ?? ""),
+        status: String(e.payload.status ?? "proposed"),
+        preview_text: typeof e.payload.preview_text === "string" ? e.payload.preview_text : undefined,
+        preview_digest: typeof e.payload.preview_digest === "string" ? e.payload.preview_digest : undefined,
+        expires_at: typeof e.payload.expires_at === "string" ? e.payload.expires_at : null,
+      }] };
       break;
     case "action.updated":
       next = { ...next, proposals: state.proposals.map((p) => (p.action_id === String(e.payload.action_id ?? "") ? { ...p, status: String(e.payload.status ?? p.status) } : p)) };
