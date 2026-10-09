@@ -57,6 +57,10 @@ function describeAction(action: AssistantAction, snapshot: ActionPreviewSnapshot
       return `以「${String(a.question)}」为题发起深入研究：独立子任务预算，结果需经审核后才会发布为知识笔记。`;
     case "research.cancel":
       return `取消关联的研究任务「${String(a.job_id)}」：已完成的写入不会回滚。`;
+    case "item.analyze":
+      return `对条目「${String(a.item_id)}」发起单篇专业分析：消耗独立分析预算，结果需在详情页按本次 ID 查看。`;
+    case "knowledge.briefing":
+      return "生成行业简报：汇总时间范围内最近条目（上限 12 条），经审核后保存为知识笔记。";
   }
 }
 

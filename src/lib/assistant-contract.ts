@@ -153,10 +153,19 @@ const collectOnceArgs = z.object({
 
 const researchStartArgs = z.object({ question: boundedText(2, 400) }).strict();
 
+const itemIdArgs = z.object({ item_id: z.string().trim().min(1).max(128) }).strict();
+
+/** Briefing range: optional, but from/to must be paired (§6.4). */
+const briefingArgs = z.object({
+  from: z.iso.datetime({ offset: true }).optional(),
+  to: z.iso.datetime({ offset: true }).optional(),
+}).strict().refine((v) => (v.from === undefined) === (v.to === undefined), { message: "date_range_paired" });
+
 export type AssistantActionKind =
   | "keyword.create" | "keyword.update" | "keyword.set_enabled" | "keyword.collect_once"
   | "source.create" | "source.set_enabled" | "source.collect_once"
-  | "research.start" | "research.cancel";
+  | "research.start" | "research.cancel"
+  | "item.analyze" | "knowledge.briefing";
 
 // Members carry no top-level .strict(): args schemas are already strict, and
 // the proposal envelope adds `ordinal`, which a member-level strict would
@@ -171,6 +180,10 @@ export const actionArgsSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("source.collect_once"), args: collectOnceArgs, ordinal: z.number().int().min(0).max(3).optional() }).strict(),
   z.object({ kind: z.literal("research.start"), args: researchStartArgs, ordinal: z.number().int().min(0).max(3).optional() }).strict(),
   z.object({ kind: z.literal("research.cancel"), args: jobIdArgs, ordinal: z.number().int().min(0).max(3).optional() }).strict(),
+  // Second-phase actions (plan Task 20/21): the model may propose them once
+  // the host gates open the capability; execution stays host-managed.
+  z.object({ kind: z.literal("item.analyze"), args: itemIdArgs, ordinal: z.number().int().min(0).max(3).optional() }).strict(),
+  z.object({ kind: z.literal("knowledge.briefing"), args: briefingArgs, ordinal: z.number().int().min(0).max(3).optional() }).strict(),
 ]);
 export const ASSISTANT_ACTION_KINDS = actionArgsSchema.options.map((o) => o.shape.kind.value) as [
   AssistantActionKind,

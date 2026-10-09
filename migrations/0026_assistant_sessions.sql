@@ -62,7 +62,7 @@ create table assistant_actions (
   kind text not null check (kind in (
     'keyword.create','keyword.update','keyword.set_enabled','keyword.collect_once',
     'source.create','source.set_enabled','source.collect_once',
-    'research.start','research.cancel')),
+    'research.start','research.cancel','item.analyze','knowledge.briefing')),
   args_json jsonb not null check (jsonb_typeof(args_json)='object'),
   intent_digest text not null check (intent_digest ~ '^[a-f0-9]{64}$'),
   preview_json jsonb,
