@@ -61,6 +61,7 @@ export type ActionReceiptView = {
   effect?: "created" | "updated" | "existing" | "unchanged" | "skipped";
   result_refs: Array<{ type: string; id: string }>;
   counts?: { inserted: number };
+  warnings?: Array<{ code: string; message: string }>;
   changed_domains: Array<"sources" | "keywords" | "items" | "jobs" | "knowledge" | "overview">;
   error_code?: string;
 };
@@ -334,13 +335,22 @@ async function executeProposalAction(
         break;
       }
       case "keyword.collect_once":
-      case "source.collect_once":
-      case "research.start":
-      case "research.cancel":
-        // These need background dispatch or research budget plumbing — the
-        // executor marks them approved/executing and Task 12/13 own the IO.
-        receipt = { action_id: actionId, status: "not_found", result_refs: [], changed_domains: [], error_code: "executor_not_wired" };
+      case "source.collect_once": {
+        // §6.2: prepare (stable jobs id + link, no IO) → the dispatcher runs
+        // the scheduler IO outside this transaction → observe finalizes the
+        // receipt from the persisted job. The action stays 'approved' here;
+        // the dispatcher's prepare step flips it to executing and writes
+        // dispatch_started_at before any external send.
+        receipt = {
+          action_id: actionId,
+          status: "succeeded",
+          effect: "skipped",
+          result_refs: [],
+          warnings: [{ code: "queued_for_dispatch", message: "已登记采集请求，等待后台执行" }],
+          changed_domains: [],
+        };
         break;
+      }
       default:
         receipt = { action_id: actionId, status: "failed", result_refs: [], changed_domains: [], error_code: "unknown_action_kind" };
     }
