@@ -1,4 +1,4 @@
-import { parseCronTickLimit } from "./cron";
+import { parseCronTickLimit } from "./cron.ts";
 import { researchRuntime, researchReviewMode } from "./agent-research-policy.ts";
 
 function read(name: string, fallback = ""): string {
@@ -36,6 +36,12 @@ export const prod = {
   opencodeWorkerToken: read("OPENCODE_WORKER_TOKEN"),
   agentResearchRuntime: parseResearchRuntime(read("AGENT_RESEARCH_RUNTIME", "eino")),
   agentResearchReview: parseResearchReview(read("AGENT_RESEARCH_REVIEW", "off")),
+  assistantEnabled: read("AGENT_ASSISTANT_ENABLED", "false") === "true",
+  assistantActionsEnabled: read("AGENT_ASSISTANT_ACTIONS_ENABLED", "false") === "true",
+  assistantMaxModelCalls: Math.max(1, Math.min(20, Number(read("AGENT_ASSISTANT_MAX_MODEL_CALLS", "6")) || 6)),
+  assistantMaxToolCalls: Math.max(0, Math.min(40, Number(read("AGENT_ASSISTANT_MAX_TOOL_CALLS", "8")) || 8)),
+  assistantDailyLimit: Math.max(0, Number(read("AGENT_ASSISTANT_DAILY_LIMIT", "20")) || 0),
+  assistantDailyBudgetRmb: Math.max(0, Number(read("AGENT_ASSISTANT_DAILY_BUDGET_RMB", "20")) || 0),
 };
 
 export function agentAsyncAvailable(): boolean {
