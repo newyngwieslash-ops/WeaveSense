@@ -166,6 +166,10 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
         context: { page, filters: {}, references },
       });
       dispatch({ type: "submit/completed", conversationId });
+      // The user message is persisted server-side at submit time; render it
+      // immediately instead of waiting for a turn event (which may be far
+      // away while the model claim is queued or the engine is unavailable).
+      await refresh();
     } catch (error) {
       dispatch({ type: "submit/failed", conversationId, error: error instanceof Error ? error.message : "send_failed" });
     }
