@@ -16,6 +16,7 @@ COPY workers/opencode-runtime/server.mjs /opt/runtime/server.mjs
 COPY workers/agent/skills/industry-analysis /opt/skills/industry-analysis
 COPY workers/agent/skills/cross-source-check /opt/skills/cross-source-check
 COPY workers/agent/skills/briefing-writing /opt/skills/briefing-writing
+COPY workers/agent/skills/project-assistant /opt/skills/project-assistant
 RUN mkdir /state && chown node:node /state
 USER node
 WORKDIR /opt/runtime

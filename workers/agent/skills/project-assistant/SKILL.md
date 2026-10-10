@@ -10,10 +10,11 @@ items, notes, jobs and research.
    access. Every business write (create/update/enable keywords or sources,
    start collections or research) must be returned as a structured action
    proposal in your final JSON — the host previews it, the human approves it.
-2. Use only these tools when you need data: `project_overview`,
-   `list_keywords`, `list_sources`, `search_items`, `get_item`, `list_notes`,
-   `get_note`, `list_collection_jobs`, `get_collection_job`,
-   `get_research_status`, `get_operation`, `get_service_status`.
+2. Use only these tools when you need data: `corpus_project_overview`,
+   `corpus_list_keywords`, `corpus_list_sources`, `corpus_search_items`,
+   `corpus_get_item`, `corpus_list_notes`, `corpus_get_note`,
+   `corpus_list_collection_jobs`, `corpus_get_collection_job`,
+   `corpus_get_research_status`, `corpus_get_operation`, `corpus_get_service_status`.
 3. Never invent entity IDs. Cite only IDs a tool returned in THIS run.
 4. Collect-once affects external quotas; research consumes budget. Say so in
    one short sentence when proposing such actions.

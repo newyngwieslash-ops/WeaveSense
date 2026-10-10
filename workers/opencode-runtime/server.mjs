@@ -108,7 +108,15 @@ export function createRuntimeServer({ stateRoot = '/state', token = process.env.
       const agentPrompt = profile === 'assistant'
         ? 'You are the read-only project assistant. Gather data ONLY with the host read tools. Never invoke shell, external websites, sub-agents or write files. Propose every write as a structured action in your final JSON for host-side approval.\n' + skillInstructions.join('\n')
         : 'Research only the approved corpus using corpus_search_items and corpus_get_item. Never invoke shell, external websites, sub-agents or write files. Return the requested structured AgentResult JSON.\n' + skillInstructions.join('\n');
-      const assistantTools = { project_overview: 'allow', list_keywords: 'allow', list_sources: 'allow', search_items: 'allow', get_item: 'allow', list_notes: 'allow', get_note: 'allow', list_collection_jobs: 'allow', get_collection_job: 'allow', get_research_status: 'allow', get_operation: 'allow', get_service_status: 'allow' };
+      // opencode prefixes remote-MCP tool names with the server key
+      // (corpus_<tool>), matching the research profile's convention. The
+      // assistant permission map must use those prefixed names or '*':
+      // 'deny' filters every MCP tool out of the model's tool list.
+      const assistantTools = Object.fromEntries([
+        'project_overview', 'list_keywords', 'list_sources', 'search_items', 'get_item',
+        'list_notes', 'get_note', 'list_collection_jobs', 'get_collection_job',
+        'get_research_status', 'get_operation', 'get_service_status',
+      ].map(name => [`corpus_${name}`, 'allow']));
       const config = { $schema: 'https://opencode.ai/config.json', model: `bridge/${modelName}`, small_model: `bridge/${modelName}`,
         enabled_providers: ['bridge'], plugin: [], share: 'disabled', autoupdate: false, compaction: { auto: false, prune: false },
         permission: profile === 'assistant'
@@ -159,6 +167,18 @@ export function createRuntimeServer({ stateRoot = '/state', token = process.env.
     for (const stream of streams) { stream.abort(); } streams.clear();
     if (!await terminateTree(instance.child)) throw failure('process_tree_stop_unconfirmed', 503);
     const result = { ...summary(instance), status: 'stopped', dispatch_state: 'aborted', process_running: false, stopped: true };
+    // Preserve the opencode diagnostic log (contains LLM/MCP errors the
+    // wrapper never sees) under /state/logs/<run_id>.log before wiping the
+    // run dir; /state is a tmpfs that survives until the container stops.
+    try {
+      const logDir = path.join(instance.root, 'data', 'opencode', 'log');
+      const logName = fs.readdirSync(logDir).sort().pop();
+      if (logName) {
+        const keep = path.join(stateRoot, 'logs');
+        await mkdir(keep, { recursive: true });
+        await writeFile(path.join(keep, `${instance.runID}.log`), await readFile(path.join(logDir, logName)));
+      }
+    } catch { /* diagnostics only: never block the stop flow */ }
     await rm(instance.root, { recursive: true, force: true }); active = null; lastStopped = result;
     return result;
   }
