@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -106,5 +107,24 @@ func TestContractAnalysisRejectsStringTopics(t *testing.T) {
 	_, err := ParseAnalysis([]byte(`{"summary":"摘要","topics":"主题","entities":[],"insights":"洞察","tags":[]}`))
 	if err == nil {
 		t.Fatal("expected reject")
+	}
+}
+
+// Models emit explicit null for empty collections; the host zod schema
+// requires arrays. ParseAssistantResult normalizes nil to empty.
+func TestParseAssistantResultNormalizesNullCollections(t *testing.T) {
+	result, err := ParseAssistantResult([]byte(`{"version":1,"answer":"ok","citations":[],"actions":null,"clarification":{"question":"下一步?","options":["a","b"]}}`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if result.Actions == nil || len(result.Actions) != 0 {
+		t.Fatalf("actions not normalized: %v", result.Actions)
+	}
+	out, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !bytes.Contains(out, []byte(`"actions":[]`)) {
+		t.Fatalf("re-marshaled payload missing empty actions: %s", out)
 	}
 }

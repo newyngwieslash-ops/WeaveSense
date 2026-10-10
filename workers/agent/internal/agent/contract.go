@@ -480,5 +480,15 @@ func ParseAssistantResult(data []byte) (AssistantResult, error) {
 	if err := decodeStrict(data, &result); err != nil {
 		return result, err
 	}
+	// Models sometimes emit explicit JSON null for empty collections. The
+	// host schema requires arrays; normalize nil to empty so the accepted
+	// payload set matches the zod decoder (an empty collection is
+	// semantically identical to a null one).
+	if result.Citations == nil {
+		result.Citations = []AssistantReference{}
+	}
+	if result.Actions == nil {
+		result.Actions = []AssistantAction{}
+	}
 	return result, ValidateAssistantResult(result)
 }
