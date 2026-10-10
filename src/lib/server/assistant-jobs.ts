@@ -76,6 +76,57 @@ export type AssistantClaim = {
  */
 export async function claimAssistantJob(sql: Queryable, opts: { leaseSeconds: number }): Promise<AssistantClaim | null> {
   const claimToken = randomUUID();
+  // Converge expired assistant runs first (§5.4 reconcile contract): a run
+  // whose expires_at passed without a stop receipt must reach a terminal
+  // state and release its turn, otherwise the conversation's active-turn
+  // slot is blocked forever. Covers both live jobs (running) and orphan
+  // runs whose job already failed but the run never settled.
+  const expired = await sql.query<Record<string, unknown>>(
+    `select r.id as run_id, j.id as job_id, j.status as job_status from ai_runs r
+     left join ai_jobs j on j.run_id = r.id and j.job_kind = 'assistant'
+     where r.provider = 'opencode' and r.mode = 'research' and r.status = 'running'
+       and r.expires_at <= clock_timestamp()
+     order by r.id for update of r skip locked limit 10`,
+  );
+  for (const row of expired as Array<{ run_id: string; job_id: string | null; job_status: string | null }>) {
+    // Only the job owner (or no job at all) may settle the run.
+    const jobLive = row.job_id && row.job_status === 'running';
+    if (jobLive) {
+      const [own] = await sql.query<{ n: number }>(
+        'select 1 as n from ai_jobs where id=$1 and claim_token=(select claim_token from ai_runs where id=$2)',
+        [row.job_id, row.run_id],
+      );
+      if (!own) continue;
+      await sql.query(
+        `update ai_jobs set status='failed', error_code='runtime_deadline_unknown', claim_token='', lease_until=null, updated_at=clock_timestamp() where id=$1`,
+        [row.job_id],
+      );
+    } else if (row.job_id && row.job_status !== 'failed' && row.job_status !== 'outcome_unknown') {
+      continue; // terminal job already recorded; nothing to do
+    }
+    await sql.query(
+      `update ai_runs set status='outcome_unknown', error_code='runtime_deadline_unknown', finished_at=clock_timestamp() where id=$1 and status='running'`,
+      [row.run_id],
+    );
+    const jobIdForTurn = row.job_id;
+    const [turnRow] = await sql.query<Record<string, unknown>>(
+      "select id, conversation_id from assistant_turns where job_id=$1",
+      [jobIdForTurn],
+    );
+    if (turnRow) {
+      await sql.query("update assistant_turns set status='failed', finished_at=clock_timestamp() where id=$1 and status in ('queued','running')", [turnRow.id]);
+      const [seqRow] = await sql.query<{ n: number | null }>(
+        "select coalesce(max(seq)+1,0)::int as n from assistant_events where conversation_id=$1",
+        [turnRow.conversation_id],
+      );
+      await sql.query(
+        `insert into assistant_events(id, conversation_id, turn_id, seq, type, payload_json)
+         values($1,$2,$3,$4,'turn.finished',$5::jsonb)`,
+        [randomUUID(), turnRow.conversation_id, turnRow.id, Number(seqRow?.n ?? 0),
+          JSON.stringify({ status: "failed", error_code: "runtime_deadline_unknown" })],
+      );
+    }
+  }
   const [row] = await sql.query<Record<string, unknown>>(
     `with candidate as (
        select j.id from ai_jobs j
