@@ -320,8 +320,8 @@ npm run dev
 | 0.3 | capabilities 开关核对 | | |
 | 1.1 | 入口与面板开关 | | |
 | 1.2 | 跨页保持 | | |
-| 1.3 | 移动端 390px | 部分：无横向溢出 ✅、按钮可点 ✅；**遗留 TODO-1：面板抽屉占 85% 屏高，操作者认为约 50% 更合适**（2026-10-09） | 2026-10-09 |
-| 1.4 | 只读零模型调用 | 通过：仅 capabilities/conversations/events；零模型调用、无内部路由 ✅；发现 TODO-2（轮询降频优化） | 2026-10-09 |
+| 1.3 | 移动端 390px | 通过（f223bd2）：无横向溢出 ✅、按钮可点 ✅；**TODO-1 已修**——抽屉改为 50dvh，消息区 `flex-1 overflow-y-auto` 保滚动 | 2026-10-10 |
+| 1.4 | 只读零模型调用 | 通过：仅 capabilities/conversations/events；零模型调用、无内部路由 ✅；**TODO-2 已修**（f223bd2）——无活动 turn 时轮询退避到 8s，turn 活动期间 2s | 2026-10-10 |
 | 1.5 | Enter/Shift+Enter/IME | **发现真 bug → 已修复**（d8825ac）：发送曾创建永久排队轮次，阻塞后续所有发送。现无 Worker 时快速失败 503 并显示「助手引擎当前不可用」。**请刷新页面重测** | 2026-10-09 |
 | 1.6 | 关面板任务继续 | | |
 | 2.1 | 关键词创建全流程 | | |
@@ -337,15 +337,44 @@ npm run dev
 
 ### 遗留 TODO
 
-**TODO-1（UI 调整，2026-10-09）**：移动端（390×844）助手底部抽屉当前为 85dvh，
-几乎盖满整屏。操作者期望改为约 **50% 屏高**（页面内容保持可见）。涉及
-`src/components/assistant/assistant-panel.tsx` 中 `h-[85dvh]` 一个类名；需同步
-确认 50% 高度下消息区滚动与输入框可用性后再改。
+**TODO-1（UI 调整，2026-10-09 → 已修 2026-10-10）**：移动端底部抽屉已从 85dvh 改为
+**50dvh**（f223bd2），消息区 `flex-1 overflow-y-auto` 在半屏高度下正常滚动，输入框
+保持可见。请按 §1.3 重测确认。
 
-**TODO-2（性能优化，2026-10-09）**：§1.4 实测面板长开时事件轮询固定 2 秒一次
-（248B/次），数小时级会累积数千次请求。功能正确（零模型调用、无内部路由）但
-值得退避优化：无活动 turn 时降频到 5–10 秒，或活动 turn 结束后退回慢轮询。涉及
-`assistant-provider.tsx` 的轮询 interval 逻辑。不阻塞验收。
+**TODO-2（性能优化，2026-10-09 → 已修 2026-10-10）**：事件轮询已实现退避（f223bd2）：
+turn 活动（queued/running/awaiting_confirmation/executing/waiting_child）期间 2s，
+无活动 turn 时 8s。§1.4 只读约束不受影响（GET events 仍无模型调用、无内部路由）。
+
+### 对话循环修复记录（2026-10-10，f223bd2）
+
+操作者报告「助手对数据问题只回固定文本/任务运行中卡死」的完整根因链，全部修复：
+
+1. **模型看不到任何工具**：bridge `assistantToolSchema` 把参数约束序列化成 JSON
+   字符串（而非嵌套对象），MCP SDK 1.27.1 的 AssertObjectSchema 校验拒绝整个
+   tools/list → 0 个工具。修复为嵌套对象且每工具只暴露自己的参数。
+2. **助手无数据端点**：计划 §4.3 要求 assistant grant 只访问固定 assistant-data
+   端点，但该路由从未创建，bridge 把工具调用发到 research 的 agent-data 被 403
+   （tool_admission_denied）。新建 `src/routes/api/internal/assistant-data.ts`
+   （模型回执走 admitGovernedModelCall，读工具走 runAssistantTool 台账），bridge
+   增加 `AssistantDataURL` 按 profile 分流。
+3. **第二轮 400**：DeepSeek 在后续轮回传 `reasoning_content`，被模型代理键白名单
+   拒绝 → 剥离而非拒绝。
+4. **citation/action kind 漂移**：模型自创 `rerun_collection_job`、引用 kind
+   `project`/`job`。修复：Go 校验与 host zod 枚举对齐（漂移在 worker 侧即拒），
+   SKILL/worker prompt 列出精确白名单。
+5. **输出截断**：`finish=length` 且 JSON 完整时接受（严格 parse 兜底截断）；输出
+   上限改为 policy 驱动（env `AGENT_ASSISTANT_MAX_OUTPUT_TOKENS`，当前 3000），
+   runtime 的模型 limit.output 同步跟随。
+6. **偶发 runtime_session_failed**：每次运行 bun 对不可达 registry 的
+   `@opencode-ai/plugin` 安装重试阻塞 POST /session 超过 15s。修复：prepare 时
+   预种子 plugin 依赖缓存（cache+config 双目录）。
+7. **偶发 runtime_start_failed（SIGABRT）**：runtime 容器 pids_limit=64 被 bun
+   启动线程压爆 → 提高到 512。
+8. **stop() 日志保留失效**：server.mjs 引用未导入的 `fs` → 改用 fs/promises；
+   /state/logs/<run_id>.log 现可用于事后诊断。
+
+诊断增强：bridge 记录每次模型请求的工具面与被拒原因；worker 记录终端解析失败的
+文本尾部/part 类型与轮询进度；host 记录 result_saved 被拒的载荷形状摘要。
 
 ---
 
