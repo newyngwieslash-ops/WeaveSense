@@ -249,6 +249,19 @@ http://127.0.0.1:8080/api/assistant/capabilities
 > 动作链路（§2）不依赖模型 Worker，可正常测试：`AGENT_ASSISTANT_ACTIONS_ENABLED=true`
 > 已通过项目根 `.env` 生效（capabilities 现返回 `actions_enabled:true`），
 > 请继续 §2 的预览/确认测试。
+>
+> **已修复的接线缺口（2026-10-10，commit 0280830/749d116）**：手动测试暴露了
+> 容器部署层的四个缺口并已全部修复——submit 现在同事务入队 assistant job；
+> `/api/internal/assistant-jobs` 路由提供完整 claim 信封（beginRun 建 run、
+> data token、policy）；Worker 主循环改为 research/assistant 双队列交替；
+> 生命周期 post（bind/renew/dispatching/submitted）与两阶段结果协议均有宿主
+> 处理器；引擎失败诚实落库（run outcome_unknown、turn failed，会话解锁）。
+> **当前剩余诊断点**：真实模型轮次停在 `dispatch_unknown`——prompt 分发后
+> opencode 未在 15 秒内确认。已验证 deepseek 端点从容器可达且流式/非流式
+> 均正常（~1s 响应）、bridge 双网络可达、控制令牌一致。下一步诊断：在
+> runtime 容器内抓 opencode 二进制对 bridge 的实际请求（可能需要
+> `OPENCODE_LOG_LEVEL` 或 tcpdump），确认是模型 grant 鉴权还是 opencode
+> provider 初始化问题。
 
 **容器方式（restart.bat）**：在 `F:\loom-backups\env\app.env` 追加：
 
