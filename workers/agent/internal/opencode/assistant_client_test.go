@@ -78,3 +78,20 @@ func TestAssistantTerminalDecoderSeparateFromResearch(t *testing.T) {
 		t.Fatal("assistant decoder accepted an unknown action field")
 	}
 }
+
+// A chatty model can hit the output cap (finish='length'); if the streamed
+// text still parses and validates as an AssistantResult, the turn completes.
+func TestAssistantTerminalResultAcceptsLengthWithValidJSON(t *testing.T) {
+	text := `{"version":1,"answer":"ok","citations":[],"actions":[]}`
+	raw, _ := json.Marshal([]any{map[string]any{
+		"info":  map[string]any{"id": "msg_L", "sessionID": "ses_A", "role": "assistant", "agent": "assistant", "providerID": "bridge", "modelID": "model", "finish": "length", "time": map[string]int{"completed": 1}},
+		"parts": []any{map[string]any{"type": "text", "text": text, "sessionID": "ses_A", "messageID": "msg_L"}},
+	}})
+	result, ready, err := AssistantTerminalResult(raw, "ses_A", "model")
+	if err != nil || !ready {
+		t.Fatalf("length finish rejected: ready=%v err=%v", ready, err)
+	}
+	if result.Answer != "ok" {
+		t.Fatalf("answer = %q", result.Answer)
+	}
+}

@@ -365,3 +365,21 @@ func TestModelProxyModelTimeoutStillRecordsUnknown(t *testing.T) {
 		t.Fatalf("timeout %d %s receipts %v", status, raw, f.receipts)
 	}
 }
+
+// Vendor reasoning_content (deepseek) echoed on follow-up turns must be
+// stripped, not rejected — otherwise multi-turn tool use always 400s.
+func TestValidateModelBodyStripsReasoningContent(t *testing.T) {
+	body := `{"model":"m1","max_tokens":10,"messages":[
+		{"role":"system","content":"s"},
+		{"role":"assistant","content":"","reasoning_content":"thinking...","tool_calls":[{"id":"call_1","type":"function","function":{"name":"corpus_list_keywords","arguments":"{}"}}]},
+		{"role":"tool","tool_call_id":"call_1","content":"{}"}]}`
+	g := Grant{Model: "m1", MaxOutputTokensPerCall: 1800}
+	out, _, err := validateModelBody([]byte(body), g)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	msgs := out["messages"].([]any)
+	if _, exists := msgs[1].(map[string]any)["reasoning_content"]; exists {
+		t.Fatalf("reasoning_content not stripped")
+	}
+}

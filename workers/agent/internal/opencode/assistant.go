@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -156,7 +157,10 @@ func RunAssistantWorkerOnce(parent context.Context, cfg WorkerConfig) (runErr er
 				return complete("unsafe_assistant_resume", true)
 			}
 			producerDeadline, e := time.Parse(time.RFC3339, claim.ProducerDeadlineAt)
-			if e != nil || !producerDeadline.After(time.Now()) || producerDeadline.After(deadline) || claim.ProducerModelCalls < 1 || claim.ProducerModelCalls > claim.Policy.MaxModelCalls || claim.Policy.MaxOutputTokensPerCall != 1800 {
+			// The output cap is policy-driven (host env, 200..4000); the
+			// worker only rejects out-of-band values so a drifted host can
+			// never widen the budget beyond the admitted reservation.
+			if e != nil || !producerDeadline.After(time.Now()) || producerDeadline.After(deadline) || claim.ProducerModelCalls < 1 || claim.ProducerModelCalls > claim.Policy.MaxModelCalls || claim.Policy.MaxOutputTokensPerCall < 200 || claim.Policy.MaxOutputTokensPerCall > 4000 {
 				return complete("invalid_assistant_policy", false)
 			}
 			producerCtx, cancelProducer = context.WithDeadline(execCtx, producerDeadline)
@@ -184,7 +188,7 @@ func RunAssistantWorkerOnce(parent context.Context, cfg WorkerConfig) (runErr er
 			if prepared.SkillSnapshotDigest != claim.SkillSnapshotDigest {
 				return failNow("runtime_snapshot_mismatch", false)
 			}
-			auth := Grant{Grant: grant, RunID: claim.RunID, ClaimToken: claim.ClaimToken, InstanceID: binding.InstanceID, Epoch: binding.Epoch, ExpiresAt: producerDeadline, DataAccessToken: claim.DataAccessToken, Model: claim.ModelProfile.Model, PolicyVersion: claim.Policy.Version, MaxOutputTokensPerCall: 1800, Profile: "assistant"}
+			auth := Grant{Grant: grant, RunID: claim.RunID, ClaimToken: claim.ClaimToken, InstanceID: binding.InstanceID, Epoch: binding.Epoch, ExpiresAt: producerDeadline, DataAccessToken: claim.DataAccessToken, Model: claim.ModelProfile.Model, PolicyVersion: claim.Policy.Version, MaxOutputTokensPerCall: claim.Policy.MaxOutputTokensPerCall, Profile: "assistant"}
 			if err := workerBridgeControl(producerCtx, cfg, "POST", auth); err != nil {
 				return failNow("bridge_register_failed", false)
 			}
@@ -203,7 +207,7 @@ func RunAssistantWorkerOnce(parent context.Context, cfg WorkerConfig) (runErr er
 			if _, e = post("dispatching", nil); e != nil {
 				return failNow("runtime_dispatch_denied", true)
 			}
-			prompt := `You are the read-only project assistant. Gather data ONLY with the host read tools. Propose every write as a structured action in your final JSON. Return exactly one AssistantResult JSON object: version 1, answer string, citations:[{kind,id}], actions:[{ordinal,kind,args}], optional clarification{question,options:[...]}. No Markdown fences, shell, or extra keys.`
+			prompt := `You are the read-only project assistant. Gather data ONLY with the host read tools. Propose every write as a structured action in your final JSON. Return exactly one AssistantResult JSON object: version 1, answer string (at most 800 characters — a truncated JSON fails validation), citations:[{kind,id}] (at most 12; kind MUST be one of exactly: item|source|keyword|note|collection_job|research_job), actions:[{ordinal,kind,args}] (at most 4; ordinal from 0; ONLY these kinds: keyword.create|keyword.update|keyword.set_enabled|keyword.collect_once|source.create|source.set_enabled|source.collect_once|research.start|research.cancel — never invent a kind; if the need has no kind, use clarification instead), optional clarification{question,options:[...]} (mutually exclusive with actions). No Markdown fences, shell, or extra keys.`
 			if e = client.Prompt(producerCtx, binding, prompt); e != nil {
 				return failNow("runtime_dispatch_unknown", true)
 			}
@@ -225,6 +229,7 @@ func RunAssistantWorkerOnce(parent context.Context, cfg WorkerConfig) (runErr er
 		}
 		client := func() *Client { c, _ := NewClient(cfg.RuntimeURL, cfg.RuntimeToken, cfg.HTTPTransport); return c }()
 		var answer *agent.AssistantResult
+		polls := 0
 		for {
 			rawBytes, _, e := client.Forward(producerCtx, binding, "GET", "/session/"+binding.SessionID+"/message", nil)
 			if e != nil {
@@ -237,6 +242,13 @@ func RunAssistantWorkerOnce(parent context.Context, cfg WorkerConfig) (runErr er
 			if ready {
 				answer = parsed
 				break
+			}
+			// Diagnostics: a wedge here (runtime not delivering the terminal
+			// message) otherwise sits invisible until the deadline; log
+			// progress sparsely.
+			polls++
+			if polls%20 == 0 {
+				log.Printf("assistant poll #%d: terminal not ready yet", polls)
 			}
 			if claim.Phase == "reconcile" {
 				return failNow("runtime_recovery_pending", true)

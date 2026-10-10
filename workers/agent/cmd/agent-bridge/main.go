@@ -25,6 +25,14 @@ func main() {
 			log.Fatalf("invalid endpoint configuration: %s", name)
 		}
 	}
+	// §4.3: assistant grants may only reach the fixed assistant-data
+	// endpoint; optional, defaulting to AGENT_DATA_URL.
+	assistantDataURL := os.Getenv("AGENT_ASSISTANT_DATA_URL")
+	if assistantDataURL == "" {
+		assistantDataURL = os.Getenv("AGENT_DATA_URL")
+	} else if u, err := url.Parse(assistantDataURL); err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		log.Fatalf("invalid endpoint configuration: AGENT_ASSISTANT_DATA_URL")
+	}
 	timeout := 120000
 	if raw := os.Getenv("AGENT_EXECUTE_TIMEOUT_MS"); raw != "" {
 		n, err := strconv.Atoi(raw)
@@ -45,7 +53,7 @@ func main() {
 	if modelTimeout > timeout {
 		log.Fatal("AGENT_MODEL_TIMEOUT_MS exceeds AGENT_EXECUTE_TIMEOUT_MS")
 	}
-	bridge := opencode.NewBridge(opencode.BridgeConfig{AppDataURL: os.Getenv("AGENT_DATA_URL"), AppServiceToken: os.Getenv("AGENT_DATA_TOKEN"), ControlToken: os.Getenv("OPENCODE_BRIDGE_CONTROL_TOKEN"), AllowedModel: model})
+	bridge := opencode.NewBridge(opencode.BridgeConfig{AppDataURL: os.Getenv("AGENT_DATA_URL"), AssistantDataURL: assistantDataURL, AppServiceToken: os.Getenv("AGENT_DATA_TOKEN"), ControlToken: os.Getenv("OPENCODE_BRIDGE_CONTROL_TOKEN"), AllowedModel: model})
 	mux := http.NewServeMux()
 	mux.Handle("/v1/chat/completions", opencode.NewModelProxy(bridge, opencode.ModelProxyConfig{BaseURL: os.Getenv("AGENT_MODEL_BASE_URL"), APIKey: os.Getenv("AGENT_MODEL_API_KEY"), ModelName: model, ModelTimeout: time.Duration(modelTimeout) * time.Millisecond}))
 	mux.Handle("/", bridge.Handler())

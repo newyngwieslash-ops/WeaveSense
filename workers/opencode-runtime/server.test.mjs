@@ -196,8 +196,9 @@ test('profile defaults to research; assistant profile renders its own skill and 
   const config = JSON.parse(await readFile(spawned.config.env.OPENCODE_CONFIG, 'utf8'));
   assert.equal(config.default_agent, 'assistant');
   assert.equal(config.permission['*'], 'deny');
-  assert.equal(config.permission.corpus_search_items, undefined, 'assistant has no corpus tools');
-  assert.ok(config.permission.project_overview === 'allow', 'assistant read tools allowed');
+  assert.equal(config.permission['corpus:search_items'], 'allow', 'assistant allows both key spellings');
+  assert.ok(config.permission['corpus_project_overview'] === 'allow', 'assistant read tools allowed (underscore keying)');
+  assert.ok(config.permission['corpus:project_overview'] === 'allow', 'assistant read tools allowed (colon keying)');
   assert.equal(config.permission.skill['project-assistant'], 'allow');
   await f.request('/stop', 'POST', { instance_id: assistant.instance_id, epoch: assistant.epoch });
 });

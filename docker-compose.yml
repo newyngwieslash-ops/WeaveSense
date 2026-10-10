@@ -186,6 +186,7 @@ services:
     environment:
       OPENCODE_BRIDGE_CONTROL_TOKEN: ${OPENCODE_BRIDGE_CONTROL_TOKEN:-}
       AGENT_DATA_URL: http://app:8080/api/internal/agent-data
+      AGENT_ASSISTANT_DATA_URL: http://app:8080/api/internal/assistant-data
       AGENT_DATA_TOKEN: ${AGENT_DATA_TOKEN:-}
       AGENT_MODEL_BASE_URL: ${AGENT_MODEL_BASE_URL:-https://api.x.ai/v1}
       AGENT_MODEL_NAME: ${AGENT_MODEL_NAME:-grok-4.5}
@@ -211,13 +212,17 @@ services:
       OPENCODE_RUNTIME_TOKEN: ${OPENCODE_RUNTIME_TOKEN:-}
       OPENCODE_BRIDGE_URL: http://agent-bridge:8792
       OPENCODE_MODEL_NAME: ${AGENT_MODEL_NAME:-grok-4.5}
+      OPENCODE_MAX_OUTPUT_TOKENS: ${AGENT_ASSISTANT_MAX_OUTPUT_TOKENS:-1800}
     networks: ["opencode-runtime"]
     init: true
     user: "1000:1000"
     read_only: true
     cap_drop: ["ALL"]
     security_opt: ["no-new-privileges:true"]
-    pids_limit: 64
+    # The opencode child (bun) spawns dozens of threads during sqlite
+    # migration and boot; 64 pids aborts it non-deterministically
+    # (SIGABRT / "Failed to start HTTP Client thread: SystemResources").
+    pids_limit: 512
     mem_limit: 768m
     tmpfs:
       - /state:rw,noexec,nosuid,size=256m,uid=1000,gid=1000

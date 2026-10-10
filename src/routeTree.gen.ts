@@ -29,6 +29,8 @@ import { Route as ApiInternalAgentDataRouteImport } from './routes/api/internal/
 import { Route as ApiInternalAgentJobsRouteImport } from './routes/api/internal/agent-jobs'
 import { Route as ApiInternalAgentReviewRouteImport } from './routes/api/internal/agent-review'
 import { Route as ApiInternalAssistantActionsRouteImport } from './routes/api/internal/assistant-actions'
+import { Route as ApiInternalAssistantDataRouteImport } from './routes/api/internal/assistant-data'
+import { Route as ApiInternalAssistantJobsRouteImport } from './routes/api/internal/assistant-jobs'
 import { Route as ApiInternalOpencodeJobsRouteImport } from './routes/api/internal/opencode-jobs'
 import { Route as ApiAssistantActionsActionIdRouteImport } from './routes/api/assistant/actions/$actionId'
 import { Route as ApiAssistantConversationsConversationIdRouteImport } from './routes/api/assistant/conversations/$conversationId'
@@ -141,6 +143,18 @@ const ApiInternalAssistantActionsRoute =
     path: '/api/internal/assistant-actions',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiInternalAssistantDataRoute =
+  ApiInternalAssistantDataRouteImport.update({
+    id: '/api/internal/assistant-data',
+    path: '/api/internal/assistant-data',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiInternalAssistantJobsRoute =
+  ApiInternalAssistantJobsRouteImport.update({
+    id: '/api/internal/assistant-jobs',
+    path: '/api/internal/assistant-jobs',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiInternalOpencodeJobsRoute = ApiInternalOpencodeJobsRouteImport.update({
   id: '/api/internal/opencode-jobs',
   path: '/api/internal/opencode-jobs',
@@ -209,6 +223,8 @@ export interface FileRoutesByFullPath {
   '/api/internal/agent-jobs': typeof ApiInternalAgentJobsRoute
   '/api/internal/agent-review': typeof ApiInternalAgentReviewRoute
   '/api/internal/assistant-actions': typeof ApiInternalAssistantActionsRoute
+  '/api/internal/assistant-data': typeof ApiInternalAssistantDataRoute
+  '/api/internal/assistant-jobs': typeof ApiInternalAssistantJobsRoute
   '/api/internal/opencode-jobs': typeof ApiInternalOpencodeJobsRoute
   '/api/assistant/actions/$actionId': typeof ApiAssistantActionsActionIdRouteWithChildren
   '/api/assistant/conversations/$conversationId': typeof ApiAssistantConversationsConversationIdRouteWithChildren
@@ -239,6 +255,8 @@ export interface FileRoutesByTo {
   '/api/internal/agent-jobs': typeof ApiInternalAgentJobsRoute
   '/api/internal/agent-review': typeof ApiInternalAgentReviewRoute
   '/api/internal/assistant-actions': typeof ApiInternalAssistantActionsRoute
+  '/api/internal/assistant-data': typeof ApiInternalAssistantDataRoute
+  '/api/internal/assistant-jobs': typeof ApiInternalAssistantJobsRoute
   '/api/internal/opencode-jobs': typeof ApiInternalOpencodeJobsRoute
   '/api/assistant/actions/$actionId': typeof ApiAssistantActionsActionIdRouteWithChildren
   '/api/assistant/conversations/$conversationId': typeof ApiAssistantConversationsConversationIdRouteWithChildren
@@ -270,6 +288,8 @@ export interface FileRoutesById {
   '/api/internal/agent-jobs': typeof ApiInternalAgentJobsRoute
   '/api/internal/agent-review': typeof ApiInternalAgentReviewRoute
   '/api/internal/assistant-actions': typeof ApiInternalAssistantActionsRoute
+  '/api/internal/assistant-data': typeof ApiInternalAssistantDataRoute
+  '/api/internal/assistant-jobs': typeof ApiInternalAssistantJobsRoute
   '/api/internal/opencode-jobs': typeof ApiInternalOpencodeJobsRoute
   '/api/assistant/actions/$actionId': typeof ApiAssistantActionsActionIdRouteWithChildren
   '/api/assistant/conversations/$conversationId': typeof ApiAssistantConversationsConversationIdRouteWithChildren
@@ -302,6 +322,8 @@ export interface FileRouteTypes {
     | '/api/internal/agent-jobs'
     | '/api/internal/agent-review'
     | '/api/internal/assistant-actions'
+    | '/api/internal/assistant-data'
+    | '/api/internal/assistant-jobs'
     | '/api/internal/opencode-jobs'
     | '/api/assistant/actions/$actionId'
     | '/api/assistant/conversations/$conversationId'
@@ -332,6 +354,8 @@ export interface FileRouteTypes {
     | '/api/internal/agent-jobs'
     | '/api/internal/agent-review'
     | '/api/internal/assistant-actions'
+    | '/api/internal/assistant-data'
+    | '/api/internal/assistant-jobs'
     | '/api/internal/opencode-jobs'
     | '/api/assistant/actions/$actionId'
     | '/api/assistant/conversations/$conversationId'
@@ -362,6 +386,8 @@ export interface FileRouteTypes {
     | '/api/internal/agent-jobs'
     | '/api/internal/agent-review'
     | '/api/internal/assistant-actions'
+    | '/api/internal/assistant-data'
+    | '/api/internal/assistant-jobs'
     | '/api/internal/opencode-jobs'
     | '/api/assistant/actions/$actionId'
     | '/api/assistant/conversations/$conversationId'
@@ -392,6 +418,8 @@ export interface RootRouteChildren {
   ApiInternalAgentJobsRoute: typeof ApiInternalAgentJobsRoute
   ApiInternalAgentReviewRoute: typeof ApiInternalAgentReviewRoute
   ApiInternalAssistantActionsRoute: typeof ApiInternalAssistantActionsRoute
+  ApiInternalAssistantDataRoute: typeof ApiInternalAssistantDataRoute
+  ApiInternalAssistantJobsRoute: typeof ApiInternalAssistantJobsRoute
   ApiInternalOpencodeJobsRoute: typeof ApiInternalOpencodeJobsRoute
   ApiAssistantActionsActionIdRoute: typeof ApiAssistantActionsActionIdRouteWithChildren
   ApiAssistantTurnsTurnIdRoute: typeof ApiAssistantTurnsTurnIdRouteWithChildren
@@ -537,6 +565,20 @@ declare module '@tanstack/react-router' {
       path: '/api/internal/assistant-actions'
       fullPath: '/api/internal/assistant-actions'
       preLoaderRoute: typeof ApiInternalAssistantActionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/internal/assistant-data': {
+      id: '/api/internal/assistant-data'
+      path: '/api/internal/assistant-data'
+      fullPath: '/api/internal/assistant-data'
+      preLoaderRoute: typeof ApiInternalAssistantDataRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/internal/assistant-jobs': {
+      id: '/api/internal/assistant-jobs'
+      path: '/api/internal/assistant-jobs'
+      fullPath: '/api/internal/assistant-jobs'
+      preLoaderRoute: typeof ApiInternalAssistantJobsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/internal/opencode-jobs': {
@@ -690,6 +732,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiInternalAgentJobsRoute: ApiInternalAgentJobsRoute,
   ApiInternalAgentReviewRoute: ApiInternalAgentReviewRoute,
   ApiInternalAssistantActionsRoute: ApiInternalAssistantActionsRoute,
+  ApiInternalAssistantDataRoute: ApiInternalAssistantDataRoute,
+  ApiInternalAssistantJobsRoute: ApiInternalAssistantJobsRoute,
   ApiInternalOpencodeJobsRoute: ApiInternalOpencodeJobsRoute,
   ApiAssistantActionsActionIdRoute:
     ApiAssistantActionsActionIdRouteWithChildren,

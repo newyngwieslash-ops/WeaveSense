@@ -46,6 +46,7 @@ function runtimeEnvironment(root, password) {
 export function createRuntimeServer({ stateRoot = '/state', token = process.env.OPENCODE_RUNTIME_TOKEN,
   bridgeURL = process.env.OPENCODE_BRIDGE_URL || 'http://agent-bridge:8792',
   modelName = process.env.OPENCODE_MODEL_NAME || 'research-fixed',
+  maxOutputTokens = Number(process.env.OPENCODE_MAX_OUTPUT_TOKENS) || 1800,
   approvedSkillRoot = '/opt/skills', spawnRuntime = spawn, fetchRuntime = fetch,
   terminateTree = terminateProcessTree } = {}) {
   if (!boundedString(token, 16, 512)) throw failure('runtime_token_required');
@@ -83,6 +84,23 @@ export function createRuntimeServer({ stateRoot = '/state', token = process.env.
     const root = await mkdtemp(path.join(stateRoot, 'run-'));
     try {
       for (const dir of ['work', 'home', 'config', 'data', 'cache', 'state', 'temp']) await mkdir(path.join(root, dir));
+      // Pre-seed the opencode plugin dependency cache: with a cold cache,
+      // config loading runs `opencode install` (bun add) for
+      // @opencode-ai/plugin against the package registry on every session
+      // bootstrap — the registry is unreachable in this sandbox and bun's
+      // retries block POST /session past the forward timeout
+      // (runtime_session_failed). Seeding BOTH scanned directories (the
+      // global cache and the per-run config dir) with a stub matching the
+      // pinned version makes needsInstall()/BunProc.install() return
+      // immediately; no plugins are configured, so the module is never
+      // imported.
+      for (const base of [path.join(root, 'cache', 'opencode'), path.join(root, 'config', 'opencode')]) {
+        const pluginDir = path.join(base, 'node_modules', '@opencode-ai', 'plugin');
+        await mkdir(pluginDir, { recursive: true });
+        await writeFile(path.join(base, 'package.json'), JSON.stringify({ dependencies: { '@opencode-ai/plugin': VERSION } }));
+        await writeFile(path.join(pluginDir, 'package.json'), JSON.stringify({ name: '@opencode-ai/plugin', version: VERSION, main: 'index.js' }));
+        await writeFile(path.join(pluginDir, 'index.js'), 'module.exports = {};\n');
+      }
       const skillPath = path.join(root, 'approved-skills');
       const skillInstructions = [], skillVersions = {};
       // Each profile renders its own explicit manifest; digests cover exactly
@@ -108,23 +126,27 @@ export function createRuntimeServer({ stateRoot = '/state', token = process.env.
       const agentPrompt = profile === 'assistant'
         ? 'You are the read-only project assistant. Gather data ONLY with the host read tools. Never invoke shell, external websites, sub-agents or write files. Propose every write as a structured action in your final JSON for host-side approval.\n' + skillInstructions.join('\n')
         : 'Research only the approved corpus using corpus_search_items and corpus_get_item. Never invoke shell, external websites, sub-agents or write files. Return the requested structured AgentResult JSON.\n' + skillInstructions.join('\n');
-      // opencode prefixes remote-MCP tool names with the server key
-      // (corpus_<tool>), matching the research profile's convention. The
-      // assistant permission map must use those prefixed names or '*':
-      // 'deny' filters every MCP tool out of the model's tool list.
-      const assistantTools = Object.fromEntries([
+      // opencode 1.3.13 keys MCP tools as sanitize(serverKey) + '_' +
+      // sanitize(toolName) in MCP.tools() (older bundles used ':'). The
+      // assistant permission map lists BOTH spellings so '*': 'deny' can
+      // never filter the model's read surface regardless of the bundle's
+      // keying; unmatched names stay denied.
+      const assistantToolNames = [
         'project_overview', 'list_keywords', 'list_sources', 'search_items', 'get_item',
         'list_notes', 'get_note', 'list_collection_jobs', 'get_collection_job',
         'get_research_status', 'get_operation', 'get_service_status',
-      ].map(name => [`corpus_${name}`, 'allow']));
+      ];
+      const assistantTools = Object.fromEntries(assistantToolNames.flatMap(name => [
+        [`corpus_${name}`, 'allow'], [`corpus:${name}`, 'allow'],
+      ]));
       const config = { $schema: 'https://opencode.ai/config.json', model: `bridge/${modelName}`, small_model: `bridge/${modelName}`,
         enabled_providers: ['bridge'], plugin: [], share: 'disabled', autoupdate: false, compaction: { auto: false, prune: false },
         permission: profile === 'assistant'
           ? { '*': 'deny', ...assistantTools, skill: { '*': 'deny', 'project-assistant': 'allow' } }
-          : { '*': 'deny', corpus_search_items: 'allow', corpus_get_item: 'allow', skill: { '*': 'deny', 'industry-analysis': 'allow', 'cross-source-check': 'allow' } },
+          : { '*': 'deny', corpus_search_items: 'allow', 'corpus:search_items': 'allow', corpus_get_item: 'allow', 'corpus:get_item': 'allow', skill: { '*': 'deny', 'industry-analysis': 'allow', 'cross-source-check': 'allow' } },
         default_agent: profile === 'assistant' ? 'assistant' : 'research', skills: { paths: [skillPath] },
         agent: { [profile === 'assistant' ? 'assistant' : 'research']: { mode: 'primary', steps: 16, prompt: agentPrompt }, title: { disable: true }, summary: { disable: true }, compaction: { disable: true }, explore: { disable: true }, general: { disable: true } },
-        provider: { bridge: { npm: '@ai-sdk/openai-compatible', name: 'Trusted research bridge', options: { baseURL: `${bridge.origin}/v1`, apiKey: input.grant }, models: { [modelName]: { name: modelName, limit: { context: 32768, output: 1800 } } } } },
+        provider: { bridge: { npm: '@ai-sdk/openai-compatible', name: 'Trusted research bridge', options: { baseURL: `${bridge.origin}/v1`, apiKey: input.grant }, models: { [modelName]: { name: modelName, limit: { context: 32768, output: maxOutputTokens } } } } },
         mcp: { corpus: { type: 'remote', url: `${bridge.origin}/mcp`, oauth: false, enabled: true, headers: { Authorization: `Bearer ${input.grant}` } } } };
       const serialized = JSON.stringify(config);
       await writeFile(path.join(root, 'config.json'), serialized, { mode: 0o600 });
@@ -172,7 +194,8 @@ export function createRuntimeServer({ stateRoot = '/state', token = process.env.
     // run dir; /state is a tmpfs that survives until the container stops.
     try {
       const logDir = path.join(instance.root, 'data', 'opencode', 'log');
-      const logName = fs.readdirSync(logDir).sort().pop();
+      const entries = await readdir(logDir);
+      const logName = entries.sort().pop();
       if (logName) {
         const keep = path.join(stateRoot, 'logs');
         await mkdir(keep, { recursive: true });

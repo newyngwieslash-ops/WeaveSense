@@ -116,13 +116,20 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
       if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
       return;
     }
+    // Backoff while idle: 2s during an active turn, 8s otherwise. The timer
+    // is recreated on turnActive transitions so latency recovery keeps the
+    // task badge responsive (§5.4 fallback).
     if (!pollRef.current) {
-      pollRef.current = setInterval(() => { void poll(); }, 2000);
+      const schedule = () => {
+        const period = stateRef.current.turnActive ? 2000 : 8000;
+        pollRef.current = setInterval(() => { void poll(); }, period);
+      };
+      schedule();
     }
     return () => {
       if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     };
-  }, [state.panelOpen, poll]);
+  }, [state.panelOpen, state.turnActive, poll]);
 
   const openPanel = useCallback(() => dispatch({ type: "panel/opened" }), []);
   const closePanel = useCallback(() => dispatch({ type: "panel/closed" }), []);

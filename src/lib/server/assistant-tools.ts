@@ -212,14 +212,15 @@ async function executeRead(
     case "list_collection_jobs": {
       const limit = Math.min(args.limit ?? 50, 50);
       const rows = await sql.query<Record<string, unknown>>(
-        `select id, kind, status, error, created_at, finished_at from jobs order by created_at desc limit $1`, [limit + 1],
+        // jobs table has started_at, not created_at (production schema).
+        `select id, kind, status, error, started_at, finished_at from jobs order by started_at desc limit $1`, [limit + 1],
       );
       const truncated = rows.length > limit;
       return {
         jobs: rows.slice(0, limit).map((r) => ({
           id: String(r.id), kind: String(r.kind ?? ""), status: String(r.status ?? ""),
           error: String(r.error ?? "").slice(0, 200),
-          created_at: r.created_at == null ? null : String(r.created_at),
+          started_at: r.started_at == null ? null : String(r.started_at),
           finished_at: r.finished_at == null ? null : String(r.finished_at),
         })), truncated,
       };
@@ -228,14 +229,14 @@ async function executeRead(
       const jobId = args.job_id;
       if (!jobId) return { job: null };
       const [row] = await sql.query<Record<string, unknown>>(
-        "select id, kind, status, error, created_at, finished_at from jobs where id = $1", [jobId],
+        "select id, kind, status, error, started_at, finished_at from jobs where id = $1", [jobId],
       );
       if (!row) return { job: null };
       return {
         job: {
           id: String(row.id), kind: String(row.kind ?? ""), status: String(row.status ?? ""),
           error: String(row.error ?? "").slice(0, 200),
-          created_at: row.created_at == null ? null : String(row.created_at),
+          started_at: row.started_at == null ? null : String(row.started_at),
           finished_at: row.finished_at == null ? null : String(row.finished_at),
         },
       };

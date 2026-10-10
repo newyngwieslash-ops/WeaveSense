@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -507,7 +508,12 @@ func AssistantTerminalResult(raw []byte, session, model string) (*agent.Assistan
 	if m.Info.Time.Completed <= 0 || m.Info.Finish == "" || m.Info.Finish == "tool-calls" || m.Info.Finish == "unknown" {
 		return nil, false, nil
 	}
-	if m.Info.Finish != "stop" || m.Info.Agent != "assistant" || m.Info.ProviderID != "bridge" || m.Info.ModelID != model {
+	// finish='length' is accepted alongside 'stop': a chatty model can hit
+	// the output cap, and the strict ParseAssistantResult below already
+	// rejects a truncated JSON — accepting the finish reason only lets a
+	// complete-but-capped object through, never a partial one.
+	if (m.Info.Finish != "stop" && m.Info.Finish != "length") || m.Info.Agent != "assistant" || m.Info.ProviderID != "bridge" || m.Info.ModelID != model {
+		log.Printf("assistant terminal rejected: finish=%q agent=%q provider=%q model=%q (want stop|length/assistant/bridge/%s)", m.Info.Finish, m.Info.Agent, m.Info.ProviderID, m.Info.ModelID, model)
 		return nil, false, errors.New("invalid_terminal_message")
 	}
 	var texts []string
@@ -517,11 +523,29 @@ func AssistantTerminalResult(raw []byte, session, model string) (*agent.Assistan
 		}
 	}
 	if len(texts) != 1 || len(texts[0]) > agent.MaxResponseBytes {
+		size := -1
+		if len(texts) == 1 {
+			size = len(texts[0])
+		}
+		var partTypes []string
+		for _, p := range m.Parts {
+			partTypes = append(partTypes, p.Type)
+		}
+		log.Printf("assistant terminal rejected: text parts=%d len=%d all_part_types=%v", len(texts), size, partTypes)
 		return nil, false, errors.New("invalid_terminal_result")
 	}
 	var result agent.AssistantResult
 	result, err := agent.ParseAssistantResult([]byte(texts[0]))
 	if err != nil {
+		// Diagnostics: the strict contract rejection is invisible to the
+		// operator; log the terminal text tail (where actions live) so
+		// drift (markdown fences, prose, truncation) can be fixed in the
+		// prompt instead of guessed.
+		tail := texts[0]
+		if len(tail) > 1200 {
+			tail = tail[len(tail)-1200:]
+		}
+		log.Printf("assistant terminal parse failed (%v); text tail: %s", err, tail)
 		return nil, false, err
 	}
 	return &result, true, nil

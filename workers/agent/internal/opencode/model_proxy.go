@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -66,8 +67,39 @@ func NewModelProxy(b *Bridge, cfg ModelProxyConfig) http.Handler {
 		}
 		body, stream, err := validateModelBody(raw, grant)
 		if err != nil {
+			// Diagnostics: the 400 is opaque to the runtime, so log the
+			// precise reason and a truncated body once per rejection.
+			log.Printf("model_proxy rejected request (grant model=%s): %v; body: %.600s", grant.Model, err, raw)
 			fail(400, "invalid_model_request")
 			return
+		}
+		// Diagnostics: confirm what tool surface the model actually saw.
+		// A missing/empty tools array localizes "assistant ignores data
+		// questions" to the runtime's MCP plumbing rather than the model.
+		if messages, ok := body["messages"].([]any); ok {
+			toolNames := []string{}
+			if tools, ok := body["tools"].([]any); ok {
+				for _, t := range tools {
+					if m, ok := t.(map[string]any); ok {
+						if fn, ok := m["function"].(map[string]any); ok {
+							if name, ok := fn["name"].(string); ok {
+								toolNames = append(toolNames, name)
+							}
+						} else if name, ok := m["name"].(string); ok {
+							toolNames = append(toolNames, name)
+						}
+					}
+				}
+			}
+			toolCalls := 0
+			for _, m := range messages {
+				if msg, ok := m.(map[string]any); ok {
+					if _, exists := msg["tool_calls"]; exists {
+						toolCalls++
+					}
+				}
+			}
+			log.Printf("model_proxy call: msgs=%d tools=%d [%s] tool_call_msgs=%d", len(messages), len(toolNames), strings.Join(toolNames, ","), toolCalls)
 		}
 		outgoing, err := canonicalJSON(body)
 		if err != nil || len(outgoing) > modelRequestLimit {
@@ -223,6 +255,13 @@ func validateModelBody(raw []byte, g Grant) (map[string]any, bool, error) {
 			return nil, false, invalid
 		}
 		for key := range msg {
+			// reasoning_content is a vendor extension (deepseek et al.) that
+			// opencode echoes back on follow-up turns of the same session;
+			// dropping it is safe — it never carries tool/answer content.
+			if key == "reasoning_content" {
+				delete(msg, key)
+				continue
+			}
 			if key != "role" && key != "content" && key != "tool_calls" && key != "tool_call_id" {
 				return nil, false, invalid
 			}

@@ -427,8 +427,12 @@ func ValidateAssistantResult(result AssistantResult) error {
 	if len(result.Citations) > 12 || len(result.Actions) > 4 {
 		return errors.New("assistant_result_too_large")
 	}
+	var citationKinds = map[string]bool{
+		"item": true, "source": true, "keyword": true, "note": true,
+		"collection_job": true, "research_job": true,
+	}
 	for _, c := range result.Citations {
-		if strings.TrimSpace(c.Kind) == "" || strings.TrimSpace(c.ID) == "" || runeLen(c.ID) > 128 {
+		if !citationKinds[c.Kind] || strings.TrimSpace(c.ID) == "" || runeLen(c.ID) > 128 {
 			return errors.New("invalid_citation")
 		}
 	}

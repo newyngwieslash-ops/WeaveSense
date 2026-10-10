@@ -89,7 +89,24 @@ export const Route = createFileRoute("/api/internal/assistant-jobs")({
             const outcome = await completeAssistantRun(await getSql(), {
               runId, jobId, claimToken, stage: "result_saved", payload: answerPayload,
             });
-            if (!outcome.ok) console.log("[assistant-jobs] result_saved rejected:", outcome.error);
+            if (!outcome.ok) {
+              // Contract drift between the Go decoder and the zod schema is
+              // invisible without the payload; log a shape summary once.
+              const result = answerPayload.result as Record<string, unknown> | undefined;
+              const shape = result && typeof result === "object"
+                ? {
+                    version: result.version,
+                    answer_len: String(result.answer ?? "").length,
+                    answer_head: String(result.answer ?? "").slice(0, 80),
+                    citation_kinds: Array.isArray(result.citations)
+                      ? (result.citations as Array<Record<string, unknown>>).map((c) => c.kind)
+                      : String(result.citations),
+                    actions_raw: JSON.stringify(result.actions)?.slice(0, 200),
+                    clarification: result.clarification === undefined ? undefined : JSON.stringify(result.clarification)?.slice(0, 200),
+                  }
+                : answerPayload.result;
+              console.log("[assistant-jobs] result_saved rejected:", outcome.error, JSON.stringify(shape));
+            }
             return Response.json(outcome, { status: outcome.ok ? 200 : 409 });
           }
           // Fail-path post: the worker's engine call failed (complete()

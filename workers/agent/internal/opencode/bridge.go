@@ -28,6 +28,7 @@ const bridgeResponseBytes = 2 * 1024 * 1024
 
 type BridgeConfig struct {
 	AppDataURL      string
+	AssistantDataURL string
 	AppServiceToken string
 	ControlToken    string
 	AllowedModel    string
@@ -73,21 +74,24 @@ var assistantReadToolNames = []string{
 }
 
 func assistantToolSchema(name string) json.RawMessage {
-	args := map[string]string{}
-	switch name {
-	case "search_items":
-		args = map[string]string{"query": `{"type":"string","minLength":2,"maxLength":200}`, "limit": `{"type":"integer","minimum":1,"maximum":8}`}
-	case "get_item", "get_note", "get_collection_job", "get_research_status", "get_operation", "project_overview", "get_service_status", "list_notes", "list_collection_jobs", "list_keywords", "list_sources":
-		for key, constraint := range map[string]string{
-			"item_id": `{"type":"string","minLength":1,"maxLength":128}`, "note_id": `{"type":"string","minLength":1,"maxLength":128}`,
-			"job_id": `{"type":"string","minLength":1,"maxLength":128}`, "action_id": `{"type":"string","minLength":1,"maxLength":128}`,
-			"query": `{"type":"string","maxLength":200}`, "limit": `{"type":"integer","minimum":1,"maximum":50}`,
-		} {
-			args[key] = constraint
-		}
+	// Per-tool properties (mirrors assistantToolArgWhitelist). Each
+	// constraint is unmarshaled before re-marshaling so properties carry
+	// nested JSON Schema OBJECTS — encoding them as strings fails the MCP
+	// SDK's AssertObjectSchema check and the whole tools/list is rejected.
+	constraints := map[string]string{
+		"item_id": `{"type":"string","minLength":1,"maxLength":128}`, "note_id": `{"type":"string","minLength":1,"maxLength":128}`,
+		"job_id": `{"type":"string","minLength":1,"maxLength":128}`, "action_id": `{"type":"string","minLength":1,"maxLength":128}`,
+		"query": `{"type":"string","minLength":2,"maxLength":200}`, "limit": `{"type":"integer","minimum":1,"maximum":50}`,
 	}
-	properties, _ := json.Marshal(args)
-	return json.RawMessage(`{"type":"object","additionalProperties":false,"properties":` + string(properties) + `}`)
+	properties := map[string]json.RawMessage{}
+	for _, key := range assistantToolArgWhitelist[name] {
+		properties[key] = json.RawMessage(constraints[key])
+	}
+	encoded, err := json.Marshal(properties)
+	if err != nil {
+		encoded, _ = json.Marshal(map[string]json.RawMessage{})
+	}
+	return json.RawMessage(`{"type":"object","additionalProperties":false,"properties":` + string(encoded) + `}`)
 }
 
 func NewBridge(cfg BridgeConfig) *Bridge {
@@ -610,7 +614,14 @@ func (b *Bridge) callAssistantTool(ctx context.Context, req mcp.CallToolRequest)
 
 func (b *Bridge) postData(ctx context.Context, grant Grant, action string, params any) (map[string]any, error) {
 	entry, valid := b.activeEntry(grant)
-	u, err := url.Parse(b.cfg.AppDataURL)
+	// §4.3: assistant grants reach only the fixed assistant-data endpoint;
+	// research grants keep the research data URL. An unset assistant URL
+	// falls back to AppDataURL (single-endpoint deployments).
+	target := b.cfg.AppDataURL
+	if grant.profileOf() == "assistant" && b.cfg.AssistantDataURL != "" {
+		target = b.cfg.AssistantDataURL
+	}
+	u, err := url.Parse(target)
 	if !valid || err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || b.cfg.AppServiceToken == "" {
 		return nil, errors.New("app_unavailable")
 	}
@@ -621,7 +632,7 @@ func (b *Bridge) postData(ctx context.Context, grant Grant, action string, param
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	stop := context.AfterFunc(entry.ctx, cancel)
 	defer func() { stop(); cancel() }()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.cfg.AppDataURL, bytes.NewReader(raw))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(raw))
 	if err != nil {
 		return nil, errors.New("app_unavailable")
 	}

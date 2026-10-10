@@ -69,7 +69,7 @@ export function AssistantPanel() {
       <aside
         role="complementary"
         aria-label="织识助手"
-        className="fixed inset-x-0 bottom-0 z-50 flex h-[85dvh] flex-col border-t border-white/15 bg-bg shadow-2xl lg:inset-y-0 lg:right-0 lg:left-auto lg:h-auto lg:w-[420px] lg:border-l lg:border-t-0"
+        className="fixed inset-x-0 bottom-0 z-50 flex h-[50dvh] flex-col border-t border-white/15 bg-bg shadow-2xl lg:inset-y-0 lg:right-0 lg:left-auto lg:h-auto lg:w-[420px] lg:border-l lg:border-t-0"
       >
         <header className="flex items-center justify-between border-b border-white/10 px-4 py-3">
           <div className="flex items-center gap-2">
