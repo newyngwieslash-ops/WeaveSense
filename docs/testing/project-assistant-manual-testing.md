@@ -250,6 +250,11 @@ http://127.0.0.1:8080/api/assistant/capabilities
 > 已通过项目根 `.env` 生效（capabilities 现返回 `actions_enabled:true`），
 > 请继续 §2 的预览/确认测试。
 >
+> **对话全链已打通（2026-10-10，commit 0e3d0ce）**：三个根因全部修复——预算准入链（claim 落库
+> model_profile/role_limits/policy + 事前预算预留）、双队列隔离（研究队列不可用不再杀死
+> Worker）、§4.4 第二阶段停止回执由 Worker 在 cleanup 确认进程树后补发。真实浏览器实测：
+> 发送后 5 秒内渲染助手回答，turn completed、run succeeded。
+>
 > **已修复的接线缺口（2026-10-10，commit 0280830/749d116）**：手动测试暴露了
 > 容器部署层的四个缺口并已全部修复——submit 现在同事务入队 assistant job；
 > `/api/internal/assistant-jobs` 路由提供完整 claim 信封（beginRun 建 run、
