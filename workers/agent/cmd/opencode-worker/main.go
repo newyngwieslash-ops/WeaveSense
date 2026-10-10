@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,16 +24,33 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	// Alternating two-queue scheduling (§4.2): one research pass, one
-	// assistant pass, forever — neither queue starves the other. The first
-	// persistent error from either loop stops the worker.
+	// assistant pass, forever — neither queue starves the other. A queue
+	// being UNAVAILABLE (research not configured on this host) must not
+	// kill the worker: it is a permanent, benign condition for that queue,
+	// so it logs once and keeps the other queue alive. Real execution
+	// errors still stop the worker.
+	researchUnavailable := false
+	assistantUnavailable := false
 	for {
 		if err := opencode.RunWorkerLoopOnce(ctx, cfg); err != nil && ctx.Err() == nil {
-			log.Printf("OpenCode worker stopped (research queue): %v", err)
-			os.Exit(1)
+			if strings.Contains(err.Error(), "opencode_claim_unavailable") {
+				if !researchUnavailable { log.Printf("[worker] research queue unavailable on this host; assistant queue continues"); researchUnavailable = true }
+			} else {
+				log.Printf("OpenCode worker stopped (research queue): %v", err)
+				os.Exit(1)
+			}
+		} else {
+			researchUnavailable = false
 		}
 		if err := opencode.RunAssistantWorkerOnce(ctx, assistantCfg); err != nil && ctx.Err() == nil {
-			log.Printf("OpenCode worker stopped (assistant queue): %v", err)
-			os.Exit(1)
+			if strings.Contains(err.Error(), "assistant_claim_unavailable") {
+				if !assistantUnavailable { log.Printf("[worker] assistant queue unavailable on this host; research queue continues"); assistantUnavailable = true }
+			} else {
+				log.Printf("OpenCode worker stopped (assistant queue): %v", err)
+				os.Exit(1)
+			}
+		} else {
+			assistantUnavailable = false
 		}
 		time.Sleep(2 * time.Second)
 	}

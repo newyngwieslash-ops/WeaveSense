@@ -71,6 +71,16 @@ export const Route = createFileRoute("/api/internal/assistant-jobs")({
           const runId = String(payload.run_id ?? "");
           const jobId = String(payload.job_id ?? "");
           const claimToken = String(payload.claim_token ?? "");
+          // Stage-2 stop receipt (assistant.go posts stage='runtime_stopped'
+          // after cleanup confirmed the process tree): route to the
+          // runtime_stopped finalizer.
+          if (payload.stage === "runtime_stopped") {
+            const outcome = await completeAssistantRun(await getSql(), {
+              runId, jobId, claimToken, stage: "runtime_stopped",
+              payload: { epoch: String(payload.epoch ?? ""), instance: String(payload.instance ?? "worker"), ok: true },
+            });
+            return Response.json(outcome, { status: outcome.ok ? 200 : 409 });
+          }
           if (payload.result) {
             // The worker wraps the answer in jobEnvelope — strip envelope
             // fields so the strict assistantAnswerSchema sees only the
@@ -142,11 +152,30 @@ export const Route = createFileRoute("/api/internal/assistant-jobs")({
         const dataAccessToken = randomBytes(32).toString("hex");
         const model = process.env.AGENT_MODEL_NAME ?? "";
         const skillDigest = process.env.AGENT_SKILL_SNAPSHOT_DIGEST ?? "";
+        const modelProfile = { model, input_per_million: Number(process.env.AGENT_PRICE_INPUT_RMB_PER_MILLION ?? 2), output_per_million: Number(process.env.AGENT_PRICE_OUTPUT_RMB_PER_MILLION ?? 4) };
+        const policyJson = {
+          version: policy.version, deadline_at: deadline,
+          max_model_calls: policy.maxModelCalls, max_tool_calls: policy.maxToolCalls,
+          max_output_tokens_per_call: policy.maxOutputTokensPerCall,
+        };
         const begun = await beginRun(await getSql(), {
           id: runId, requestId: randomUUID(), mode: "research", provider: "opencode",
           inputHash: "assistant:" + result.turnId, materialHash: "assistant",
           policyVersion: policy.version,
-          requestJson: { provider: "opencode", mode: "research", profile: "assistant", governed: true, question: result.question, job_id: result.jobId },
+          // model_profile + policy are what the budget admission checks on
+          // every producer model call (agent-budget.ts line 47): without
+          // model_profile the bridge's receipt is denied with
+          // model_admission_unavailable and the model turn never runs.
+          requestJson: {
+            provider: "opencode", mode: "research", profile: "assistant", governed: true,
+            question: result.question, job_id: result.jobId,
+            model_profile: modelProfile, policy: policyJson,
+            // role_limits: the admission gate denies producer calls when
+            // role_limits.producer is not an integer.
+            role_limits: { producer: policy.maxModelCalls, reviewer: 0 },
+            producer_deadline_at: producerDeadline,
+            skill_snapshot_digest: skillDigest,
+          },
           claimToken: result.claimToken,
           expiresAt: deadline,
           dataTokenHash: hashRunToken(dataAccessToken),
@@ -154,6 +183,28 @@ export const Route = createFileRoute("/api/internal/assistant-jobs")({
         if (begun.kind !== "won") return Response.json({ error: "claim_conflict", detail: begun.kind }, { status: 409 });
         const sql = await getSql();
         await sql.query("update ai_jobs set run_id=$2 where id=$1", [result.jobId, runId]);
+        // Budget reservation (mirrors enqueueResearchJob): the admission
+        // gate denies producer calls without a reserved row whose pricing
+        // matches the model. Worst cost uses the byte-based caps the
+        // research policy freezes.
+        {
+          const [clock] = await sql.query<{ day: string }>("select to_char(clock_timestamp() at time zone 'Asia/Shanghai','YYYY-MM-DD') as day");
+          const priceVersion = process.env.AGENT_RESEARCH_PRICE_VERSION ?? "research-price-v1";
+          const dailyLimit = prod.assistantDailyLimit || 20;
+          const dailyBudgetRmb = prod.assistantDailyBudgetRmb || 20;
+          const worstCostRmb = policy.maxModelCalls * (512 * 1024 * modelProfile.input_per_million + 1800 * modelProfile.output_per_million) / 1_000_000;
+          const { admitBudgetDay } = await import("@/lib/server/agent-budget.ts");
+          if (!await admitBudgetDay(sql, clock.day, priceVersion, worstCostRmb, dailyLimit, dailyBudgetRmb)) {
+            await sql.query("update ai_jobs set status='failed', error_code='budget_exceeded', claim_token='' where id=$1", [result.jobId]);
+            return Response.json({ error: "budget_exceeded" }, { status: 429 });
+          }
+          await sql.query(
+            `insert into ai_budget_reservations(id, job_id, day, price_version, reserved_rmb, status, pricing)
+             values($1,$2,$3,$4,$5,'reserved',$6::jsonb)`,
+            [randomUUID(), result.jobId, clock.day, priceVersion, worstCostRmb,
+              JSON.stringify({ ...modelProfile, daily_limit: dailyLimit, daily_budget_rmb: dailyBudgetRmb, price_version: priceVersion })],
+          );
+        }
         return Response.json({
           job_id: result.jobId,
           run_id: runId,

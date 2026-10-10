@@ -263,8 +263,17 @@ func RunAssistantWorkerOnce(parent context.Context, cfg WorkerConfig) (runErr er
 		if _, err := post("assistant_result", payload); err != nil {
 			return failNow("assistant_result_denied", true)
 		}
+		// Capture the binding identity before cleanup clears it.
+		stoppedEpoch, stoppedInstance := binding.Epoch, binding.InstanceID
 		if err := cleanup(); err != nil {
 			return err
+		}
+		// §4.4 stage 2: the runtime is confirmed stopped (cleanup verified
+		// the process tree); post the stop receipt so the host finalizer can
+		// settle the run, write the assistant message and release the turn.
+		stopReceipt := map[string]any{"stage": "runtime_stopped", "epoch": stoppedEpoch, "instance": stoppedInstance, "ok": true}
+		if _, err := post("assistant_result", stopReceipt); err != nil {
+			return failNow("stop_receipt_denied", true)
 		}
 	}
 	return nil
