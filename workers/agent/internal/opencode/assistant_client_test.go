@@ -128,3 +128,29 @@ func TestAssistantProgressOfFoldsToolStatesAndReasonTail(t *testing.T) {
 		t.Fatalf("malformed payload not nil-safe: %v", p)
 	}
 }
+
+// deepseek sometimes streams the whole answer into the reasoning part and
+// finishes with empty message text. The reasoning tail is accepted ONLY if
+// it strictly parses as the AssistantResult contract.
+func TestAssistantTerminalResultAcceptsReasoningOnlyWhenParseable(t *testing.T) {
+	text := `{"version":1,"answer":"reasoning-only answer","citations":[],"actions":[]}`
+	raw, _ := json.Marshal([]any{map[string]any{
+		"info":  map[string]any{"id": "msg_R", "sessionID": "ses_A", "role": "assistant", "agent": "assistant", "providerID": "bridge", "modelID": "model", "finish": "stop", "time": map[string]int{"completed": 1}},
+		"parts": []any{map[string]any{"type": "reasoning", "text": text, "sessionID": "ses_A", "messageID": "msg_R"}},
+	}})
+	result, ready, err := AssistantTerminalResult(raw, "ses_A", "model")
+	if err != nil || !ready {
+		t.Fatalf("reasoning-only rejected: ready=%v err=%v", ready, err)
+	}
+	if result.Answer != "reasoning-only answer" {
+		t.Fatalf("answer = %q", result.Answer)
+	}
+	// Prose reasoning must NOT pass.
+	raw2, _ := json.Marshal([]any{map[string]any{
+		"info":  map[string]any{"id": "msg_R2", "sessionID": "ses_A", "role": "assistant", "agent": "assistant", "providerID": "bridge", "modelID": "model", "finish": "stop", "time": map[string]int{"completed": 1}},
+		"parts": []any{map[string]any{"type": "reasoning", "text": "我在想先查概览，然后……", "sessionID": "ses_A", "messageID": "msg_R2"}},
+	}})
+	if _, ready, err := AssistantTerminalResult(raw2, "ses_A", "model"); ready || err == nil {
+		t.Fatalf("prose reasoning accepted as answer")
+	}
+}

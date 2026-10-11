@@ -69,6 +69,7 @@ type bridgeGrantContext struct{}
 // profile may reach. Research keeps corpus_search_items/corpus_get_item only.
 var assistantReadToolNames = []string{
 	"project_overview", "list_keywords", "list_sources",
+	"search_items", "get_item",
 	"list_notes", "get_note", "list_collection_jobs", "get_collection_job",
 	"get_research_status", "get_operation", "get_service_status",
 }
@@ -81,7 +82,8 @@ func assistantToolSchema(name string) json.RawMessage {
 	constraints := map[string]string{
 		"item_id": `{"type":"string","minLength":1,"maxLength":128}`, "note_id": `{"type":"string","minLength":1,"maxLength":128}`,
 		"job_id": `{"type":"string","minLength":1,"maxLength":128}`, "action_id": `{"type":"string","minLength":1,"maxLength":128}`,
-		"query": `{"type":"string","minLength":2,"maxLength":200}`, "limit": `{"type":"integer","minimum":1,"maximum":50}`,
+		// search_items: omitted/empty query = latest-collected listing.
+		"query": `{"type":"string","maxLength":200}`, "limit": `{"type":"integer","minimum":1,"maximum":50}`,
 	}
 	properties := map[string]json.RawMessage{}
 	for _, key := range assistantToolArgWhitelist[name] {
@@ -111,8 +113,12 @@ func NewBridge(cfg BridgeConfig) *Bridge {
 	// Assistant read tools are registered once; per-grant profile filtering
 	// happens at tools/list AND tools/call time (filtering the listing alone
 	// is not authorization, §4.3). search_items/get_item keep their corpus
-	// registration and route by profile inside callCorpusTool.
+	// registration (callCorpusTool routes by profile); the assistant loop
+	// skips them so it never overrides their corpus handler.
 	for _, name := range assistantReadToolNames {
+		if researchTool(name) {
+			continue
+		}
 		tool := mcp.NewToolWithRawSchema(name, "Read this run's authorized project data; the host decides scope",
 			assistantToolSchema(name))
 		tool.Annotations = mcp.ToolAnnotation{ReadOnlyHint: mcp.ToBoolPtr(true), DestructiveHint: mcp.ToBoolPtr(false), OpenWorldHint: mcp.ToBoolPtr(false)}
@@ -490,7 +496,6 @@ func (b *Bridge) callCorpusTool(ctx context.Context, req mcp.CallToolRequest) (*
 	// search_items/get_item exist on both profiles: research reads the
 	// authorized corpus, assistant reads project data. Route by profile.
 	if grant.profileOf() == "assistant" {
-		req.Params.Name = "assistant_" + req.Params.Name
 		return b.callAssistantTool(ctx, req)
 	}
 	params, valid := toolParameters(req.Params.Name, req.GetArguments())
@@ -561,9 +566,12 @@ func assistantToolParameters(name string, args map[string]any) (map[string]any, 
 		params[key] = value
 	}
 	if name == "search_items" {
-		query, ok := params["query"].(string)
-		if !ok || len([]rune(query)) < 2 || len([]rune(query)) > 200 {
-			return nil, false
+		// query is optional: empty = latest-collected listing (host-side).
+		if query, exists := params["query"]; exists {
+			s, ok := query.(string)
+			if !ok || len([]rune(s)) > 200 {
+				return nil, false
+			}
 		}
 	}
 	return params, true

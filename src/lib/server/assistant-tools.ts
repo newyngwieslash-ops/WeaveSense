@@ -176,15 +176,20 @@ async function executeRead(
     }
     case "search_items": {
       const query = (args.query ?? "").trim();
-      if (Array.from(query).length < 2) return { items: [] };
-      const like = `%${query.replace(/[%_]/g, "")}%`;
       const limit = Math.min(args.limit ?? 8, 8);
-      const rows = await sql.query<Record<string, unknown>>(
-        `select i.id, i.title, i.platform, s.name as source_name, i.body
-         from items i join sources s on s.id = i.source_id
-         where i.title ilike $1 or i.body ilike $1
-         order by i.collected_at desc limit $2`, [like, limit],
-      );
+      // Empty/short query = "latest collected" listing, so "最近收集了什么"
+      // is answerable without a keyword; a real query still filters.
+      const rows = Array.from(query).length < 2
+        ? await sql.query<Record<string, unknown>>(
+            `select i.id, i.title, i.platform, s.name as source_name, i.body
+             from items i join sources s on s.id = i.source_id
+             order by i.collected_at desc limit $1`, [limit])
+        : await sql.query<Record<string, unknown>>(
+            `select i.id, i.title, i.platform, s.name as source_name, i.body
+             from items i join sources s on s.id = i.source_id
+             where i.title ilike $1 or i.body ilike $1
+             order by i.collected_at desc limit $2`,
+            [`%${query.replace(/[%_]/g, "")}%`, limit]);
       return {
         items: rows.map((row) => ({
           id: String(row.id), title: String(row.title ?? ""), platform: String(row.platform),

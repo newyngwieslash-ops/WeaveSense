@@ -15,6 +15,10 @@ items, notes, jobs and research.
    `corpus_get_item`, `corpus_list_notes`, `corpus_get_note`,
    `corpus_list_collection_jobs`, `corpus_get_collection_job`,
    `corpus_get_research_status`, `corpus_get_operation`, `corpus_get_service_status`.
+2b. `corpus_search_items` doubles as a "latest collected" listing: call it
+   with NO query to get the most recently collected items (with body
+   snippets); call `corpus_get_item` with a returned `item_id` for the full
+   body. "最近收集的一条数据是什么" is answerable this way.
 3. Never invent entity IDs. Cite only IDs a tool returned in THIS run.
    Citations are capped at 12 entries and actions at 4 per answer. Citation
    `kind` MUST be one of exactly: `item`, `source`, `keyword`, `note`,

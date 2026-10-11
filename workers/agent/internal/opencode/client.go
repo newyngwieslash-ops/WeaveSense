@@ -600,6 +600,22 @@ func AssistantTerminalResult(raw []byte, session, model string) (*agent.Assistan
 		}
 	}
 	if len(texts) != 1 || len(texts[0]) > agent.MaxResponseBytes {
+		// deepseek sometimes streams its whole answer into the reasoning
+		// part and finishes with an empty message text (parts=[step-start
+		// reasoning step-finish]). Fall back to the newest reasoning text
+		// ONLY as a parse candidate: the strict AssistantResult gate below
+		// still decides — prose thoughts never pass as an answer.
+		if len(texts) == 0 && m.Info.Finish == "stop" {
+			for i := len(m.Parts) - 1; i >= 0; i-- {
+				if m.Parts[i].Type == "reasoning" && m.Parts[i].Text != "" {
+					texts = append(texts, m.Parts[i].Text)
+					log.Printf("assistant terminal: empty text, trying reasoning tail (%d chars)", len(m.Parts[i].Text))
+					break
+				}
+			}
+		}
+	}
+	if len(texts) != 1 || len(texts[0]) > agent.MaxResponseBytes {
 		size := -1
 		if len(texts) == 1 {
 			size = len(texts[0])
