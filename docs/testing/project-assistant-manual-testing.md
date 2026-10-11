@@ -345,6 +345,17 @@ npm run dev
 turn 活动（queued/running/awaiting_confirmation/executing/waiting_child）期间 2s，
 无活动 turn 时 8s。§1.4 只读约束不受影响（GET events 仍无模型调用、无内部路由）。
 
+### 实时进度（2026-10-11，f80e511）
+
+助手面板现在展示与 opencode TUI 同信息量的运行过程（快照粒度，约 2 秒刷新，
+非逐 token）：turn 活动期间气泡上方出现进度卡 —— 工具调用胶囊（读取概览/关键词/
+信源/笔记/任务…，运行中脉冲、完成变灰、失败标红）+ 可折叠「思维链（最新）」
+（模型 reasoning 尾部 600 字符）。turn 结束自动清空。
+
+链路：worker 轮询循环折叠 /message 的 tool/reasoning parts → assistant_progress
+动作（≥1.5s 且摘要变化才发）→ host 写 assistant.progress 事件（0029 迁移）→
+面板 2s 事件轮询渲染。逐 token 流式需要三层 SSE 穿透，明确不做。
+
 ### 对话循环修复记录（2026-10-10，f223bd2）
 
 操作者报告「助手对数据问题只回固定文本/任务运行中卡死」的完整根因链，全部修复：
