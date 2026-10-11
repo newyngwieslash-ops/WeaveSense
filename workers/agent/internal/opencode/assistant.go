@@ -207,7 +207,18 @@ func RunAssistantWorkerOnce(parent context.Context, cfg WorkerConfig) (runErr er
 			if _, e = post("dispatching", nil); e != nil {
 				return failNow("runtime_dispatch_denied", true)
 			}
-			prompt := `You are the read-only project assistant. Gather data ONLY with the host read tools. Propose every write as a structured action in your final JSON. Return exactly one AssistantResult JSON object: version 1, answer string (at most 800 characters — a truncated JSON fails validation), citations:[{kind,id}] (at most 12; kind MUST be one of exactly: item|source|keyword|note|collection_job|research_job), actions:[{ordinal,kind,args}] (at most 4; ordinal from 0; ONLY these kinds: keyword.create|keyword.update|keyword.set_enabled|keyword.collect_once|source.create|source.set_enabled|source.collect_once|research.start|research.cancel — never invent a kind; if the need has no kind, use clarification instead), optional clarification{question,options:[...]} (mutually exclusive with actions). No Markdown fences, shell, or extra keys.`
+			// The operator's message is the task. The contract preamble sets
+			// the output shape; the question itself goes LAST so the model
+			// answers THIS turn's request instead of reciting a canned
+			// status survey (the answer contract still constrains it).
+			contract := `You are the read-only project assistant. Gather data ONLY with the host read tools, and only when the request below needs data. Propose every write as a structured action in your final JSON. Return exactly one AssistantResult JSON object: version 1, answer string (at most 800 characters — a truncated JSON fails validation), citations:[{kind,id}] (at most 12; kind MUST be one of exactly: item|source|keyword|note|collection_job|research_job), actions:[{ordinal,kind,args}] (at most 4; ordinal from 0; ONLY these kinds: keyword.create|keyword.update|keyword.set_enabled|keyword.collect_once|source.create|source.set_enabled|source.collect_once|research.start|research.cancel — never invent a kind; if the need has no kind, use clarification instead), optional clarification{question,options:[...]} (mutually exclusive with actions). No Markdown fences, shell, or extra keys. Answer in the operator's language. Now the operator's request: `
+			request := strings.TrimSpace(claim.Question)
+			if request == "" {
+				// Defensive: an empty question degrades to the generic
+				// survey rather than dispatching a bare contract.
+				request = "请报告当前项目状态概览。"
+			}
+			prompt := contract + request
 			if e = client.Prompt(producerCtx, binding, prompt); e != nil {
 				return failNow("runtime_dispatch_unknown", true)
 			}

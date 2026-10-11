@@ -55,6 +55,15 @@ func assistantWorkerFixture(t *testing.T, mode string) (WorkerConfig, *[]string)
 			tag = body["path"].(string)
 		}
 		calls = append(calls, r.Method+":"+tag)
+		if tag == "/session/ses_A/prompt_async" {
+			if inner, ok := body["body"].(map[string]any); ok {
+				if parts, ok := inner["parts"].([]any); ok && len(parts) == 1 {
+					if part, ok := parts[0].(map[string]any); ok {
+						calls = append(calls, "PROMPT:"+part["text"].(string))
+					}
+				}
+			}
+		}
 		switch tag {
 		case "claim", "assistant_claim":
 			claimed++
@@ -285,4 +294,33 @@ func TestWorkerLoopAlternatesQueuesWithoutStarvation(t *testing.T) {
 	_ = epoch
 	_ = digest
 	_ = order
+}
+
+// The operator's question must reach the model prompt — a canned contract
+// string alone produced survey answers that ignored the actual request.
+func TestAssistantPromptCarriesOperatorQuestion(t *testing.T) {
+	cfg, calls := assistantWorkerFixture(t, "producer")
+	if err := RunAssistantWorkerOnce(context.Background(), cfg); err != nil {
+		t.Fatal(err)
+	}
+	// The fixture's claim has an empty question: the prompt must still be
+	// dispatched (with the defensive fallback), never a bare contract.
+	var prompt string
+	for _, c := range *calls {
+		if strings.HasPrefix(c, "PROMPT:") {
+			prompt = strings.TrimPrefix(c, "PROMPT:")
+		}
+	}
+	if prompt == "" {
+		t.Fatalf("no prompt dispatched: %v", *calls)
+	}
+	if !strings.HasPrefix(prompt, "You are the read-only project assistant.") {
+		t.Fatalf("prompt missing contract preamble: %.120s", prompt)
+	}
+	if !strings.Contains(prompt, "Now the operator's request:") {
+		t.Fatalf("prompt missing operator-request marker: %d chars, tail: %.120s", len(prompt), prompt[max(0, len(prompt)-120):])
+	}
+	if !strings.HasSuffix(strings.TrimSpace(prompt), "请报告当前项目状态概览。") {
+		t.Fatalf("empty question should use fallback task: tail %.120s", prompt[max(0, len(prompt)-120):])
+	}
 }
