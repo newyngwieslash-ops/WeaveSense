@@ -409,6 +409,83 @@ func TerminalResult(raw []byte, session, model string) (*agent.AgentResult, bool
 	return &result, true, nil
 }
 
+// AssistantProgress is the live view the panel renders while a turn runs:
+// which tools have been called with what state, and the tail of the model's
+// reasoning. Extracted from the same /message payload the terminal decoder
+// reads; nil-safe on malformed payloads (progress is best-effort).
+type AssistantProgress struct {
+	Tools      []AssistantToolStage `json:"tools"`
+	ReasonTail string               `json:"reason_tail,omitempty"`
+}
+
+type AssistantToolStage struct {
+	CallID string `json:"call_id"`
+	Tool   string `json:"tool"`
+	State  string `json:"state"` // pending|running|completed|error
+}
+
+// AssistantProgressOf walks the message list in order and folds every tool
+// part into its latest state, plus the tail of the newest reasoning text.
+func AssistantProgressOf(raw []byte, session string) AssistantProgress {
+	var progress AssistantProgress
+	var tools []AssistantToolStage
+	reasonTail := ""
+	var messages []struct {
+		Info struct {
+			SessionID string `json:"sessionID"`
+		} `json:"info"`
+		Parts []struct {
+			Type   string `json:"type"`
+			Text   string `json:"text"`
+			CallID string `json:"callID"`
+			Tool   string `json:"tool"`
+			State  struct {
+				Status string `json:"status"`
+			} `json:"state"`
+		} `json:"parts"`
+	}
+	if json.Unmarshal(raw, &messages) != nil {
+		return progress
+	}
+	for _, m := range messages {
+		if m.Info.SessionID != session {
+			continue
+		}
+		for _, p := range m.Parts {
+			switch p.Type {
+			case "tool":
+				if p.CallID == "" || p.Tool == "" {
+					continue
+				}
+				updated := false
+				for i := range tools {
+					if tools[i].CallID == p.CallID {
+						tools[i].Tool, tools[i].State = p.Tool, p.State.Status
+						updated = true
+						break
+					}
+				}
+				if !updated {
+					tools = append(tools, AssistantToolStage{CallID: p.CallID, Tool: p.Tool, State: p.State.Status})
+				}
+			case "reasoning":
+				if p.Text != "" {
+					reasonTail = p.Text
+				}
+			}
+		}
+	}
+	if len(tools) > 12 {
+		tools = tools[len(tools)-12:]
+	}
+	const reasonTailMax = 600
+	if len(reasonTail) > reasonTailMax {
+		reasonTail = reasonTail[len(reasonTail)-reasonTailMax:]
+	}
+	progress.Tools, progress.ReasonTail = tools, reasonTail
+	return progress
+}
+
 // AssistantTerminalResult is the §4.3 sibling of TerminalResult: it validates
 // an assistant-profile turn (agent='assistant') whose final text must parse as
 // the host's AssistantResult contract. The research decoder refuses assistant

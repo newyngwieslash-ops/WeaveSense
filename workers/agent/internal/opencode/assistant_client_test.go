@@ -95,3 +95,36 @@ func TestAssistantTerminalResultAcceptsLengthWithValidJSON(t *testing.T) {
 		t.Fatalf("answer = %q", result.Answer)
 	}
 }
+
+// AssistantProgressOf folds tool parts to their latest state and keeps the
+// newest reasoning tail — the panel's live progress view.
+func TestAssistantProgressOfFoldsToolStatesAndReasonTail(t *testing.T) {
+	raw, _ := json.Marshal([]any{map[string]any{
+		"info":  map[string]any{"sessionID": "ses_A"},
+		"parts": []any{
+			map[string]any{"type": "step-start"},
+			map[string]any{"type": "tool", "callID": "c1", "tool": "corpus_project_overview", "state": map[string]string{"status": "running"}},
+			map[string]any{"type": "reasoning", "text": "先看概览"},
+			map[string]any{"type": "tool", "callID": "c1", "tool": "corpus_project_overview", "state": map[string]string{"status": "completed"}},
+			map[string]any{"type": "tool", "callID": "c2", "tool": "corpus_list_keywords", "state": map[string]string{"status": "running"}},
+			map[string]any{"type": "reasoning", "text": "再列关键词，注意 limit"},
+		},
+	}})
+	progress := AssistantProgressOf(raw, "ses_A")
+	if len(progress.Tools) != 2 {
+		t.Fatalf("tools = %v", progress.Tools)
+	}
+	if progress.Tools[0].State != "completed" || progress.Tools[1].CallID != "c2" {
+		t.Fatalf("fold wrong: %v", progress.Tools)
+	}
+	if progress.ReasonTail != "再列关键词，注意 limit" {
+		t.Fatalf("reason tail = %q", progress.ReasonTail)
+	}
+	// Foreign session parts are ignored; malformed payloads yield zero.
+	if p := AssistantProgressOf(raw, "ses_B"); len(p.Tools) != 0 || p.ReasonTail != "" {
+		t.Fatalf("foreign session leaked: %v", p)
+	}
+	if p := AssistantProgressOf([]byte("not json"), "ses_A"); len(p.Tools) != 0 {
+		t.Fatalf("malformed payload not nil-safe: %v", p)
+	}
+}

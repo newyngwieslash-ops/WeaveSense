@@ -61,6 +61,37 @@ export const Route = createFileRoute("/api/internal/assistant-jobs")({
         // assistant_result: the two-stage §4.4 finalizer. The worker posts
         // stage='result_saved' after validating the answer, then stage=
         // 'runtime_stopped' after the stop receipt; both idempotent.
+        // Live progress (worker assistant.go): tool stages + reasoning tail
+        // from the runtime's message list. Each accepted post appends one
+        // assistant.progress conversation event; the worker rate-limits.
+        if (action === "assistant_progress") {
+          const runId = String(payload.run_id ?? "");
+          const jobId = String(payload.job_id ?? "");
+          const claimToken = String(payload.claim_token ?? "");
+          const progress = payload.progress as { tools?: unknown; reason_tail?: unknown } | undefined;
+          const tools = Array.isArray(progress?.tools) ? progress!.tools : [];
+          const reasonTail = typeof progress?.reason_tail === "string" ? progress!.reason_tail : "";
+          if (!tools.length && !reasonTail) return Response.json({ ok: true, skipped: "empty" });
+          if (tools.length > 12 || reasonTail.length > 600) {
+            return Response.json({ ok: false, error: "invalid_progress" }, { status: 400 });
+          }
+          const [turnRow] = await (await getSql()).query<Record<string, unknown>>(
+            "select t.id, t.conversation_id from assistant_turns t join ai_jobs j on j.item_id = 'assistant:' || t.id::text where j.id=$1 and j.claim_token=$2 and j.status='running'",
+            [jobId, claimToken],
+          );
+          if (!turnRow) return Response.json({ ok: false, error: "turn_not_active" }, { status: 409 });
+          const { appendAssistantEvent } = await import("@/lib/server/assistant-events");
+          await appendAssistantEvent(
+            await getSql(),
+            String(turnRow.conversation_id), String(turnRow.id),
+            "assistant.progress",
+            {
+              tools: tools.map((t) => ({ call_id: String((t as Record<string, unknown>).call_id ?? ""), tool: String((t as Record<string, unknown>).tool ?? ""), state: String((t as Record<string, unknown>).state ?? "running") })),
+              reason_tail: reasonTail,
+            },
+          );
+          return Response.json({ ok: true });
+        }
         if (action === "assistant_result") {
           // Worker posting shapes (assistant.go): success carries the
           // answer payload (schema_version/result/runtime); a fail path

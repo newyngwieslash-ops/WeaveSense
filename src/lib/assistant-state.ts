@@ -35,6 +35,7 @@ export type AssistantState = {
   resyncing: boolean;
   turnActive: boolean;
   stages: StageMarker[];
+  reasonTail?: string;
   proposals: ProposalRef[];
   sending: boolean;
   composerError: string | null;
@@ -64,6 +65,7 @@ export function initialAssistantState(): AssistantState {
     resyncing: false,
     turnActive: false,
     stages: [],
+    reasonTail: undefined,
     proposals: [],
     sending: false,
     composerError: null,
@@ -81,6 +83,7 @@ function conversationPayload(action: Extract<AssistantReducerAction, { conversat
     resyncing: false,
     turnActive: action.turns.some((t) => ["queued", "running", "awaiting_confirmation", "executing", "waiting_child"].includes(t.status)),
     stages: [],
+    reasonTail: undefined,
     proposals: [],
     composerError: null,
     loading: false,
@@ -94,8 +97,26 @@ function applyEvent(state: AssistantState, e: AssistantEvent): AssistantState {
       next = { ...next, turnActive: true };
       break;
     case "turn.finished":
-      next = { ...next, turnActive: false, sending: false };
+      next = { ...next, turnActive: false, sending: false, stages: [], reasonTail: undefined };
       break;
+    case "assistant.progress": {
+      // Live tool stages + reasoning tail from the worker's message poll.
+      const tools = Array.isArray(e.payload.tools) ? e.payload.tools : [];
+      const stages = tools
+        .slice(-12)
+        .map((t) => {
+          const rec = t as Record<string, unknown>;
+          const callId = String(rec.call_id ?? "");
+          const tool = String(rec.tool ?? "");
+          const raw = String(rec.state ?? "running");
+          const mapped: StageMarker["state"] = raw === "completed" ? "done" : raw === "error" ? "failed" : "running";
+          return callId && tool ? { call_id: callId, tool, state: mapped } : null;
+        })
+        .filter((s): s is StageMarker => s !== null);
+      const tail = typeof e.payload.reason_tail === "string" ? e.payload.reason_tail : undefined;
+      next = { ...next, stages, reasonTail: tail };
+      break;
+    }
     case "tool.started": {
       const tool = String(e.payload.tool ?? "");
       const callId = String(e.payload.call_id ?? "");

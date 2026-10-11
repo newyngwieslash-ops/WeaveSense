@@ -241,6 +241,8 @@ func RunAssistantWorkerOnce(parent context.Context, cfg WorkerConfig) (runErr er
 		client := func() *Client { c, _ := NewClient(cfg.RuntimeURL, cfg.RuntimeToken, cfg.HTTPTransport); return c }()
 		var answer *agent.AssistantResult
 		polls := 0
+		lastProgress := ""
+		lastProgressAt := time.Time{}
 		for {
 			rawBytes, _, e := client.Forward(producerCtx, binding, "GET", "/session/"+binding.SessionID+"/message", nil)
 			if e != nil {
@@ -253,6 +255,19 @@ func RunAssistantWorkerOnce(parent context.Context, cfg WorkerConfig) (runErr er
 			if ready {
 				answer = parsed
 				break
+			}
+			// Live progress for the panel: tool stages + reasoning tail, only
+			// when the digest changed and at most every 1.5s (rate limit —
+			// the host appends each post as a conversation event). Best
+			// effort: a failed post never fails the turn.
+			if progress := AssistantProgressOf(rawBytes, binding.SessionID); producerCtx.Err() == nil {
+				digest, _ := json.Marshal(progress)
+				if string(digest) != lastProgress && time.Since(lastProgressAt) >= 1500*time.Millisecond {
+					lastProgress, lastProgressAt = string(digest), time.Now()
+					if _, err := post("assistant_progress", map[string]any{"progress": progress}); err != nil {
+						log.Printf("assistant progress post skipped: %v", err)
+					}
+				}
 			}
 			// Diagnostics: a wedge here (runtime not delivering the terminal
 			// message) otherwise sits invisible until the deadline; log

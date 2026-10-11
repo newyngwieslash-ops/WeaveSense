@@ -89,3 +89,21 @@ test("resync flag from the events API clears local buffers", () => {
   assert.equal(state.pendingEvents.length, 0);
   assert.equal(state.resyncing, true);
 });
+
+test("assistant.progress maps tool states and carries the reasoning tail; finished clears", () => {
+  let state = assistantReducer(initialAssistantState(), { type: "conversation/loaded", conversation: conv(), lastSeq: 0, events: [], messages: [], turns: [] });
+  state = assistantReducer(state, { type: "events/applied", events: [event(1, "assistant.progress", {
+    tools: [
+      { call_id: "c1", tool: "corpus_project_overview", state: "completed" },
+      { call_id: "c2", tool: "corpus_list_keywords", state: "running" },
+    ],
+    reason_tail: "先查概览再列关键词…",
+  })], conversationId: "c1" });
+  assert.equal(state.stages.length, 2);
+  assert.equal(state.stages[0].state, "done");
+  assert.equal(state.stages[1].state, "running");
+  assert.equal(state.reasonTail, "先查概览再列关键词…");
+  state = assistantReducer(state, { type: "events/applied", events: [event(2, "turn.finished", { status: "completed" })], conversationId: "c1" });
+  assert.equal(state.stages.length, 0);
+  assert.equal(state.reasonTail, undefined);
+});

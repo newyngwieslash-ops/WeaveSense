@@ -42,25 +42,37 @@ export function AssistantMessages() {
             : null}
         </li>
       ))}
-      {state.stages.length > 0 && (
-        <li className="flex flex-wrap gap-2" aria-label="执行阶段">
-          {state.stages.map((stage: import("@/lib/assistant-state").StageMarker) => (
-            <span
-              key={stage.call_id}
-              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${
-                stage.state === "running" ? "bg-accent/10 text-fg" : stage.state === "done" ? "bg-raised text-muted" : "bg-danger/15 text-danger"
-              }`}
-            >
-              {stage.state === "running" && <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-accent" />}
-              {stage.tool === "list_keywords" ? "读取关键词"
-                : stage.tool === "list_sources" ? "读取信源"
-                : stage.tool === "search_items" ? "检索内容"
-                : stage.tool === "get_item" ? "读取内容"
-                : stage.tool === "project_overview" ? "读取概览"
-                : stage.tool}
-              {stage.state === "done" ? " 完成" : stage.state === "failed" ? " 失败" : ""}
-            </span>
-          ))}
+      {state.turnActive && (state.stages.length > 0 || state.reasonTail) && (
+        <li aria-label="执行进度" className="max-w-[95%] rounded-md bg-raised/60 px-3 py-2">
+          {state.stages.length > 0 && (
+            <div className="flex flex-wrap gap-2" aria-label="工具调用">
+              {state.stages.map((stage: import("@/lib/assistant-state").StageMarker) => (
+                <span
+                  key={stage.call_id}
+                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${
+                    stage.state === "running" ? "bg-accent/10 text-fg" : stage.state === "done" ? "bg-raised text-muted" : "bg-danger/15 text-danger"
+                  }`}
+                >
+                  {stage.state === "running" && <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-accent" />}
+                  {stage.tool === "list_keywords" ? "读取关键词"
+                    : stage.tool === "list_sources" ? "读取信源"
+                    : stage.tool === "search_items" ? "检索内容"
+                    : stage.tool === "get_item" ? "读取内容"
+                    : stage.tool === "project_overview" ? "读取概览"
+                    : stage.tool === "list_notes" ? "读取笔记"
+                    : stage.tool === "list_collection_jobs" ? "读取任务"
+                    : stage.tool}
+                  {stage.state === "done" ? " 完成" : stage.state === "failed" ? " 失败" : ""}
+                </span>
+              ))}
+            </div>
+          )}
+          {state.reasonTail && (
+            <details className="mt-2 text-xs text-muted">
+              <summary className="cursor-pointer select-none">思维链（最新）</summary>
+              <p className="mt-1 whitespace-pre-wrap leading-5">{state.reasonTail}</p>
+            </details>
+          )}
         </li>
       )}
     </ol>
