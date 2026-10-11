@@ -35,7 +35,7 @@ export const Route = createFileRoute("/api/assistant/conversations/$conversation
         return Response.json({
           resync_required: false,
           events: page.events.map((e) => ({
-            seq: e.seq, type: e.type, turn_id: e.turn_id, payload: e.payload, created_at: e.created_at,
+            seq: e.seq, type: e.type, turn_id: e.turn_id, conversation_id: conversationId, payload: e.payload, created_at: e.created_at,
           })),
         }, { headers });
       },

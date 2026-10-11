@@ -16,7 +16,7 @@ export type Snapshot = {
   messages: Array<{ id: string; role: string; ordinal: number; content: Record<string, unknown> }>;
 };
 
-export type EventPage = { resync_required: boolean; events: Array<{ seq: number; type: string; turn_id: string; payload: Record<string, unknown>; created_at: string }> };
+export type EventPage = { resync_required: boolean; events: Array<{ seq: number; type: string; turn_id: string; conversation_id?: string; payload: Record<string, unknown>; created_at: string }> };
 
 async function jsonOrError<T>(res: Response): Promise<T> {
   if (!res.ok) {
