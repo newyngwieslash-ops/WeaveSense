@@ -9,6 +9,70 @@ VIDEO = 'BaW_jenozKc'
 RAW = json.dumps({'events': [{'segs': [{'utf8': x}]} for x in ['one', 'one', 'two', 'one']]})
 
 class Protocol(unittest.IsolatedAsyncioTestCase):
+    async def test_relay_delayed_success_and_deadline_cleanup(self):
+        # Real loopback HTTP worker -> production relay; only Docker service
+        # discovery is redirected. Inbound header protection remains exercised.
+        mode = 'healthy'
+        closed = asyncio.Event()
+        async def upstream(reader, writer):
+            try:
+                _, _, headers = await s.read_head(reader)
+                await reader.readexactly(int(headers['content-length']))
+                if mode == 'healthy':
+                    await asyncio.sleep(5.25)
+                    await s.respond(writer, 200, dict(status='no_subtitles', video_id=VIDEO, language='en', kind='none', text=''))
+                elif mode == 'body_timeout':
+                    # Headers consume part of the SAME overall budget; the
+                    # partial body must not receive a newly reset deadline.
+                    await asyncio.sleep(.1)
+                    writer.write(b'HTTP/1.1 200 Result\r\nContent-Length: 100\r\n\r\n{')
+                    await writer.drain()
+                await reader.read()
+            finally:
+                writer.close()
+                await writer.wait_closed()
+                closed.set()
+        upstream_server = await asyncio.start_server(upstream, '127.0.0.1', 0)
+        app = s.Server('egress', 'test-token', 'proxy-token')
+        relay_server = await asyncio.start_server(app.handle, '127.0.0.1', 0)
+        async def cleanup():
+            for server in (upstream_server, relay_server):
+                server.close()
+                await server.wait_closed()
+        self.addAsyncCleanup(cleanup)
+        open_connection = asyncio.open_connection
+        async def connect(host, port):
+            if host == 'subtitle-worker':
+                host, port = '127.0.0.1', upstream_server.sockets[0].getsockname()[1]
+            return await open_connection(host, port)
+        async def request():
+            reader, writer = await open_connection('127.0.0.1', relay_server.sockets[0].getsockname()[1])
+            body = json.dumps(dict(video_id=VIDEO, language='en')).encode()
+            writer.write(f'POST /v1/transcript HTTP/1.1\r\nContent-Type: application/json\r\nAuthorization: Bearer test-token\r\nContent-Length: {len(body)}\r\n\r\n'.encode()+body)
+            await writer.drain()
+            result = await asyncio.wait_for(reader.read(), 8)
+            writer.close()
+            await writer.wait_closed()
+            await asyncio.wait_for(closed.wait(), 1)
+            self.assertFalse(app.busy)
+            self.assertEqual(app.connections, 0)
+            return result
+        with patch.object(s.asyncio, 'open_connection', connect):
+            start = asyncio.get_running_loop().time()
+            result = await request()
+            self.assertIn(b' 200 ', result)
+            self.assertIn(b'no_subtitles', result)
+            self.assertGreater(asyncio.get_running_loop().time()-start, 5)
+            timeout = asyncio.timeout
+            # Scale only the existing overall request deadline for deterministic
+            # fault injection; the 5s inbound wait_for and real code stay intact.
+            for mode in ('header_timeout', 'body_timeout'):
+                closed.clear()
+                with patch.object(s.asyncio, 'timeout', lambda seconds: timeout(.2 if seconds == 46 else seconds)):
+                    result = await request()
+                self.assertIn(b' 504 ', result)
+                self.assertIn(b'"error":"timeout"', result)
+
     def test_inputs_and_json3(self):
         self.assertEqual(s.validate_request({'video_id': VIDEO, 'language': 'en'}), (VIDEO, 'en'))
         for body in [{}, {'video_id': '../x', 'language': 'en'}, {'video_id': VIDEO, 'language': 'all'},

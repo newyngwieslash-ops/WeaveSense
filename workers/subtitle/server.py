@@ -222,7 +222,10 @@ async def extract(video, language):
 
 async def read_head(reader, response=False):
     try:
-        raw = await asyncio.wait_for(reader.readuntil(b'\r\n\r\n'), 5)
+        # Worker headers arrive only after extraction. Both response headers and
+        # body share handle()'s remaining 46s budget; only untrusted inbound
+        # headers have the separate 5s slow-client guard.
+        raw = await reader.readuntil(b'\r\n\r\n') if response else await asyncio.wait_for(reader.readuntil(b'\r\n\r\n'), 5)
     except (asyncio.IncompleteReadError, asyncio.LimitOverrunError, TimeoutError):
         raise Failure('invalid_request', 400) from None
     if len(raw) > 8192:
