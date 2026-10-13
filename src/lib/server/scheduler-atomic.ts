@@ -53,6 +53,8 @@ export async function completeSourceClaim(
   lastExternalId: string,
   lastPublishedAt: string | null,
 ): Promise<boolean> {
+  const published = lastPublishedAt ? new Date(lastPublishedAt) : null;
+  const publishedIso = published && !Number.isNaN(published.getTime()) ? published.toISOString() : null;
   const rows = await sql.query<{ id: unknown }>(
     `update sources set
        status = 'ok',
@@ -64,7 +66,7 @@ export async function completeSourceClaim(
        claimed_at = null
      where id = $1 and claim_token = $4
      returning id`,
-    [sourceId, lastExternalId, lastPublishedAt, claimToken],
+    [sourceId, lastExternalId, publishedIso, claimToken],
   );
   return rows.length === 1;
 }

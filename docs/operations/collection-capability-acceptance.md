@@ -93,3 +93,23 @@ Dev and current built output passed desktop/mobile QA: five coverage states × t
 **Full `npm test` is not reported green.** The controller hit two existing deployment assertions: MINIO_ENDPOINT environment inventory and opencode `pids_limit` expected 64 / actual 512. The relevant scripts/Compose are unchanged against `bec6212a`. The existing service-env test reads `F:/loom-backups/env/*.env` internally and prints key names, so the entire controller suite is not described as secret-file-free. Remaining stages ran separately; keyword/pagination and research stages passed. Three legacy-model checks initially conflicted with the deliberately nonexistent model-config override; direct-Node focused reruns with that variable blank passed without the autodiscovery wrapper. These baseline gate limitations remain explicit.
 
 Scope ends at A05 code and offline verification. Live 24-hour acceptance, deployed uptime and release remain pending; B/C work was not implemented.
+
+## Final review repair verification
+
+The consolidated repair wave starts from `d6bba897f8ec8ef8d4efe9a23346899d42b37cab` and addresses final review I1/M1. `completeSourceClaim` now normalizes the selected anchor date to ISO or null at its shared SQL boundary; existing SQL coalescing retains the last valid timestamp when a new anchor has an invalid, empty or missing date. Keyword diagnostics classify `invalid_feed_xml`, `invalid_feed_root` and `feed_entry_limit` as `invalid_response`.
+
+New regressions were run before the fixes: the real first-window invalid-date scheduler replay failed with a PostgreSQL timestamp error and zero counts; three routed malformed/unsupported/over-limit feed responses returned `network_error`; the shared timestamp-preservation check failed on `invalid`. All RED commands exited 1 for those concrete assertions.
+
+After the fixes, the same explicit offline runtime allowlist and disabled automatic flags produced these actual results:
+
+| Child command | Exit | Actual result |
+| --- | --- | --- |
+| `node --test src/lib/server/collectors/pagination.test.mjs src/lib/server/collectors/keyword-contract.test.mjs` | 0 | 27 passed; 85.93 s |
+| `node --experimental-strip-types --test src/lib/server/rss.test.ts src/lib/server/cursor.test.ts src/lib/server/scheduler-atomic.test.ts src/lib/server/scheduler.test.ts` | 0 | 29 passed; 32.87 s |
+| `node node_modules/typescript/bin/tsc --noEmit` | 0 | No diagnostics |
+| Scoped ESLint on the five runtime/test repair files | 0 | No errors or warnings |
+| `git diff --check` on the owned repair files | 0 | No whitespace errors |
+
+The real scheduler check now records one normalized item, successful counts `1/1` then `1/0`, discovery anchor `unknown`, and initial-window then overlap coverage. The shared PGlite check advances new anchor IDs while preserving an existing valid publication timestamp for invalid/empty/null dates. Existing numeric monotonicity, Bilibili page caps, opaque ordering, Telethon compatibility and genuine socket failure diagnostics remain covered by the passing suites.
+
+Repair logs and exact isolation wrapper: `.superpowers/sdd/2026-10-13-collection-capability-roadmap/scratch/final-fix-{red,red-atomic,green,atomic,typecheck,lint}.log` and `final-fix-checks.mjs`; full repair report: `final-fix-report.md` beside the task reports. These checks made no live feed request, production database access or paid call. Public snapshot/load, broad baseline deployment assertions and controller build/UI were not rerun by the repair worker; the controller owns refreshed build/UI and scoped final review. Live 24-hour acceptance and release status remain pending.

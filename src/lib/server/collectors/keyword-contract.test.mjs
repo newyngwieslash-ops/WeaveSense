@@ -238,6 +238,21 @@ test("an invalid JSON payload is invalid_response, not a silent empty", async ()
   });
 });
 
+test("malformed, unsupported and over-limit feed responses are invalid_response", async () => {
+  await withKeyword(async (collectKeyword) => {
+    const { transport, calls } = routedTransport({
+      "news.google.com": (url) => ({ status: 200, body: url.searchParams.get("hl") === "zh-CN"
+        ? "<rss><channel>" : "<html><body>Not a feed</body></html>" }),
+      "hnrss.org": () => ({ status: 200, body: `<feed>${"<entry><id>over-limit</id></entry>".repeat(1001)}</feed>` }),
+    });
+    const batch = await collectKeyword("电池", ["rss"], io(transport));
+    assert.equal(calls.length, 3);
+    assert.deepEqual(batch.items, []);
+    assert.deepEqual(batch.attempts, ["google_news_zh", "google_news_en", "hacker_news"].map((source) =>
+      ({ source, status: "error", count: 0, error_code: "invalid_response" })));
+  });
+});
+
 test("a bilibili provider-level rejection is an error, not an empty result", async () => {
   await withKeyword(async (collectKeyword) => {
     const { transport } = routedTransport({

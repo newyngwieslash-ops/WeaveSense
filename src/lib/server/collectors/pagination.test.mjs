@@ -322,6 +322,23 @@ test("runSourceJob preserves capped history cursors and records window discovery
       await sql.query("update sources set last_external_id='anchor' where id='window-rss'");
       assert.equal((await runSourceJob("window-rss", "manual", undatedIo)).error, "");
       assert.equal((await sql.query("select last_external_id from sources where id='window-rss'"))[0].last_external_id, "anchor", "undated opaque windows retain a present anchor");
+      await sql.query(`insert into sources (id,platform,name,adapter,feed_url)
+        values ('invalid-window','rss','Invalid date window','rss','https://example.org/feed')`);
+      const invalidIo = {
+        resolver, transport: async () => ({ status: 200, headers: { "content-type": "application/atom+xml" },
+          body: bodyOf('<feed><entry><id>unknown</id><updated>invalid</updated></entry></feed>') }),
+      };
+      for (const round of [0, 1]) {
+        assert.deepEqual(await runSourceJob("invalid-window", "manual", invalidIo),
+          { items_found: 1, items_new: round ? 0 : 1, error: "" }, "invalid date first window and replay succeed");
+        assert.deepEqual(await sql.query("select status,last_external_id,last_published_at from sources where id='invalid-window'"),
+          [{ status: "ok", last_external_id: "unknown", last_published_at: null }]);
+        assert.deepEqual(await sql.query("select external_id,published_at from items where source_id='invalid-window'"),
+          [{ external_id: "unknown", published_at: null }], "replay keeps one normalized item");
+        const [job] = await sql.query("select status,items_found,items_new,coverage from jobs where source_id='invalid-window' order by started_at desc limit 1");
+        assert.deepEqual(job, { status: "ok", items_found: 1, items_new: round ? 0 : 1,
+          coverage: { complete: false, window_only: true, note: round ? "window_overlap" : "initial_window" } });
+      }
       for (const mode of ["rss", "telegram-dated", "telegram-undated", "telegram-equal"]) {
         const telegram = mode.startsWith("telegram");
         const source = { ...feedSource(telegram ? "telegram_web" : "rss", "", telegram ? "telegram" : "rss"), id: mode,

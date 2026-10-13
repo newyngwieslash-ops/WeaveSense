@@ -77,6 +77,25 @@ test("expired source claims are recoverable and completion is token-bound", asyn
   await pg.close();
 });
 
+test("source completion normalizes dates and preserves the last valid timestamp", async () => {
+  const { pg, sql } = await sourceDb();
+  try {
+    await pg.query("insert into sources (id,enabled,status,last_error) values ('dates',true,'idle','')");
+    const valid = "2026-10-13T08:00:00+08:00";
+    for (const [index, published] of [valid, "invalid", "", null].entries()) {
+      const token = `date-job-${index}`;
+      assert.ok(await claimSource(sql, "dates", token));
+      assert.equal(await completeSourceClaim(sql, "dates", token, `anchor-${index}`, published), true);
+      const [source] = await sql.query<{ status: string; last_external_id: string; last_published_at: Date }>(
+        "select status,last_external_id,last_published_at from sources where id='dates'",
+      );
+      assert.equal(source.status, "ok");
+      assert.equal(source.last_external_id, `anchor-${index}`);
+      assert.equal(source.last_published_at.toISOString(), "2026-10-13T00:00:00.000Z");
+    }
+  } finally { await pg.close(); }
+});
+
 test("a conflicted item insert never enqueues media", async () => {
   let enqueued = 0;
   const inserted = await finishItemInsert([], ["https://img.example/cover.jpg"], "image", async () => {
