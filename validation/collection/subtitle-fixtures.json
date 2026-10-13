@@ -1,0 +1,193 @@
+{
+  "origin": "synthetic_offline_fixtures_not_live_sample_evidence",
+  "cases": [
+    {
+      "name": "manual_precedes_same_language_automatic",
+      "language": "en",
+      "metadata": {
+        "subtitles": {
+          "en": [
+            {
+              "ext": "json3"
+            }
+          ]
+        },
+        "automatic_captions": {
+          "en": [
+            {
+              "ext": "json3"
+            }
+          ]
+        }
+      },
+      "caption": {
+        "events": [
+          {
+            "tStartMs": 0,
+            "dDurationMs": 500,
+            "segs": [
+              {
+                "utf8": "Synthetic human caption."
+              }
+            ]
+          }
+        ]
+      },
+      "expected_kind": "manual",
+      "expected_status": "ok",
+      "expected_error": ""
+    },
+    {
+      "name": "automatic_without_manual",
+      "language": "en",
+      "metadata": {
+        "subtitles": {},
+        "automatic_captions": {
+          "en": [
+            {
+              "ext": "json3"
+            }
+          ]
+        }
+      },
+      "caption": {
+        "events": [
+          {
+            "tStartMs": 10,
+            "dDurationMs": 900,
+            "segs": [
+              {
+                "utf8": "Synthetic automatic caption."
+              }
+            ]
+          }
+        ]
+      },
+      "expected_kind": "automatic",
+      "expected_status": "ok",
+      "expected_error": ""
+    },
+    {
+      "name": "verified_empty_inventory",
+      "language": "en",
+      "metadata": {
+        "subtitles": {},
+        "automatic_captions": {}
+      },
+      "expected_kind": "none",
+      "expected_status": "no_subtitles",
+      "expected_error": "no_subtitles"
+    },
+    {
+      "name": "target_absent_other_language_exists",
+      "language": "en",
+      "metadata": {
+        "subtitles": {
+          "it": [
+            {
+              "ext": "json3"
+            }
+          ]
+        },
+        "automatic_captions": {}
+      },
+      "expected_kind": "none",
+      "expected_status": "no_subtitles",
+      "expected_error": "no_target_language_subtitles"
+    },
+    {
+      "name": "unavailable_video",
+      "language": "en",
+      "extractor_error": "video_unavailable",
+      "expected_kind": null,
+      "expected_status": "error",
+      "expected_error": "video_unavailable"
+    },
+    {
+      "name": "incomplete_inventory_not_none",
+      "language": "en",
+      "inventory_complete": false,
+      "metadata": {
+        "subtitles": {},
+        "automatic_captions": {}
+      },
+      "expected_kind": null,
+      "expected_status": "error",
+      "expected_error": "incomplete_subtitle_inventory"
+    },
+    {
+      "name": "empty_selected_caption_not_ok",
+      "language": "en",
+      "metadata": {
+        "subtitles": {
+          "en": [
+            {
+              "ext": "json3"
+            }
+          ]
+        },
+        "automatic_captions": {}
+      },
+      "caption": {
+        "events": []
+      },
+      "expected_kind": "manual",
+      "expected_status": "error",
+      "expected_error": "empty_subtitles"
+    },
+    {
+      "name": "negative_timestamp_not_ok",
+      "language": "en",
+      "metadata": {
+        "subtitles": {
+          "en": [
+            {
+              "ext": "json3"
+            }
+          ]
+        },
+        "automatic_captions": {}
+      },
+      "caption": {
+        "events": [
+          {
+            "tStartMs": -1,
+            "segs": [
+              {
+                "utf8": "Synthetic bad cue"
+              }
+            ]
+          }
+        ]
+      },
+      "expected_kind": "manual",
+      "expected_status": "error",
+      "expected_error": "invalid_timeline"
+    },
+    {
+      "name": "missing_maps_not_none",
+      "language": "en",
+      "metadata": {},
+      "expected_kind": null,
+      "expected_status": "error",
+      "expected_error": "invalid_subtitle_inventory"
+    },
+    {
+      "name": "unsupported_format_not_none",
+      "language": "en",
+      "metadata": {
+        "subtitles": {
+          "en": [
+            {
+              "ext": "vtt"
+            }
+          ]
+        },
+        "automatic_captions": {}
+      },
+      "expected_kind": null,
+      "expected_status": "error",
+      "expected_error": "json3_unavailable"
+    }
+  ]
+}

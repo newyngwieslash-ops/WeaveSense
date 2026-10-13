@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "role": "proposed_public_reference_candidates_not_business_samples",
+  "source_requirement": "waiting_for_samples",
+  "live_validated": false,
+  "samples": [
+    {
+      "url": "https://www.youtube.com/watch?v=QRS8MkLhQmM",
+      "language": "en",
+      "expected_kind": "manual",
+      "evidence": "https://github.com/yt-dlp/yt-dlp/blob/2026.08.19/test/test_subtitles.py#L54-L93",
+      "note": "Upstream writesubtitles/JSON3 assertions; historical fixture expectation, current availability unverified."
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=8YoUxe5ncPo",
+      "language": "it",
+      "expected_kind": "automatic",
+      "evidence": "https://github.com/yt-dlp/yt-dlp/blob/2026.08.19/test/test_subtitles.py#L94-L128",
+      "note": "Upstream automatic caption test. No manual subtitles is NOT no captions: do not classify this as none."
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=Ky9eprVWzlI",
+      "language": "it",
+      "expected_kind": "invalid",
+      "evidence": "https://github.com/yt-dlp/yt-dlp/blob/2026.08.19/test/test_subtitles.py#L115-L118",
+      "note": "Upstream skipped Video unavailable. Historical failure, current status unverified."
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=YE7VzlLtp-4",
+      "language": "en",
+      "expected_kind": null,
+      "evidence": "https://github.com/yt-dlp/yt-dlp/blob/2026.08.19/yt_dlp/extractor/youtube/_video.py#L147-L179",
+      "note": "Public extraction fixture; subtitle kind unknown. Dialogue-free film is not evidence of no subtitles."
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=a9LDPn-MO4I",
+      "language": "en",
+      "expected_kind": null,
+      "evidence": "https://github.com/yt-dlp/yt-dlp/blob/2026.08.19/yt_dlp/extractor/youtube/_video.py#L225-L259",
+      "note": "Public extraction fixture; test skipped for obsolete format, not subtitle absence."
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=IB3lcPjvWLA",
+      "language": "en",
+      "expected_kind": null,
+      "evidence": "https://github.com/yt-dlp/yt-dlp/blob/2026.08.19/yt_dlp/extractor/youtube/_video.py#L260-L297",
+      "note": "Public extraction fixture; subtitle kind unknown."
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=x41yOUIvK2k",
+      "language": "en",
+      "expected_kind": null,
+      "evidence": "https://github.com/yt-dlp/yt-dlp/blob/2026.08.19/yt_dlp/extractor/youtube/_video.py#L897-L926",
+      "note": "Public extraction fixture; short duration does not prove caption absence."
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=CHqg6qOn4no",
+      "language": "en",
+      "expected_kind": null,
+      "evidence": "https://github.com/yt-dlp/yt-dlp/blob/2026.08.19/yt_dlp/extractor/youtube/_video.py#L928",
+      "note": "Public extraction fixture; subtitle kind unknown."
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=FIl7x6_3R5Y",
+      "language": "ko",
+      "expected_kind": null,
+      "evidence": "https://github.com/yt-dlp/yt-dlp/blob/2026.08.19/yt_dlp/extractor/youtube/_video.py#L538-L567",
+      "note": "Public extraction fixture; subtitle kind unknown."
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=18NGQq7p3LY",
+      "language": "ko",
+      "expected_kind": null,
+      "evidence": "https://github.com/yt-dlp/yt-dlp/blob/2026.08.19/yt_dlp/extractor/youtube/_video.py#L1520-L1549",
+      "note": "Public shorts extraction fixture normalized to a single watch URL; subtitle kind unknown."
+    }
+  ],
+  "acceptance": "pending",
+  "blockers": [
+    "waiting_for_business_samples",
+    "blocked_address",
+    "guarded_transport_pending"
+  ]
+}
