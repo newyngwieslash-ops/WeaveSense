@@ -8,9 +8,9 @@
 
 **Tech Stack:** 现有 TypeScript、Node.js、TanStack Start、PostgreSQL/PGLite、fast-xml-parser、node:test、Playwright；正文试点使用 Jina Reader HTTP 接口；字幕试点使用独立 Python 环境中的 yt-dlp。
 
-## 执行状态（2026-10-13）
+## A阶段历史快照（2026-10-13；不是当前执行状态）
 
-用户后续授权本轮实施 A01—A05、隔离验证与独立本地提交；下方规划轮“本轮不实施”描述是历史约束。A01—A04 已实现并审查通过，A05 代码与离线验收通过。五个真实 Feed 的单次快照均被既有 publicFetch 拒绝（DNS 返回 198.18.0.0/15 非公网基准测试网段），未取得响应；24 小时观察仍待验收，未启动、未声称 live_passed。无生产发布；B/C/R01 发布任务尚未实施。详见 `docs/operations/collection-capability-acceptance.md`。
+以下只记录A-only阶段结束时的历史快照；后续用户已授权整份路线图，当前状态见0.1节。该阶段用户授权实施 A01—A05、隔离验证与独立本地提交；下方规划轮“本轮不实施”描述是历史约束。A01—A04 已实现并审查通过，A05 代码与离线验收通过。五个真实 Feed 的单次快照均被既有 publicFetch 拒绝（DNS 返回 198.18.0.0/15 非公网基准测试网段），未取得响应；24 小时观察仍待验收，未启动、未声称 live_passed。无生产发布；B/C/R01 发布任务尚未实施。详见 `docs/operations/collection-capability-acceptance.md`。
 
 ## Global Constraints
 
@@ -29,7 +29,7 @@
 
 ## 0.1 执行状态（2026-10-13；代码与实网分别记录）
 
-实现授权已覆盖整份路线图；沿用`codex/collection-capability`隔离工作树。A/B和C代码/条件评估已评审；R01统一门禁进行中。本轮没有部署，持续观察没有启动。原始条目含实网/发布条件时，离线通过不把整个复选框勾完。
+实现授权已覆盖整份路线图；沿用`codex/collection-capability`隔离工作树。A/B和C代码/条件评估已评审；R01统一离线/build/UI门禁通过；任务与整分支最终评审另由controller收尾。本轮没有部署，持续观察没有启动。原始条目含实网/发布条件时，离线通过不把整个复选框勾完。
 
 - [x] A01–A04代码、定向检查与独立评审。
 - [x] A05真实业务离线60条/重放和负载验证；五源快照失败证据保留。
@@ -46,7 +46,8 @@
 - [x] C04条件评估经评审：waiting_for_verified_js_gap。
 - [ ] C04条件成立后的20页同目标浏览器实验；当前未触发，不填not_needed。
 - [x] R01稳定QA helper、Node常用入口与可选Python/Docker命令；portability RED后2/2 GREEN。
-- [ ] R01本轮完整npm/gateway/typecheck/lint/nativePG-build/selecteddevbuilt检查与最终评审（结果后附）。
+- [x] R01本轮完整npm545/gateway117/typecheck、lint0errors32warnings、一次nativePG完整npm build29ledger、正文/字幕devbuilt1280/390详情检查；原lint失败保留，真实20/50s仅引用既有证据。
+- [ ] R01任务与整分支最终评审（controller负责，不能由门禁通过自动勾选）。
 - [ ] 正式生产备份/发布/回滚镜像绑定与发布后72h观察。
 
 最新证据与支持范围：[统一验收](../../operations/collection-capability-acceptance.md)、[当前状态](../../operations/loom-current-status.md)、[回退手册](../../operations/loom-release-runbook.md)。
@@ -524,7 +525,7 @@ subprocess.run([
 **Interfaces:** 内部 `POST /v1/transcript` 只收 `{video_id, language}`；host 固定 YouTube，Bearer 独立凭据。返回 `{status:'ok'|'no_subtitles',video_id,language,kind:'manual'|'automatic'|'none',text}`；技术失败为非 2xx 稳定错误码。控制面 `readSubtitle(itemId)` 从 DB 解析 video ID。
 
 - [x] 先写协议检查：缺 token 401、非法 ID 400、插件自定义参数不能输入、无字幕 no_subtitles、上游失败非成功、超时进程回收；单字幕超过 2 MiB 显式失败。test_server.py 使用 unittest 和假的 yt-dlp 子进程输出，不需要真实账号。
-- [x] 将 C01 通过的工具版本固定在 requirements/镜像中，独立 profile `subtitles` 默认不启用，不给 Telethon 镜像增加无关包。节点并发 1、单任务 45 秒、客户端期限 50 秒；请求 JSON 4 KiB、输出 2 MiB。生产节点以 asyncio 子进程流式累计 stdout/stderr，达到上限立即终止并回收，不能直接沿用 C01 的 capture_output 后置检查；临时卷固定 32 MiB，单文件 2 MiB，finally 清理，关闭匿名健康以外接口。
+- [x] 将 C01 已固定且通过工具/合成验证的版本写入 requirements/镜像（C01真实视频字幕验收仍pending），独立 profile `subtitles` 默认不启用，不给 Telethon 镜像增加无关包。节点并发 1、单任务 45 秒、客户端期限 50 秒；请求 JSON 4 KiB、输出 2 MiB。生产节点以 asyncio 子进程流式累计 stdout/stderr，达到上限立即终止并回收，不能直接沿用 C01 的 capture_output 后置检查；临时卷固定 32 MiB，单文件 2 MiB，finally 清理，关闭匿名健康以外接口。
 - [x] JSON3 文本解析首版保留事件顺序，只去掉完全相同的相邻段；不做会吞掉真实重复语句的全文 set 去重：
 
 ```python
@@ -652,4 +653,4 @@ node scripts/browser-smoke.mjs http://127.0.0.1:8081/ screenshots/collection-bui
 
 自检映射：采集条数 A02；关键词公平 A03；窗口与历史边界 A04；原文读取 B01；无损合并/版本/回退 B02；可操作界面 B03；真实质量 B04；字幕 C01/C02；新平台 C03；浏览器 C04；验证/发布/观测 R01。旧稳定性计划中的独立议题没有被伪装成已完成。
 
-执行方式可选：按任务委派实施，或当前会话顺序实施。实施已完成至C04条件评估并进入R01统一验证；A/B不依赖尚待实网验收的新平台。本轮实施/离线进度已在0.1节与各任务复选框更新；真实样本、条件实验、持续运行和部署门禁保持未勾选。不能把代码完成写成完整实网验收。
+执行方式可选：按任务委派实施，或当前会话顺序实施。实施已完成至C04条件评估并R01统一门禁通过并等待最终整分支评审；A/B不依赖尚待实网验收的新平台。本轮实施/离线进度已在0.1节与各任务复选框更新；真实样本、条件实验、持续运行和部署门禁保持未勾选。不能把代码完成写成完整实网验收。

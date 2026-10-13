@@ -6,18 +6,20 @@
 
 | 字段 | 当前记录 |
 | --- | --- |
-| 当前实现/条件评审基线 | `8bd35fd62bd387b2af503d24e581550d31aadc76`，R01检查脚本/文档变更另见本任务提交与最终QA报告 |
+| 已验证代码快照 | `3530b41c91b58fcb40a8045f509389c0384557a3`；launch base`8bd35fd6`+相同稳定R01工作变更，最终证据文档另提交 |
 | 应用运行证据SHA | `42b508d03b9ac6b4769a8a845afd733cca90af41`，后续worker修复不改应用 |
 | worker修复SHA / 本地离线镜像ID | `7e588e62` / `sha256:3346991de8f9e5292cfc8eccc2b2824795377bc47c3ebc445b8a2f06050e2803` |
 | 最新迁移 | 完整清单29项至`0030_collection_coverage.sql`；发布时绑定实际库的完整ledger，不从编号推算数量 |
 | 功能/配置 | ARTICLE_READER_ENABLED=false、verified allowlist=[]；SUBTITLE_ENABLED=false、subtitles profile关闭；三份GitHubmanifest enabled=false |
 | 支持范围 | Feed当前响应窗口、原文候选/采用/恢复的离线流程、en/zh-Hans/zh-Hant字幕实现；真实reader支持host=[]、字幕extractor host完整性provisional；GitHub仅3仓库releases Atom |
-| 检查与报告 | 当前统一npm/build/UI实际结果与路径以[验收记录](collection-capability-acceptance.md#r01-portable-checks-and-final-unified-verification)为准；原始报告保留 |
+| 检查与报告 | 545主测试/117gateway/types、lint0errors32warnings、一次空nativePG完整build29ledger及devbuilt桌面/手机正文+字幕/private4objects通过；精确路径以[验收记录](collection-capability-acceptance.md#r01-portable-checks-and-final-unified-verification)为准；原始报告保留 |
 | 本轮生产镜像/回滚镜像ID | unknown / unknown（未生成或切换，不能借用9月ID作为当前回滚点） |
 | 生产备份与实际迁移 | 未执行；需要正式切换前备份路径/digest/恢复演练和完整应用ledger |
 | 实网/时长 | A05 24h、B04live20、C01realTube、C0372h pending；生产72h not_started |
 
 每次正式发布必须冻结完整40位源码SHA、镜像ID/digest、迁移名称清单、非秘密开关、支持站点/平台、每个检查报告路径与确切前一服务镜像。记录应用和worker各自版本、测试是否针对同一源码；不得用本地worker隔离通过推导生产已发布。凭据值不进入记录，也不读取旧F:文件来补字段。
+
+本机路径含apostrophe时，先在同一PowerShellcall创建未占用盘符alias、切至alias根再启动Node/npm/helper，finally回真实root并删除自己的alias；不能先import C:helper再cd。无apostrophe checkout可直接运行npm QA。[完整可执行Windows例子](collection-capability-acceptance.md#windows-checkout-path-containing-an-apostrophe)同时保留已占盘符拒绝和检查失败退出。
 
 ### 后续获授权时的回退约束
 

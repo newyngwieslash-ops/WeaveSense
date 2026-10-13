@@ -9,9 +9,9 @@
 | YouTube字幕 C01/C02 | 固定工具/协议、私有JSON3、CAS/尾段、Linux10/隔离、nativePG/privateMinIO/dev+builtUI | 实际业务视频/字幕时间轴、extractor主机完整性；feature/profile关闭 |
 | GitHub发布 C03 | 现有RSS链路、3停用清单、44合成调用及有限观察器 | 72h0小时、真实ID/后续新发布/费用未知；不是GitHub搜索 |
 | 动态网页 C04 | 条件说明经评审；waiting_for_verified_js_gap | 未证明JS缺口，未触发浏览器比较/安装 |
-| 统一交付 R01 | 稳定QA路径、常用Node检查与可选Python/Docker入口 | 最新统一门禁结果见验收记录；生产发布/72h未执行 |
+| 统一交付 R01 | 稳定QA路径；545主测试/117gateway/types/lint、一次nativePG完整build和devbuilt1280/390真实详情流程通过 | 32lint warnings保留；真实验收/生产发布/72h未完成 |
 
-源码运行证据：应用`42b508d03b9ac6b4769a8a845afd733cca90af41`，worker修复`7e588e62`；已离线验证的本地worker镜像`sha256:3346991de8f9e5292cfc8eccc2b2824795377bc47c3ebc445b8a2f06050e2803`。当前完整迁移清单29项，末项`0030_collection_coverage.sql`；不声称生产已应用该迁移。原有媒体/付费模型/Telegram/备份等PRD条件也不会因本轮实现自动通过。
+R01已验证代码快照：`3530b41c91b58fcb40a8045f509389c0384557a3`（检查在`8bd35fd6`+相同稳定工作区变更启动，提交后未改runtime）。源码运行证据：应用`42b508d03b9ac6b4769a8a845afd733cca90af41`，worker修复`7e588e62`；已离线验证的本地worker镜像`sha256:3346991de8f9e5292cfc8eccc2b2824795377bc47c3ebc445b8a2f06050e2803`。当前完整迁移清单29项，末项`0030_collection_coverage.sql`；不声称生产已应用该迁移。原有媒体/付费模型/Telegram/备份等PRD条件也不会因本轮实现自动通过。
 
 统一入口：[当前验收与真实待办](collection-capability-acceptance.md)、[发布/回退绑定](loom-release-runbook.md)、[字幕试点](subtitle-pilot.md)、[GitHub试点](channel-pilot.md)。未知上游结果/费用保留unknown或null；既有DNS/private防护和微信网关边界保持。
 

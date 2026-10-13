@@ -245,6 +245,34 @@ npm run qa:collection:articles -- --native-fence
 npm run qa:collection:subtitles
 ```
 
+### Windows checkout path containing an apostrophe
+
+The npm QA entries above run directly from a checkout without an apostrophe in its path. This machine's current checkout contains one; the installed TanStack build dependency cannot quote that path. Use an unused drive alias within the **same PowerShell call**, change directory before launching any Node/npm/helper, and remove only the alias created here in finally. Do not import a helper from C: and then change directory: its ROOT would already be bound to the original path. If W: is occupied, choose another unused drive letter; never replace an existing mapping.
+
+```powershell
+$r01RealRoot = "C:\Users\yi'da'dui\.codex\worktrees\collection-capability\WeaveSense"
+$r01Drive = 'W' # Set another unused letter if W: is occupied.
+$r01Alias = $r01Drive + ':'
+$r01RealRoot = (Resolve-Path -LiteralPath $r01RealRoot).Path
+if (Get-PSDrive -Name $r01Drive -ErrorAction SilentlyContinue) { throw 'QA drive is already occupied' }
+subst $r01Alias $r01RealRoot
+if ($LASTEXITCODE -ne 0) { throw 'QA drive alias creation failed' }
+try {
+  Set-Location -LiteralPath ($r01Alias + '\')
+  # Choose ONE entry; both retain their full default checks.
+  $r01QaEntry = 'qa:collection:articles' # Or qa:collection:subtitles.
+  npm run $r01QaEntry -- --skip-timeouts
+  if ($LASTEXITCODE -ne 0) { throw 'QA failed; retain its report' }
+} finally {
+  Set-Location -LiteralPath $r01RealRoot
+  subst $r01Alias /d
+  if ($LASTEXITCODE -ne 0) { throw 'Owned QA alias removal failed' }
+}
+```
+
+This example deliberately selects the relocation check with timeouts_skipped; omit --skip-timeouts only when the full real deadline check is required. No user service is restarted, cached Docker images are required, and helper subprocess environments remain allowlisted. The final QA used the same-call W: approach and verified W: removed after cleanup.
+
+
 The default article QA retains its real20s deadline and optional native two-process schedule; subtitle QA retains the real50s client case. For relocation-only final detail flows, explicit `--skip-timeouts` retains read/cache/adopt/restore/CAS/private-storage checks while omitting unchanged20/50s delays. Verdicts record `timeouts_skipped:true` and the original runtime SHA/evidence; omitted cases do not count as a fresh deadline pass. Final QA can share one actual build/migration helper and separate fixture/object state. Earlier unchanged worker isolation/native schedules need not repeat merely to quote them.
 
 C01 stdlib self-check (also replays ten fixtures) and optional C02 Python units use a supplied supported interpreter; they are separate documented commands, not global prerequisites for npm test:
@@ -257,4 +285,31 @@ npm run test:subtitles:isolation -- <existing-local-report-directory>/isolation.
 
 Replace the Python placeholders with real executable paths: Python >=3.10 for C01, Python3.12 for C02 units. Local Windows units may skip Linux process/file-limit checks and cannot replace the optional Docker Linux proof. The Docker script uses only disposable resources and the local `weavesense-subtitle:2026.08.19` image; bind its inspected ID to the reviewed image above. No image install/pull, service activation, real subtitle/feed read or endurance observer is part of these default checks. Missing optional prerequisite is reported unmet, never a silent success.
 
-**Final R01 gates, in progress:** actual npm test exited0 (293315ms), gateway:test exited0 with117 passed/0fail/0skip, and typecheck exited0. New collection stage ran24 typed tests, portable2 tests, article bookkeeping self-check and C03 self-check44 synthetic calls/0realHTTP. First full lint failed with364 errors/38warnings solely while traversing generated ignored task/tool scratch; its raw failure is retained. The authorized fix ignores only .superpowers/sdd/**, keeping stable validation/collection and all real source checked; full lint rerun is pending. Actual native-PG npm build/ledger and selected dev+built desktop/mobile detail verdicts remain pending. Command logs/exits: .superpowers/sdd/2026-10-13-collection-capability-roadmap/scratch/r01-final-9b8dc68d-9375-44b1-951e-0f74767a70d3/{gates.json,test.log,gateway-test.log,typecheck.log,lint.log}. Historical results above are not substitutes. Deployment/source archive/production image and production72h remain not_done/not_started.
+### Final R01 actual results and source binding
+
+The source-stable working tree was tested on launch base `8bd35fd62bd387b2af503d24e581550d31aadc76` plus the R01 working delta, then committed unchanged for runtime/package/helpers as `3530b41c91b58fcb40a8045f509389c0384557a3`. Build/check launch occurred before that commit; this is explicit provenance, not a claim that launch HEAD already was3530b41c. Final documentation follows separately, without repeating unchanged runtime checks.
+
+| Actual gate | Exit / evidence |
+| --- | --- |
+| npm test | 0;545/545 Node tests across8 stages,0fail/0skip,293.315s; includes new typed24/portable2 and article20-reference bookkeeping/C03 synthetic44 self-checks |
+| gateway:test | 0;117/117,0fail/0skip,4.329s |
+| typecheck | 0;no diagnostics,15.492s |
+| full lint first run | 1;364errors38warnings in generated ignored task/tool scratch; original failure retained |
+| full lint after .superpowers/sdd-only boundary fix | 0;0errors32warnings,7.656s; stable validation/collection and actual source remain checked |
+| actual npm build on initially empty native PostgreSQL | 0;build ran db:migrate and applied exactly29 real migration files through0030, full name ledger verified |
+| selected portable dev/built article+subtitle detail checks | 0;1280×844 and390×844 each mode, strict real serverFns/SQL/CAS/material triggers/private storage, console/page errors[], no horizontal overflow; combined gate136.608s |
+
+Exactly one fresh native-PG npm build served both UI families; separate dev/built DBs and private-bucket state preserved isolation. Article read/plain script/2066-character wrap/cache/adopt with reader off/reload/restore/conflict/refusals and subtitle disabled/manualen/automaticzh-Hans+zh-Hant/no-subtitles/invalidworker/upload failure/repeat+changed digest/conflict/privacy/history/OCR-ASR/no-auto checks passed. Four known-present private JSON3 objects were authenticated-read with exactbytes; actual anonymous access returned403/AccessDenied. Both article and subtitle verdicts record `timeouts_skipped:true`. Previously established20/50s/native schedules/worker isolation were not rerun or counted as new deadline proof; their actual SHA/evidence stays above.
+
+All four first dev desktop/mobile article/subtitle screenshots were visually inspected together by QA, controller and R01 writer: readable original/candidate distinction, long-token wrap, literal scripts, language controls and preserved history/material. Fullpage mobile screenshots include fixed-navigation stitching; ordinary scrolling remains available. Built matching JSON checks show no behavioral/layout divergence, so no redundant built screenshot reread was needed.
+
+Retained evidence paths from repository/worktree root:
+
+- Command exits/logs: `.superpowers/sdd/2026-10-13-collection-capability-roadmap/scratch/r01-final-9b8dc68d-9375-44b1-951e-0f74767a70d3/{gates.json,test.log,gateway-test.log,typecheck.log,lint.log}`.
+- Final lint/combined gate: `.superpowers/sdd/2026-10-13-collection-capability-roadmap/scratch/r01-final-ui-gate/{gates.json,lint-after-boundary.log,combined-real-build-ui.log}`; full narrative `scratch/r01-final-execution-report.md`.
+- Actual native build/ledger: `artifacts/collection-capability/ui/loom-b03-qa-5d8de3eb-fc9a-497f-adcb-52b9893b179d/{postgres-build.json,real-npm-build.log}`.
+- Combined process/cleanup/MinIO report: `artifacts/collection-capability/ui/r01-final-adb6735f-1808-45f3-be75-73ff3cc13a81/runner.json`, per-mode SQLIPC/network/logs.
+- Article JSON/screenshots: `screenshots/readiness-r01-final-adb6735f-1808-45f3-be75-73ff3cc13a81-{dev,built}-result.json` and matching candidate/adopted/restored/conflict/failed PNGs.
+- Subtitle JSON/screenshots: `screenshots/r01-final-adb6735f-1808-45f3-be75-73ff3cc13a81/{dev,built}-result.json` and manual/automatic/invalid/conflict PNGs.
+
+Every owned process/listener/container was removed and targeted absence verified; apps stopped before PG/MinIO removal, and temporary W: removed. Forced app exit1 after assertions is cleanup status, not a failed UI command. No user8080/8182 service, production DB/.env/Fenv/container Env or paid/public observer was touched. The current full suite is green; historical failed A results and initial R01 lint failure remain evidence rather than current blockers. Live/public quality, duration, fees, production deployment/archive/rollback image and production72h remain pending/unknown/not_started.
