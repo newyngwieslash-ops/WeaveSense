@@ -218,3 +218,57 @@ test("identical text still revises confirmed completeness once per action and ca
   assert.equal(restored.materialVersion, 3); assert.equal((await f.row()).body, body);
   assert.equal((await f.row()).extra.body_complete, false);
 });
+
+for (const otherLease of [false, true]) test(`delayed initial read reuses a candidate ${otherLease ? "while another process still owns its lease" : "another preview finished before admission"}`, async t => {
+  const f = await setup(t); let release!: () => void; let read!: () => void; let delayed = false; let calls = 0;
+  const captured = new Promise<void>(resolve => { read = resolve; });
+  const waiting = new Promise<void>(resolve => { release = resolve; });
+  const sql: Queryable = { async query<R>(text: string, params: unknown[] = []): Promise<R[]> {
+    const rows = await f.sql.query<R>(text, params);
+    if (!delayed && text.startsWith("select * from items")) {
+      delayed = true; read(); await waiting;
+    }
+    return rows;
+  } };
+  const delayedPreview = previewArticleWith({ sql, itemId: "item-1", io: fixtureIo("迟到候选不可覆盖", async () => { calls++; }) });
+  await captured;
+  let first;
+  try {
+    first = await previewArticleWith({ sql: f.sql, itemId: "item-1", io: fixtureIo("正在确认的候选", async () => { calls++; }) });
+    if (otherLease) {
+      // Database state of an independent process between candidate persistence and its token-fenced release.
+      await f.sql.query(`update items set extra=extra || $1::jsonb where id='item-1'`,
+        [JSON.stringify({ article_claim_token: "other-process", article_claimed_at: new Date().toISOString() })]);
+    }
+  } finally { release(); }
+  const resumed = await delayedPreview;
+  assert.equal(calls, 1, "stale initial snapshot must not authorize a duplicate reader request");
+  assert.equal(first.cached, false); assert.equal(resumed.cached, true);
+  assert.equal(resumed.digest, first.digest); assert.equal(resumed.materialVersion, first.materialVersion);
+  assert.equal((await f.row()).extra.article_digest, first.digest);
+  assert.equal((await f.row()).extra.article_claim_token, otherLease ? "other-process" : undefined);
+});
+
+test("delayed initial read distinguishes changed material, URL and completeness from cache admission", async t => {
+  const f = await setup(t); let calls = 0;
+  for (const [statement, code] of [
+    ["update items set body=body||'修订正文' where id='item-1'", "article_conflict"],
+    ["update items set url='https://example.org/new-url' where id='item-1'", "article_conflict"],
+    ["update items set extra=extra||'{\"body_complete\":true}'::jsonb where id='item-1'", "article_already_complete"],
+  ]) {
+    let release!: () => void; let read!: () => void; let delayed = false;
+    const captured = new Promise<void>(resolve => { read = resolve; });
+    const waiting = new Promise<void>(resolve => { release = resolve; });
+    const sql: Queryable = { async query<R>(text: string, params: unknown[] = []): Promise<R[]> {
+      const rows = await f.sql.query<R>(text, params);
+      if (!delayed && text.startsWith("select * from items")) { delayed = true; read(); await waiting; }
+      return rows;
+    } };
+    const pending = previewArticleWith({ sql, itemId: "item-1", io: fixtureIo(undefined, async () => { calls++; }) });
+    await captured;
+    try { await f.sql.query(statement); } finally { release(); }
+    await assert.rejects(pending, new RegExp(code));
+  }
+  assert.equal(calls, 0); assert.equal((await f.row()).extra.article_candidate, undefined);
+  assert.equal((await f.row()).extra.article_claim_token, undefined);
+});

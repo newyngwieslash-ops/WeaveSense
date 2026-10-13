@@ -77,9 +77,25 @@ async function itemRow(sql: Queryable, itemId: string, lock = false): Promise<Re
 function safeReaderError(error: unknown): string {
   const code = error instanceof Error ? error.message : "";
   if (["article_busy", "article_conflict", "article_target_not_allowed", "article_wechat_gateway_required",
-    "article_invalid_response", "article_invalid_body", "article_access_challenge"].includes(code)) return code;
+    "article_invalid_response", "article_invalid_body", "article_access_challenge", "article_disabled",
+    "article_unsupported", "article_already_complete", "article_not_found"].includes(code)) return code;
   if (error instanceof Error && ["AbortError", "TimeoutError"].includes(error.name)) return "article_timeout";
   return "article_read_failed";
+}
+
+function cachedArticle(row: Record<string, unknown>, itemId: string, version: number): ArticlePreview | null {
+  const extra = asJson<Record<string, unknown>>(row.extra, {});
+  const age = Date.now() - Date.parse(String(extra.article_fetched_at ?? ""));
+  // material_version includes item.url, binding this candidate to the original URL even if the reader returns a canonical source URL.
+  if (extra.article_state === "candidate" && extra.article_candidate_version === version && age >= 0 && age < CACHE_MS &&
+    typeof extra.article_candidate === "string" && extra.article_candidate.trim() && Buffer.byteLength(extra.article_candidate) <= MAX_BYTES &&
+    typeof extra.article_digest === "string" && /^[a-f0-9]{64}$/.test(extra.article_digest) &&
+    typeof extra.article_source_url === "string" && extra.article_provider === "jina") {
+    return { itemId, materialVersion: version, cached: true, body: extra.article_candidate,
+      sourceUrl: extra.article_source_url, provider: "jina", fetchedAt: String(extra.article_fetched_at), digest: extra.article_digest,
+      title: String(row.title ?? "") };
+  }
+  return null;
 }
 
 /** Sql/FetchIo are the existing offline seams; public server entry points supply neither from clients. */
@@ -89,28 +105,34 @@ export async function previewArticleWith(opts: { sql: Queryable; itemId: string;
   const version = versionOf(row.material_version);
   const availability = articleAvailability(row as { media_type: unknown; platform: unknown; url: unknown });
   if (!availability.available) throw new Error(availability.reason);
-  const extra = asJson<Record<string, unknown>>(row.extra, {});
-  if (extra.body_complete === true) throw new Error("article_already_complete");
-  const age = Date.now() - Date.parse(String(extra.article_fetched_at ?? ""));
-  // material_version includes item.url, binding this candidate to the original URL even if the reader returns a canonical source URL.
-  if (extra.article_state === "candidate" && extra.article_candidate_version === version && age >= 0 && age < CACHE_MS &&
-    typeof extra.article_candidate === "string" && extra.article_candidate.trim() && Buffer.byteLength(extra.article_candidate) <= MAX_BYTES &&
-    typeof extra.article_digest === "string" && /^[a-f0-9]{64}$/.test(extra.article_digest) &&
-    typeof extra.article_source_url === "string" && extra.article_provider === "jina") {
-    return { itemId: opts.itemId, materialVersion: version, cached: true, body: extra.article_candidate,
-      sourceUrl: extra.article_source_url, provider: "jina", fetchedAt: String(extra.article_fetched_at), digest: extra.article_digest,
-      title: String(row.title ?? "") };
-  }
+  const cached = cachedArticle(row, opts.itemId, version);
+  if (cached) return cached;
   if (admission.__articleReaderInFlight__) throw new Error("article_busy");
   admission.__articleReaderInFlight__ = true;
   const token = randomUUID();
   try {
-    const claimed = await opts.sql.query(`update items set extra=extra || $3::jsonb
+    const [claimed] = await opts.sql.query<Record<string, unknown>>(`update items set extra=extra || $3::jsonb
       where id=$1 and material_version=$2 and coalesce(extra->>'body_complete','false') <> 'true'
         and (extra->>'article_claim_token' is null or (extra->>'article_claimed_at')::timestamptz < now()-interval '60 seconds')
-      returning id`, [opts.itemId, version, JSON.stringify({ article_claim_token: token, article_claimed_at: new Date().toISOString() })]);
-    if (!claimed.length) throw new Error("article_busy");
-    const candidate = await readArticle(String(row.url), { allowedHosts: allowedHosts(), io: opts.io });
+      returning *`, [opts.itemId, version, JSON.stringify({ article_claim_token: token, article_claimed_at: new Date().toISOString() })]);
+    if (!claimed) {
+      // Another process may have saved/released a candidate since the initial read; inspect current state before fetching.
+      const current = await itemRow(opts.sql, opts.itemId);
+      const currentVersion = versionOf(current.material_version);
+      if (currentVersion !== version || current.url !== row.url) throw new Error("article_conflict");
+      const currentAvailability = articleAvailability(current as { media_type: unknown; platform: unknown; url: unknown });
+      if (!currentAvailability.available) throw new Error(currentAvailability.reason);
+      const currentCached = cachedArticle(current, opts.itemId, currentVersion);
+      if (currentCached) return currentCached;
+      throw new Error("article_busy");
+    }
+    // The atomic claim returns current cache state, while its token fences other processes' candidate writes.
+    if (versionOf(claimed.material_version) !== version || claimed.url !== row.url) throw new Error("article_conflict");
+    const claimedAvailability = articleAvailability(claimed as { media_type: unknown; platform: unknown; url: unknown });
+    if (!claimedAvailability.available) throw new Error(claimedAvailability.reason);
+    const claimedCached = cachedArticle(claimed, opts.itemId, version);
+    if (claimedCached) return claimedCached;
+    const candidate = await readArticle(String(claimed.url), { allowedHosts: allowedHosts(), io: opts.io });
     const saved = await opts.sql.query(`update items set extra=(extra - 'article_error') || $4::jsonb
       where id=$1 and material_version=$2 and extra->>'article_claim_token'=$3 and url=$5
         and coalesce(extra->>'body_complete','false') <> 'true'
