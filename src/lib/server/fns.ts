@@ -18,6 +18,10 @@ import { isPlatform, type PlatformId } from "@/lib/platforms";
 import { shortId } from "@/lib/utils";
 import { importWechatSources, previewWechatImport } from "./wechat-import";
 import { createProductionWechatGatewayClient } from "./wechat-gateway-client";
+import { articleAdoptInput, articlePreviewInput, articleRestoreInput, articleErrorCopy } from "../article-contract";
+import { adoptArticle, articleAvailability, previewArticle, restoreArticle } from "./article-enrichment";
+import { materialFingerprint } from "./agent-context";
+import { mapAgentItem } from "./agent-retrieval";
 
 const MAX_WECHAT_IMPORT_BYTES = 1024 * 1024;
 
@@ -365,9 +369,9 @@ export const getItemFn = createServerFn({ method: "GET" })
        where i.id = $1`,
       [data.id],
     );
-    if (!row) return { item: null, analysis: null, media: [], extracts: [] };
+    if (!row) return { item: null, analysis: null, media: [], extracts: [], articleReader: { available: false, reason: "" }, analysisStale: false };
     const [analysis] = await sql.query<Record<string, unknown>>(
-      `select a.*, r.response_json
+      `select a.*, r.response_json, r.material_hash as run_material_hash
        from analyses a
        left join ai_runs r on r.id = a.run_id
        where a.item_id = $1
@@ -394,11 +398,46 @@ export const getItemFn = createServerFn({ method: "GET" })
       extracts = [];
     }
     return {
-      item: mapItem(row),
+      item: mapItem(row, { articleDetail: true }),
       analysis: analysis ? mapAnalysis(analysis) : null,
+      analysisStale: Boolean(analysis && analysis.run_material_hash !== materialFingerprint(mapAgentItem(row))),
+      articleReader: articleAvailability({ media_type: row.media_type, platform: row.platform, url: row.url, extra: row.extra }),
       media,
       extracts,
     };
+  });
+
+export const previewArticleFn = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const parsed = articlePreviewInput.safeParse(input);
+    if (!parsed.success) throw new Error(articleErrorCopy("article_invalid_input"));
+    return parsed.data;
+  })
+  .handler(async ({ data }) => {
+    try { await previewArticle(data.id); return { ok: true }; }
+    catch (error) { return { ok: false, error: articleErrorCopy(error instanceof Error ? error.message : undefined) }; }
+  });
+
+export const adoptArticleFn = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const parsed = articleAdoptInput.safeParse(input);
+    if (!parsed.success) throw new Error(articleErrorCopy("article_invalid_input"));
+    return parsed.data;
+  })
+  .handler(async ({ data }) => {
+    try { await adoptArticle(data.id, data.digest, data.material_version); return { ok: true }; }
+    catch (error) { return { ok: false, error: articleErrorCopy(error instanceof Error ? error.message : undefined) }; }
+  });
+
+export const restoreArticleFn = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const parsed = articleRestoreInput.safeParse(input);
+    if (!parsed.success) throw new Error(articleErrorCopy("article_invalid_input"));
+    return parsed.data;
+  })
+  .handler(async ({ data }) => {
+    try { await restoreArticle(data.id, data.material_version); return { ok: true }; }
+    catch (error) { return { ok: false, error: articleErrorCopy(error instanceof Error ? error.message : undefined) }; }
   });
 
 export const listJobsFn = createServerFn({ method: "GET" }).handler(async () => {

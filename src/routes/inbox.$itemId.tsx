@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { ArrowLeft, ExternalLink, Sparkles } from "lucide-react";
 import { coverageCopy, errorCopy, retryOrFreshRequestId } from "@/lib/agent-request";
@@ -8,7 +8,8 @@ import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PlatformChip } from "@/components/platform-chip";
-import { analyzeItemFn, extractItemFn, getItemFn } from "@/lib/server/fns";
+import { analyzeItemFn, extractItemFn, getItemFn, previewArticleFn, adoptArticleFn, restoreArticleFn } from "@/lib/server/fns";
+import { articleErrorCopy } from "@/lib/article-contract";
 import { MEDIA_TYPE_LABEL, type MediaType } from "@/lib/platforms";
 import { formatCount, formatDateTime } from "@/lib/format";
 import { isPlatform } from "@/lib/platforms";
@@ -57,6 +58,59 @@ function ItemPage() {
   const analysis = detail.data?.analysis;
   const media = detail.data?.media ?? [];
   const extracts = detail.data?.extracts ?? [];
+  const readerAvailable = detail.data?.articleReader.available ?? false;
+  const readerReason = detail.data?.articleReader.reason ?? "";
+  const articleState = item?.extra.article_state;
+  const candidate = typeof item?.extra.article_candidate === "string" ? item.extra.article_candidate : "";
+  const digest = typeof item?.extra.article_digest === "string" ? item.extra.article_digest : "";
+  const version = item?.material_version;
+  const versionValid = typeof version === "number" && Number.isSafeInteger(version) && version >= 0;
+  const candidateStale = articleState === "candidate" && item?.extra.article_candidate_version !== version;
+  const [articleNotice, setArticleNotice] = useState({ itemId: "", message: "" });
+  const reportArticle = (result: { ok: boolean; error?: string }, success: string) => {
+    const message = result.ok ? success : result.error ?? articleErrorCopy(undefined);
+    setArticleNotice({ itemId, message });
+    if (result.ok) toast.success(message);
+    else toast.error(message);
+  };
+  const refreshArticle = async () => {
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ["item", itemId] }),
+      qc.invalidateQueries({ queryKey: ["inbox"] }),
+      qc.invalidateQueries({ queryKey: ["overview"] }),
+    ]);
+  };
+  const preview = useMutation({
+    mutationFn: () => previewArticleFn({ data: { id: itemId } }),
+    onMutate: () => setArticleNotice({ itemId, message: "" }),
+    onSuccess: (r) => reportArticle(r, "候选正文已就绪，请核对后采用"),
+    onError: () => reportArticle({ ok: false }, ""),
+    onSettled: refreshArticle,
+  });
+  const adopt = useMutation({
+    mutationFn: () => adoptArticleFn({ data: { id: itemId, digest, material_version: version! } }),
+    onMutate: () => setArticleNotice({ itemId, message: "" }),
+    onSuccess: (r) => reportArticle(r, "已采用正文"),
+    onError: () => reportArticle({ ok: false }, ""),
+    onSettled: refreshArticle,
+  });
+  const restore = useMutation({
+    mutationFn: () => restoreArticleFn({ data: { id: itemId, material_version: version! } }),
+    onMutate: () => setArticleNotice({ itemId, message: "" }),
+    onSuccess: (r) => reportArticle(r, "已恢复此前正文"),
+    onError: () => reportArticle({ ok: false }, ""),
+    onSettled: refreshArticle,
+  });
+  const articlePending = preview.isPending || adopt.isPending || restore.isPending;
+  const articleStatus = preview.isPending ? "读取中…" : adopt.isPending ? "采用中…" : restore.isPending ? "恢复中…"
+    : candidateStale ? articleErrorCopy("article_conflict")
+    : articleNotice.itemId === itemId && articleNotice.message ? articleNotice.message
+    : articleState === "adopted" ? "已采用正文，可恢复此前正文"
+    : articleState === "restored" ? "已恢复此前正文"
+    : articleState === "candidate" ? "候选正文已就绪，请核对后采用"
+    : articleState === "error" ? articleErrorCopy(item?.extra.article_error)
+    : !readerAvailable ? articleErrorCopy(readerReason)
+    : "读取后先核对候选正文，采用后才会更新当前内容。";
 
   return (
     <AppShell
@@ -116,7 +170,7 @@ function ItemPage() {
                 referrerPolicy="no-referrer"
               />
             ) : null}
-            <div className="mt-5 whitespace-pre-wrap text-sm leading-relaxed text-fg/90">{item.body}</div>
+            <div data-testid="item-body" className="mt-5 whitespace-pre-wrap text-sm leading-relaxed text-fg/90">{item.body}</div>
             {item.url ? (
               <a
                 href={item.url}
@@ -128,12 +182,45 @@ function ItemPage() {
                 <ExternalLink className="size-3.5" />
               </a>
             ) : null}
+            <section className="mt-6 min-w-0 border-t border-border pt-5" aria-labelledby="article-reader-heading">
+              <h3 id="article-reader-heading" className="font-display text-lg">原文读取</h3>
+              <p data-testid="article-status" role="status" aria-live="polite" className="mt-2 text-sm text-muted">{articleStatus}</p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button data-testid="article-read-button" variant="outline" aria-busy={preview.isPending}
+                  disabled={articlePending || !readerAvailable} onClick={() => preview.mutate()}>
+                  {preview.isPending ? "读取中…" : "读取原文"}
+                </Button>
+                {articleState === "adopted" ? (
+                  <Button data-testid="article-restore-button" variant="outline" disabled={articlePending || !versionValid}
+                    onClick={() => restore.mutate()}>{restore.isPending ? "恢复中…" : "恢复此前正文"}</Button>
+                ) : null}
+              </div>
+              {articleState === "candidate" && candidate ? (
+                <section data-testid="article-candidate" aria-labelledby="article-candidate-heading" className="mt-5 min-w-0 rounded-md bg-raised p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 id="article-candidate-heading" className="font-display text-lg">正文候选</h4>
+                    <Badge tone={candidateStale ? "warn" : "live"}>{candidateStale ? "需重新读取" : "待核对"}</Badge>
+                  </div>
+                  <p className="mt-2 text-xs text-muted">读取时间：{formatDateTime(typeof item.extra.article_fetched_at === "string" ? item.extra.article_fetched_at : null)}</p>
+                  {typeof item.extra.article_source_url === "string" && /^https:\/\//i.test(item.extra.article_source_url) ? (
+                    <a href={item.extra.article_source_url} target="_blank" rel="noreferrer"
+                      className="mt-2 block break-words text-sm text-muted hover:text-fg">候选来源：{item.extra.article_source_url}</a>
+                  ) : null}
+                  <div data-testid="article-candidate-text" className="mt-4 whitespace-pre-wrap text-sm leading-relaxed">{candidate}</div>
+                  <Button data-testid="article-adopt-button" className="mt-4" disabled={articlePending || !versionValid || candidateStale || !/^[a-f0-9]{64}$/.test(digest)}
+                    onClick={() => adopt.mutate()}>{adopt.isPending ? "采用中…" : "采用正文"}</Button>
+                </section>
+              ) : null}
+            </section>
           </article>
           <aside className="min-w-0 space-y-4 lg:col-span-2">
             <div className="rounded-lg bg-surface p-5 shadow-[var(--shadow-border)]">
               <h3 className="font-display text-lg">知识层</h3>
               {analysis ? (
                 <div className="mt-3 space-y-3 text-sm">
+                  {detail.data?.analysisStale ? (
+                    <p data-testid="analysis-stale" className="text-sm text-warn">正文已更新，以下为此前材料的分析；可手动重新分析。</p>
+                  ) : null}
                   <p className="text-xs text-muted">{coverageCopy(analysis.coverage)}</p>
                   {analysis.warnings?.length ? (
                     <p className="text-xs text-muted">{analysis.warnings.join(" · ")}</p>

@@ -18,10 +18,11 @@
  */
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import net from "node:net";
 import pg from "pg";
+import { offlineEnv } from "./readiness-offline.mjs";
 
 const PASSWORD = "review-only-local";
 const DB = "review";
@@ -45,7 +46,7 @@ function freePort() {
 }
 
 function docker(args) {
-  const result = spawnSync("docker", args, { encoding: "utf8", windowsHide: true, timeout: 600_000 });
+  const result = spawnSync("docker", args, { env: offlineEnv(process.env), encoding: "utf8", windowsHide: true, timeout: 600_000 });
   if (result.status !== 0) throw new Error(`docker ${args[0]} failed: ${(result.stderr || "").slice(-500)}`);
   return result.stdout.trim();
 }
@@ -113,6 +114,9 @@ function fixtures(longBody) {
 
 async function main() {
   try {
+  assert.ok(!readdirSync(".").some(name => /^\.env(?:\.|$)/.test(name)), "offline UI checks refuse root dotenv files");
+  const modelConfig = resolve(`artifacts/readiness-ui-unused-${runId}.local.json`);
+  assert.ok(!existsSync(modelConfig), "offline model config must not exist");
   const pgPort = await freePort();
   const appPort = await freePort();
   const builtPort = await freePort();
@@ -135,7 +139,7 @@ async function main() {
 
   // Migrations: the real files, in order.
   await client.query("create table if not exists _migrations (name text primary key, applied_at timestamptz not null default now())");
-  const { readdirSync, readFileSync } = await import("node:fs");
+  const { readFileSync } = await import("node:fs");
   const migrations = readdirSync("migrations").filter((n) => /^\d+.*\.sql$/.test(n)).sort();
   for (const file of migrations) {
     await client.query("begin");
@@ -154,18 +158,22 @@ async function main() {
   report.fixtures = "inserted";
 
   const databaseUrl = `postgresql://postgres:${PASSWORD}@127.0.0.1:${pgPort}/${DB}`;
-  const env = {
-    ...process.env,
+  const env = offlineEnv(process.env, {
     DATABASE_URL: databaseUrl,
     AI_ENGINE: "legacy",
     AUTO_ANALYZE: "false",
     EXTRACT_AUTO: "false",
     AGENT_ASYNC_RESEARCH_ENABLED: "false",
     AGENT_WORKER_ENABLED: "false",
-    LOOM_MODEL_CONFIG: resolve("artifacts/readiness-ui-unused.local.json"),
+    AGENT_OPENCODE_WORKER_ENABLED: "false",
+    AGENT_ASSISTANT_ENABLED: "false",
+    AGENT_ASSISTANT_ACTIONS_ENABLED: "false",
+    ARTICLE_READER_ENABLED: "false",
+    ARTICLE_READER_ALLOWED_HOSTS: "",
+    LOOM_MODEL_CONFIG: modelConfig,
     XAI_API_KEY: "",
     VITE_AUTH_ENABLED: "false",
-  };
+  });
 
   const npm = (script, port) => {
     const child = spawn("cmd.exe", ["/d", "/s", "/c", `npm run ${script} -- --host 127.0.0.1 --port ${port} --strictPort`],
@@ -179,7 +187,7 @@ async function main() {
 
   const stop = (child) => {
     if (!child || child.exitCode !== null) return;
-    spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
+    spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { env: offlineEnv(process.env), windowsHide: true, stdio: "ignore" });
   };
 
   const dev = npm("dev", appPort);
@@ -189,7 +197,7 @@ async function main() {
   // ---- dev checks
   const devRun = spawnSync(process.execPath,
     ["scripts/readiness-ui.mjs", `http://127.0.0.1:${appPort}`, "dev"],
-    { encoding: "utf8", windowsHide: true, timeout: 900_000, env: { ...process.env } });
+    { encoding: "utf8", windowsHide: true, timeout: 900_000, env: offlineEnv(process.env) });
   report.checks.push({ mode: "dev", exit: devRun.status, stdout: devRun.stdout?.slice(-1200), stderr: devRun.stderr?.slice(-1200) });
   stop(dev.child);
   assert.equal(devRun.status, 0, `dev UI checks failed: ${devRun.stderr?.slice(-800)}`);
@@ -205,7 +213,7 @@ async function main() {
   report.built = { port: builtPort };
   const builtRun = spawnSync(process.execPath,
     ["scripts/readiness-ui.mjs", `http://127.0.0.1:${builtPort}`, "built"],
-    { encoding: "utf8", windowsHide: true, timeout: 900_000, env: { ...process.env } });
+    { encoding: "utf8", windowsHide: true, timeout: 900_000, env: offlineEnv(process.env) });
   report.checks.push({ mode: "built", exit: builtRun.status, stdout: builtRun.stdout?.slice(-1200), stderr: builtRun.stderr?.slice(-1200) });
   stop(built.child);
   assert.equal(builtRun.status, 0, `built UI checks failed: ${builtRun.stderr?.slice(-800)}`);
