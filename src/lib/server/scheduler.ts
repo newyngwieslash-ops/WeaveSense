@@ -300,17 +300,17 @@ export async function runSourceJob(
       }
     }
 
-    // T10: the cursor may only advance to a boundary the fetch actually proved
-    // it reached. A batch that stopped at its page cap (or is inherently a
-    // limited window) reports `complete: false`; advancing then would skip
-    // everything between the old cursor and this page, permanently and silently.
+    // Windows advance a discovery watermark for next scan's overlap check;
+    // paged history must prove its boundary before advancing. Legacy collectors
+    // without coverage keep their increment behavior but record coverage unknown.
     const coverage = collected.coverage;
-    const cursorSafe = coverage === undefined ? true : coverage.complete;
+    const cursorSafe = coverage === undefined || coverage.window_only === true || coverage.complete;
     const previousCursor = source.last_external_id ?? "";
     let nextCursor = previousCursor;
     if (cursorSafe) {
       const latest = pickCursor(fetched);
-      if (latest && canAdvanceCursor(previousCursor, latest.external_id)) {
+      if (latest && ((coverage?.window_only === true && !isNumericId(latest.external_id))
+        || canAdvanceCursor(previousCursor, latest.external_id))) {
         nextCursor = latest.external_id;
       }
     }
@@ -326,7 +326,7 @@ export async function runSourceJob(
       await finishSourceJob(sql, jobId, "error", SCHEDULER_LEASE_LOST, 0, 0, meta);
       return { items_found: 0, items_new: 0, error: SCHEDULER_LEASE_LOST };
     }
-    await finishSourceJob(sql, jobId, "ok", "", fetched.length, itemsNew, meta);
+    await finishSourceJob(sql, jobId, "ok", "", fetched.length, itemsNew, meta, coverage);
     return { items_found: fetched.length, items_new: itemsNew, error: "" };
   } catch (err) {
     const failedMeta = collectorMeta(err);

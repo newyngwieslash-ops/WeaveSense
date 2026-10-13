@@ -104,6 +104,9 @@ export function mapItem(row: Record<string, unknown>): ItemRow {
 export function mapJob(row: Record<string, unknown>): JobRow {
   const provider = String(row.provider ?? "");
   const attempts = asJson<unknown>(row.attempts, []);
+  const rawCoverage = asJson<unknown>(row.coverage, {});
+  const coverage = rawCoverage && typeof rawCoverage === "object" && !Array.isArray(rawCoverage)
+    ? rawCoverage as Record<string, unknown> : {};
   return {
     id: String(row.id),
     source_id: String(row.source_id),
@@ -120,6 +123,11 @@ export function mapJob(row: Record<string, unknown>): JobRow {
       .filter((attempt): attempt is string => typeof attempt === "string")
       .map((attempt) => attempt.slice(0, 80)).slice(0, 8),
     paid_call: asBool(row.paid_call),
+    coverage: {
+      ...(typeof coverage.complete === "boolean" ? { complete: coverage.complete } : {}),
+      ...(typeof coverage.window_only === "boolean" ? { window_only: coverage.window_only } : {}),
+      ...(typeof coverage.note === "string" ? { note: coverage.note } : {}),
+    },
     keyword_id: row.keyword_id ? String(row.keyword_id) : "",
     source_name: row.source_name ? String(row.source_name) : undefined,
   };

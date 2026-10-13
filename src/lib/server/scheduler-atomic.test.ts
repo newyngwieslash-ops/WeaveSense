@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
-import { tagCorpusWithPhrase } from "./scheduler-atomic.ts";
+import { readFile } from "node:fs/promises";
+import { tagCorpusWithPhrase, finishSourceJob } from "./scheduler-atomic.ts";
 
 /**
  * T07: historical keyword tagging must cover the WHOLE corpus, repeatedly and
@@ -187,4 +188,26 @@ test("empty or invalid phrases are refused at the boundary", async () => {
     );
   }
   await pg.close();
+});
+
+test("coverage migration preserves legacy rows and finishSourceJob writes parameterized JSON", async () => {
+  const pg = new PGlite();
+  await pg.waitReady;
+  try {
+    await pg.exec(`create table jobs (id text primary key, status text, finished_at timestamptz,
+      error text, items_found integer, items_new integer, provider text, attempts jsonb, paid_call boolean);
+      insert into jobs (id,status) values ('legacy','ok'),('window','running'),('failed','running')`);
+    const migration = await readFile(new URL("../../../migrations/0030_collection_coverage.sql", import.meta.url), "utf8");
+    await pg.exec(migration);
+    await pg.exec(migration);
+    const sql = { async query<T = Record<string, unknown>>(text: string, params: unknown[] = []) {
+      return (await pg.query<T>(text, params)).rows;
+    } };
+    const meta = { provider: "primary" as const, attempts: ["primary"], paid_call: false };
+    const coverage = { complete: false, window_only: true, note: "window_gap" };
+    await finishSourceJob(sql, "window", "ok", "", 1, 1, meta, coverage);
+    await finishSourceJob(sql, "failed", "error", "failed", 0, 0, meta);
+    assert.deepEqual((await pg.query("select id,coverage from jobs order by id")).rows,
+      [{ id: "failed", coverage: {} }, { id: "legacy", coverage: {} }, { id: "window", coverage }]);
+  } finally { await pg.close(); }
 });

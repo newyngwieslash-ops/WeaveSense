@@ -73,6 +73,7 @@ export type JobRow = {
   provider: "" | "primary" | "dajiala" | "mixed";
   attempts: string[];
   paid_call: boolean;
+  coverage: { complete?: boolean; window_only?: boolean; note?: string };
   keyword_id?: string;
   source_name?: string;
 };

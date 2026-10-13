@@ -26,3 +26,13 @@ test("mapJob isolates jobs whose attempts JSON root is not an array", () => {
     assert.deepEqual(job.attempts, []);
   }
 });
+
+test("mapJob validates optional collection coverage fields and supports old rows", () => {
+  assert.deepEqual(mapJob({ coverage: '{"complete":false,"window_only":true,"note":"window_gap"}' }).coverage,
+    { complete: false, window_only: true, note: "window_gap" });
+  for (const coverage of [undefined, {}, null, [], 1, true, '"bad"', "{broken", { complete: "true", window_only: 1, note: false }]) {
+    assert.deepEqual(mapJob({ coverage }).coverage, {});
+  }
+  assert.deepEqual(mapJob({ coverage: { complete: true, window_only: false, note: "boundary", extra: "discard" } }).coverage,
+    { complete: true, window_only: false, note: "boundary" });
+});

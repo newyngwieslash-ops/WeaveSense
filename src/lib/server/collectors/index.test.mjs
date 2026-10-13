@@ -3,53 +3,40 @@ import path from "node:path";
 import test from "node:test";
 import { createServer } from "vite";
 
-/**
- * The RSS fallback must preserve the paid-gateway attempt metadata.
- *
- * The gateway leg is still stubbed on `globalThis.fetch` (it is an internal
- * service with its own transport). The RSS fallback leg goes through the real
- * outbound policy, so it is driven by the `io` seam: a stub transport supplies
- * the feed and a stub resolver keeps the suite offline. Stubbing only `fetch`
- * would leave the fallback unable to resolve — that is the policy working, not
- * the product failing.
- */
-test("RSS fallback preserves paid gateway attempts in batch metadata", async () => {
+const offlineEnv = {
+  DATABASE_URL: "", NODE_ENV: "test", LOOM_MODEL_CONFIG: path.resolve(".superpowers/nonexistent-offline-model.json"), XAI_API_KEY: "",
+  TELEGRAM_WORKER_URL: "", MINIO_ENDPOINT: "", EXTRACT_AUTO: "false", AUTO_ANALYZE: "false",
+  AGENT_ASYNC_RESEARCH_ENABLED: "false", AGENT_WORKER_ENABLED: "false", AGENT_OPENCODE_WORKER_ENABLED: "false",
+  AGENT_ASSISTANT_ENABLED: "false", AGENT_ASSISTANT_ACTIONS_ENABLED: "false",
+};
+Object.assign(process.env, offlineEnv);
+
+test("gateway failure preserves paid attempts without bypassing to the primary feed", async () => {
   process.env.WECHAT_GATEWAY_URL = "https://gateway.example";
   process.env.WECHAT_GATEWAY_TOKEN = "test-token";
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (input) => String(input).startsWith("https://gateway.example/")
-    ? new Response("gateway failed", { status: 503, headers: {
-      "X-Loom-Provider": "",
-      "X-Loom-Attempts": "primary,dajiala",
-      "X-Loom-Paid-Call": "true",
-    } })
-    : new Response("unexpected direct fetch", { status: 500 });
+  globalThis.fetch = async () => new Response("gateway failed", { status: 503, headers: {
+    "X-Loom-Provider": "dajiala", "X-Loom-Attempts": "primary,dajiala", "X-Loom-Paid-Call": "true",
+  } });
   const vite = await createServer({ configFile: false, logLevel: "silent",
     resolve: { alias: { "@": path.resolve("src") } }, server: { middlewareMode: true } });
   try {
     const { collectSource } = await vite.ssrLoadModule("/src/lib/server/collectors/index.ts");
-
-    // Offline seam for the RSS fallback: a stub resolver plus the feed body.
-    const feed = `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">
-        <title>Fallback</title><entry><id>article-1</id><title>Fallback article</title>
-        <link href="https://mp.weixin.qq.com/s/a"/><updated>2026-08-31T00:00:00Z</updated>
-        <content type="html">body</content></entry></feed>`;
+    let rssCalls = 0;
     const io = {
       resolver: { async lookup() { return [{ address: "93.184.216.34", family: 4 }]; } },
-      transport: async () => ({
-        status: 200,
-        headers: { "content-type": "application/atom+xml" },
-        body: new Response(feed).body,
-      }),
+      transport: async () => { rssCalls += 1; throw new Error("must not bypass gateway"); },
     };
-
-    const result = await collectSource({ id: "wx-source", platform: "wechat", name: "公众号",
+    await assert.rejects(() => collectSource({ id: "wx-source", platform: "wechat", name: "公众号",
       handle: "gh_example", url: "https://mp.weixin.qq.com/s/example",
-      feed_url: "https://fallback.example/feed.atom", adapter: "wechat_gateway",
-      last_external_id: "" }, io);
-    assert.equal(result.items.length, 1);
-    assert.deepEqual(result.meta, { provider: "", attempts: ["primary", "dajiala", "rss"],
-      paid_call: true });
+      feed_url: "https://primary.example/feed.atom", adapter: "wechat_gateway", last_external_id: "" }, io),
+    (error) => {
+      assert.ok(error instanceof Error && "meta" in error);
+      assert.equal(error.message, "wechat_gateway_http_503");
+      assert.deepEqual(error.meta, { provider: "dajiala", attempts: ["primary", "dajiala"], paid_call: true });
+      return true;
+    });
+    assert.equal(rssCalls, 0);
   } finally {
     await vite.close();
     globalThis.fetch = originalFetch;

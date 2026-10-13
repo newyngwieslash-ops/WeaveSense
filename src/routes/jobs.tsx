@@ -37,6 +37,13 @@ function JobsPage() {
                   {job.status}
                 </Badge>
                 {job.paid_call ? <Badge tone="warn">付费</Badge> : null}
+                {job.coverage.window_only ? <Badge tone="warn">有限窗口</Badge> : null}
+                <Badge tone={job.coverage.note === "window_gap" ? "warn" : "muted"}>
+                  {job.coverage.note === "window_gap" ? "窗口未衔接"
+                    : job.coverage.note === "window_overlap" || job.coverage.complete === true ? "已到达上次边界"
+                    : job.coverage.window_only ? job.coverage.note === "empty_window" ? "空窗口" : "首次窗口"
+                    : job.coverage.complete === false ? "未到达上次边界" : "覆盖未知"}
+                </Badge>
               </div>
               <p className="mt-1 font-mono text-xs text-muted">{formatDateTime(job.started_at)}</p>
               <p className="mt-1 break-words text-xs text-muted">

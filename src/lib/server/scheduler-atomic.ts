@@ -1,3 +1,5 @@
+import type { CollectorCoverage } from "./collectors/types.ts";
+
 type Queryable = {
   query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<T[]>;
 };
@@ -139,11 +141,12 @@ export async function finishSourceJob(
   itemsFound: number,
   itemsNew: number,
   meta: { provider: "" | "primary" | "dajiala" | "mixed"; attempts: string[]; paid_call: boolean },
+  coverage?: CollectorCoverage,
 ): Promise<void> {
   await sql.query(`update jobs set status = $2, finished_at = now(), error = $3,
-      items_found = $4, items_new = $5, provider = $6, attempts = $7::jsonb, paid_call = $8
+      items_found = $4, items_new = $5, provider = $6, attempts = $7::jsonb, paid_call = $8, coverage = $9::jsonb
     where id = $1`, [jobId, status, error, itemsFound, itemsNew, meta.provider,
-    JSON.stringify(meta.attempts), meta.paid_call]);
+    JSON.stringify(meta.attempts), meta.paid_call, JSON.stringify(coverage ?? {})]);
 }
 
 export async function mergeExistingItem(sql: Queryable, itemId: string, item: {

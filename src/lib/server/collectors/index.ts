@@ -15,6 +15,12 @@ const batch = (items: NormalizedItem[], adapter: string): CollectorBatch => ({
   items, meta: { provider: "", attempts: [adapter], paid_call: false },
 });
 
+function windowCoverage(items: NormalizedItem[], previous = "") {
+  const note = !items.length ? "empty_window" : !previous ? "initial_window"
+    : items.some((item) => item.external_id === previous) ? "window_overlap" : "window_gap";
+  return { complete: false, window_only: true, note };
+}
+
 // Gateway feed ceiling: generous for a WeChat Atom feed (bodies included), but
 // far below "unbounded". Kept next to the caller it guards.
 const WECHAT_GATEWAY_FEED_MAX_CHARS = 8 * 1024 * 1024;
@@ -62,7 +68,8 @@ const rssAdapter: CollectorAdapter = {
   async fetch(source, io = {}) {
     const url = source.feed_url || source.handle || source.url;
     if (!url.startsWith("http")) throw new Error("需要有效的 RSS / Atom 地址");
-    return batch(await fetchRss(url, source.id, source.platform, io), "rss");
+    const result = batch(await fetchRss(url, source.id, source.platform, io), "rss");
+    return { ...result, coverage: windowCoverage(result.items, source.last_external_id) };
   },
 };
 
@@ -102,7 +109,8 @@ const wechatGatewayAdapter: CollectorAdapter = {
     } catch {
       throw new CollectorBatchError("wechat_gateway_invalid_feed", meta);
     }
-    return { items, meta: { ...meta, provider: meta.provider || providerFromItems(items) } };
+    return { items, meta: { ...meta, provider: meta.provider || providerFromItems(items) },
+      coverage: windowCoverage(items, source.last_external_id) };
   },
 };
 
@@ -110,7 +118,8 @@ const telegramAdapter: CollectorAdapter = {
   id: "telegram_web",
   async fetch(source, io = {}) {
     if (source.feed_url.startsWith("http")) {
-      return batch(await fetchRss(source.feed_url, source.id, "telegram", io), "rss");
+      const result = batch(await fetchRss(source.feed_url, source.id, "telegram", io), "rss");
+      return { ...result, coverage: windowCoverage(result.items, source.last_external_id) };
     }
     const handle = parseTelegramHandle(source.handle) || parseTelegramHandle(source.url);
     if (!handle) throw new Error("请填写频道用户名，或 t.me/用户名 链接");
@@ -132,7 +141,8 @@ const telegramAdapter: CollectorAdapter = {
       }
     }
     try {
-      return batch(await fetchTelegramChannel(handle, io), "t.me/s");
+      const result = batch(await fetchTelegramChannel(handle, io), "t.me/s");
+      return { ...result, coverage: windowCoverage(result.items, source.last_external_id) };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       throw new CollectorBatchError(msg, {
@@ -145,7 +155,8 @@ const telegramAdapter: CollectorAdapter = {
 const youtubeAdapter: CollectorAdapter = {
   id: "youtube",
   async fetch(source, io = {}) {
-    return batch(await fetchRss(youtubeFeedUrl(source), source.id, "youtube", io), "youtube");
+    const result = batch(await fetchRss(youtubeFeedUrl(source), source.id, "youtube", io), "youtube");
+    return { ...result, coverage: windowCoverage(result.items, source.last_external_id) };
   },
 };
 
@@ -202,7 +213,8 @@ const biliAdapter: CollectorAdapter = {
   id: "bilibili",
   async fetch(source, io = {}) {
     if (source.feed_url.startsWith("http")) {
-      return batch(await fetchRss(source.feed_url, source.id, "bilibili", io), "bilibili");
+      const result = batch(await fetchRss(source.feed_url, source.id, "bilibili", io), "bilibili");
+      return { ...result, coverage: windowCoverage(result.items, source.last_external_id) };
     }
     const mid = (source.handle || source.url).replace(/\D/g, "");
     if (!mid) throw new Error("需要 B 站 mid");
@@ -271,7 +283,8 @@ const rsshubAdapter: CollectorAdapter = {
     if (!url.startsWith("http")) {
       throw new Error("该平台需要 RSSHub / WeWe 订阅地址，或等待浏览器采集节点");
     }
-    return batch(await fetchRss(url, source.id, source.platform, io), "rsshub");
+    const result = batch(await fetchRss(url, source.id, source.platform, io), "rsshub");
+    return { ...result, coverage: windowCoverage(result.items, source.last_external_id) };
   },
 };
 
@@ -298,7 +311,7 @@ export async function collectSource(source: SourceRecord, io: FetchIo = {}): Pro
   } catch (err) {
     const failed = collectorMeta(err);
     const attempted = failed.attempts.length ? failed.attempts : [adapter.id];
-    if (source.feed_url.startsWith("http") && adapter.id !== "rss") {
+    if (source.feed_url.startsWith("http") && adapter.id !== "rss" && adapter.id !== "wechat_gateway") {
       const attempts = [...new Set([...attempted, "rss"])];
       try {
         const fallback = await rssAdapter.fetch({ ...source, adapter: "rss" }, io);

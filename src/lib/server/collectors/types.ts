@@ -40,20 +40,21 @@ export type CollectorMeta = {
  * prove it reached the source's previous boundary. Without this, the cursor
  * advanced to the newest item in the page and everything between the old cursor
  * and the page was skipped silently. A batch that stops early must say so, so the
- * caller can refuse to advance the high-water mark.
+ * caller can retain a paged-history cursor or track a window discovery watermark.
  */
 export type CollectorCoverage = {
   /** True when the fetch provably reached the source's previous boundary. */
   complete: boolean;
   /** A bounded window (RSS/网页) can never claim full backfill. */
   window_only?: boolean;
-  /** Non-sensitive explanation, e.g. "page_cap" or "no_previous_cursor". */
+  /** Non-sensitive explanation, e.g. page_cap or initial_window/window_overlap/window_gap/empty_window. */
   note?: string;
 };
 
 export type CollectorBatch = {
   items: NormalizedItem[];
   meta: CollectorMeta;
+  /** Required for new adapters; undefined legacy Telethon results mean unknown coverage. */
   coverage?: CollectorCoverage;
 };
 

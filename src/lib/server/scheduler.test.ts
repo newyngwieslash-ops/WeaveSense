@@ -93,7 +93,8 @@ test("source job completion persists successful and failed provider attempts", a
     id text primary key, status text not null, finished_at timestamptz,
     items_found integer not null default 0, items_new integer not null default 0,
     error text not null default '', provider text not null default '',
-    attempts jsonb not null default '[]'::jsonb, paid_call boolean not null default false
+    attempts jsonb not null default '[]'::jsonb, paid_call boolean not null default false,
+    coverage jsonb not null default '{}'::jsonb
   )`);
   const sql = { async query<T = Record<string, unknown>>(text: string, params: unknown[] = []) {
     return (await pg.query<T>(text, params)).rows;

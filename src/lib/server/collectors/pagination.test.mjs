@@ -62,11 +62,11 @@ function biliPages(allBvids, { pageSize = 20 } = {}) {
 
 /**
  * @typedef {{ external_id: string }} Item
- * @typedef {{ items: Item[]; coverage?: { complete: boolean; note?: string } }} Batch
+ * @typedef {{ items: Item[]; meta: {attempts: string[]}; coverage?: { complete: boolean; window_only?: boolean; note?: string } }} Batch
  * @typedef {(source: Record<string, unknown>, io?: unknown) => Promise<Batch>} CollectSource
  */
 
-/** @param {(collectSource: CollectSource) => Promise<void>} fn */
+/** @param {(collectSource: CollectSource, vite: import("vite").ViteDevServer) => Promise<void>} fn */
 async function withCollector(fn) {
   const vite = await createServer({
     configFile: false,
@@ -76,7 +76,7 @@ async function withCollector(fn) {
   });
   try {
     const mod = await vite.ssrLoadModule("/src/lib/server/collectors/index.ts");
-    await fn(mod.collectSource);
+    await fn(mod.collectSource, vite);
   } finally {
     await vite.close();
   }
@@ -220,4 +220,131 @@ test("an ordinary business error is NOT classified as rate limiting", async () =
     assert.ok(!/rate_limited/.test(String(error.message)),
       "a not-found must not be misreported as throttling");
   });
+});
+
+const offlineEnv = {
+  DATABASE_URL: "", NODE_ENV: "test", LOOM_MODEL_CONFIG: path.resolve(".superpowers/nonexistent-offline-model.json"), XAI_API_KEY: "",
+  TELEGRAM_WORKER_URL: "", MINIO_ENDPOINT: "", EXTRACT_AUTO: "false", AUTO_ANALYZE: "false",
+  AGENT_ASYNC_RESEARCH_ENABLED: "false", AGENT_WORKER_ENABLED: "false", AGENT_OPENCODE_WORKER_ENABLED: "false",
+  AGENT_ASSISTANT_ENABLED: "false", AGENT_ASSISTANT_ACTIONS_ENABLED: "false",
+};
+Object.assign(process.env, offlineEnv);
+
+/** @param {string[]} ids */
+function feedOf(ids) {
+  return `<feed xmlns="http://www.w3.org/2005/Atom"><title>Offline feed</title>${ids.map((id, i) =>
+    `<entry><id>${id}</id><title>Item ${id}</title><link href="https://example.org/${id}"/><updated>2026-10-13T00:00:${String(59-i).padStart(2,"0")}Z</updated><content>body</content></entry>`).join("")}</feed>`;
+}
+/** @param {string[]} ids @param {boolean} [fallback] */
+function feedIo(ids, fallback = false) {
+  let calls = 0;
+  return { resolver, transport: async () => {
+    calls += 1;
+    return { status: fallback && calls === 1 ? 503 : 200, headers: { "content-type": "application/atom+xml" }, body: bodyOf(feedOf(ids)) };
+  } };
+}
+/** @param {string} adapter @param {string} [previous] @param {string} [platform] */
+const feedSource = (adapter, previous = "", platform = "rss") => ({
+  id: `window-${adapter}`, platform, name: "Window feed", handle: "offline", url: "https://example.org/feed",
+  feed_url: "https://example.org/feed", adapter, last_external_id: previous,
+});
+
+test("every finite feed route records initial, overlap, gap and empty window coverage", async () => {
+  const previousEnv = { WECHAT_GATEWAY_URL: process.env.WECHAT_GATEWAY_URL, WECHAT_GATEWAY_TOKEN: process.env.WECHAT_GATEWAY_TOKEN };
+  process.env.WECHAT_GATEWAY_URL = "https://gateway.example";
+  process.env.WECHAT_GATEWAY_TOKEN = "offline-token";
+  const originalFetch = globalThis.fetch;
+  try {
+    await withCollector(async (collectSource) => {
+      for (const adapter of ["rss", "youtube", "telegram_web", "rsshub", "bilibili", "wechat_gateway", "fallback"]) {
+        for (const [ids, previous, note] of /** @type {[string[], string, string][]} */ ([
+          [["new", "old"], "", "initial_window"], [["new", "old"], "old", "window_overlap"],
+          [["new"], "old", "window_gap"], [[], "old", "empty_window"],
+        ])) {
+          globalThis.fetch = async () => new Response(feedOf(ids), { headers: {
+            "X-Loom-Provider": "primary", "X-Loom-Attempts": "primary", "X-Loom-Paid-Call": "false",
+          } });
+          const result = await collectSource(feedSource(adapter === "fallback" ? "youtube" : adapter, previous), feedIo(ids, adapter === "fallback"));
+          assert.equal(result.items.length, ids.length, adapter);
+          assert.deepEqual(result.coverage, { complete: false, window_only: true, note }, adapter);
+          if (adapter === "fallback") assert.deepEqual(result.meta.attempts, ["youtube", "rss"]);
+        }
+      }
+      globalThis.fetch = async () => { throw new Error("unexpected internal request"); };
+      const webpage = await collectSource({ ...feedSource("telegram_web", "offline/1", "telegram"), feed_url: "" }, {
+        resolver, transport: async () => ({ status: 200, headers: { "content-type": "text/html" },
+          body: bodyOf('<div class="tgme_widget_message " data-post="offline/2"><div class="tgme_widget_message_text">Hello</div><time datetime="2026-10-13T00:00:00Z"></time></div>') }),
+      });
+      assert.deepEqual(webpage.coverage, { complete: false, window_only: true, note: "window_gap" });
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const [key, value] of Object.entries(previousEnv)) value === undefined ? delete process.env[key] : process.env[key] = value;
+  }
+});
+
+// Real scheduler entry: A05 extends this replay instead of testing a copied cursor formula.
+test("runSourceJob preserves capped history cursors and records window discovery warnings", async () => {
+  await withCollector(async (_collectSource, vite) => {
+    const { runSourceJob } = await vite.ssrLoadModule("/src/lib/server/scheduler.ts");
+    const { getSql, getPglite } = await vite.ssrLoadModule("/src/lib/db.ts");
+    const sql = await getSql();
+    try {
+      for (const source of [biliSource("BV201"), feedSource("rss", "old")]) {
+        await sql.query(`insert into sources (id,platform,name,handle,url,feed_url,adapter,last_external_id)
+          values ($1,$2,$3,$4,$5,$6,$7,$8)`, [source.id, source.platform, source.name, source.handle, source.url, source.feed_url, source.adapter, source.last_external_id]);
+      }
+      const bili = await runSourceJob("bili-1", "manual", { resolver, transport: biliPages(channel).transport });
+      assert.equal(bili.error, "");
+      assert.equal((await sql.query("select last_external_id from sources where id='bili-1'"))[0].last_external_id, "BV201");
+      assert.deepEqual((await sql.query("select coverage from jobs where source_id='bili-1'"))[0].coverage,
+        { complete: false, note: "page_cap" });
+      const overlap = await runSourceJob("window-rss", "manual", feedIo(["new", "old"]));
+      assert.equal(overlap.error, "");
+      assert.equal((await sql.query("select last_external_id from sources where id='window-rss'"))[0].last_external_id, "new");
+      assert.deepEqual((await sql.query("select coverage from jobs where source_id='window-rss'"))[0].coverage,
+        { complete: false, window_only: true, note: "window_overlap" });
+      const gap = await runSourceJob("window-rss", "manual", feedIo(["newer"]));
+      assert.equal(gap.error, "");
+      assert.equal((await sql.query("select last_external_id from sources where id='window-rss'"))[0].last_external_id, "newer");
+      const jobs = await sql.query("select coverage from jobs where source_id='window-rss' order by started_at desc");
+      assert.equal(jobs[0].coverage.note, "window_gap");
+      await sql.query("update sources set last_external_id='20' where id='window-rss'");
+      assert.equal((await runSourceJob("window-rss", "manual", feedIo(["10"]))).error, "");
+      assert.equal((await sql.query("select last_external_id from sources where id='window-rss'"))[0].last_external_id, "20", "numeric windows retain monotonic cursor guard");
+    } finally {
+      await (await getPglite()).close();
+      for (const key of ["__pgliteInstance__", "__pgliteMigrateChain__", "__pgBootstrapPromise__"]) Reflect.deleteProperty(globalThis, key);
+    }
+  });
+});
+
+
+test("legacy Telethon results keep coverage unknown and retain incremental cursor compatibility", async () => {
+  process.env.TELEGRAM_WORKER_URL = "https://telethon.example";
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => String(input).endsWith("/health")
+    ? Response.json({ ok: true, authorized: true })
+    : Response.json({ items: [{ external_id: "9007199254740994", title: "Offline", body: "body", author: "channel",
+      url: "https://t.me/offline/2", media_type: "text", media_urls: [], thumbnail_url: "", views: null, likes: null,
+      published_at: null, extra: {} }] });
+  try {
+    await withCollector(async (collectSource, vite) => {
+      const source = { ...feedSource("telegram_web", "9007199254740993", "telegram"), feed_url: "" };
+      assert.equal((await collectSource(source)).coverage, undefined);
+      const { runSourceJob } = await vite.ssrLoadModule("/src/lib/server/scheduler.ts");
+      const { getSql, getPglite } = await vite.ssrLoadModule("/src/lib/db.ts");
+      const sql = await getSql();
+      try {
+        await sql.query(`insert into sources (id,platform,name,handle,adapter,last_external_id)
+          values ($1,$2,$3,$4,$5,$6)`, [source.id, source.platform, source.name, source.handle, source.adapter, source.last_external_id]);
+        assert.equal((await runSourceJob(source.id)).error, "");
+        assert.equal((await sql.query("select last_external_id from sources where id=$1", [source.id]))[0].last_external_id, "9007199254740994");
+        assert.deepEqual((await sql.query("select coverage from jobs where source_id=$1", [source.id]))[0].coverage, {});
+      } finally {
+        await (await getPglite()).close();
+        for (const key of ["__pgliteInstance__", "__pgliteMigrateChain__", "__pgBootstrapPromise__"]) Reflect.deleteProperty(globalThis, key);
+      }
+    });
+  } finally { globalThis.fetch = originalFetch; process.env.TELEGRAM_WORKER_URL = ""; }
 });
