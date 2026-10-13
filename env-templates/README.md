@@ -82,3 +82,30 @@ docker cp <旧gateway容器>:/data/wechat-gateway.sqlite ./gateway.sqlite
 
 新机器上导入：`psql -f loom.dump`；gateway.sqlite 放回 named volume
 `<project>_wechat-gateway-data/_data/`。不迁移则从空库开始，功能不受影响。
+
+## 公开文章读取开关与验收（2026-10-13）
+
+`app.env` 已有两个非敏感设置，公开模板默认值如下：
+
+```text
+ARTICLE_READER_ENABLED=false
+ARTICLE_READER_ALLOWED_HOSTS=
+```
+
+只允许显式开启后读取确切 HTTPS hostname 名单内的公开文章，不支持通配符、query/hash、凭据、非默认端口或微信原文。当前 20 条样本属于待验参考，**经实际候选正文比对通过的 hostname 名单仍为 `[]`**；保留关闭与空名单，不把参考样本域名复制成已支持名单。现有共享通道的匿名 Jina 401 与非公网 DNS 证据见[正文验收](../docs/operations/collection-capability-acceptance.md#b01b04-article-enrichment-scope-2026-10-13)。不为此添加 Key/Cookie、放开 SSRF 防护或重复二十次同样的失败。
+
+关闭开关只禁止新读取；已完成候选、已采用正文、快照和受材料版本保护的恢复继续可用。普通采集独立于 reader，回退不能重置游标、删条目或覆盖后续 OCR / ASR。全局单请求限制是每个应用进程的并发保护，不是每日付费预算硬上限；第三方费用仍需独立确认。Hosted Jina 下游导航不属于本机 DNS pinning 边界，隔离自托管仅属于 C04 的另行试验门。
+
+可移植最小权限检查现在只读本目录公开模板及 Compose，按 `write-service-envs.mjs` 的 `SERVICE_VARS` 严格核对凭据名称；app 另外只允许上述两个非敏感设置，且要求默认关闭/名单为空。缺失模板或额外变量都会失败。检查不再打开 `F:/loom-backups/env/*.env`，不能用它宣称已检查生产凭据库存。已有生成器仍只拆分凭据，reader 非敏感设置需单独保留在 app 配置中；该生成器 CLI 会读取真实凭据源，不能拿来执行离线验收。
+
+OpenCode 现行硬件合同仍是 `pids_limit: 512`、`mem_limit: 768m`；Bun 启动/迁移线程令旧 64 限制不稳定。守护检查精确核对四个任务运行时变量：`OPENCODE_RUNTIME_TOKEN`、`OPENCODE_BRIDGE_URL`、`OPENCODE_MODEL_NAME`、`OPENCODE_MAX_OUTPUT_TOKENS`，以及后者来自 `AGENT_ASSISTANT_MAX_OUTPUT_TOKENS`、默认 `1800` 的配置。供应商密钥、DB 凭据、共享 env 文件、对外端口等原有拒绝检查继续保留；没有为了通过旧断言修改实际 Compose。
+
+从仓库根运行以下独立检查；均默认不联网：
+
+```powershell
+node scripts/readiness-offline.mjs -- node --test scripts/service-env-least-privilege.test.mjs
+node scripts/readiness-offline.mjs -- node validation/collection/article-reader-validation.mjs --self-check
+node scripts/readiness-offline.mjs -- node validation/collection/article-reader-validation.mjs
+```
+
+样本验证入口默认给出 20 条未尝试/未知记录。只有网络已恢复为符合安全策略的公开解析、匿名通道可用后，才显式使用 `--run --network-changed` 做有限实际读取。仅 `--run` 会拒绝且不发请求。实际结果仍需要人工核对标题、域名、原文首尾和三处中间事实；改写参考摘要不等于逐字标记，完整性未知不得计入完整率。新入口详见上述正文验收文档，不改变生产配置或发布状态。

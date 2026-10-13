@@ -1,6 +1,6 @@
 # Collection capability acceptance
 
-Recorded 2026-10-13 in isolated `codex/collection-capability`. A01–A04 are implemented and reviewed. A05 implementation and deterministic offline checks passed; **24-hour live acceptance remains pending** because the five public feeds resolve to addresses refused by the existing outbound policy. No production deployment occurred.
+Recorded 2026-10-13 in isolated `codex/collection-capability`. A01–A04 are implemented and reviewed. A05 implementation and deterministic offline checks passed; **24-hour live acceptance remains pending** because the five public feeds resolve to addresses refused by the existing outbound policy. No production deployment occurred. B01–B03 implementation/offline evidence and B04 sample bookkeeping are now recorded in the final B scope section; public-reader quality remains pending. The A-only JSON and full-suite failure notes below are historical results, not a current full-suite verdict.
 
 ```json
 {
@@ -92,7 +92,7 @@ Dev and current built output passed desktop/mobile QA: five coverage states × t
 
 **Full `npm test` is not reported green.** The controller hit two existing deployment assertions: MINIO_ENDPOINT environment inventory and opencode `pids_limit` expected 64 / actual 512. The relevant scripts/Compose are unchanged against `bec6212a`. The existing service-env test reads `F:/loom-backups/env/*.env` internally and prints key names, so the entire controller suite is not described as secret-file-free. Remaining stages ran separately; keyword/pagination and research stages passed. Three legacy-model checks initially conflicted with the deliberately nonexistent model-config override; direct-Node focused reruns with that variable blank passed without the autodiscovery wrapper. These baseline gate limitations remain explicit.
 
-Scope ends at A05 code and offline verification. Live 24-hour acceptance, deployed uptime and release remain pending; B/C work was not implemented.
+Historical A05 scope ended at A05 code and offline verification; B/C had not been implemented at that point. Current B implementation and remaining public-quality gates are recorded below. Live 24-hour acceptance, deployed uptime and release remain pending.
 
 ## Final review repair verification
 
@@ -121,3 +121,81 @@ Runtime commit `b8cce07b185f92df83d050151f6e9470d593aae6` passed the independent
 Latest dev and freshly built output passed the same desktop/mobile jobs checks: **20 article checks, 0 console/page errors, 0 horizontal-overflow viewports, built/dev smoke divergence=false**. Four viewport screenshots were visually inspected. Final retained evidence directory: `C:/Users/yi'da'dui/.codex/worktrees/collection-capability/WeaveSense/screenshots/collection-jobs-2026-10-13T06-29-25-838Z/` (`result.json`, `dev-smoke.png`, `dev-smoke-mobile.png`, `built-smoke.png`, `built-smoke-mobile.png`, and paired verdicts/full-page labels). This keeps the bounded fixture-readiness smoke adapter and all original error/auth/brand checks; existing utility BRAND NOTE is retained and actual BRAND WARNING is absent. Same-call W: alias and exact owned process trees were cleaned and absence verified; user services were untouched.
 
 This refresh establishes current build/UI rendering with isolated fixtures. **Full npm-test baseline failures are preserved above; no full-suite green claim, live 24-hour acceptance, deployed-uptime acceptance or release status is added.** No load/gateway repetition or live feed request was needed for this repair verification.
+
+## B01–B04 article enrichment scope (2026-10-13)
+
+B01–B03 implementation and independent offline review are complete. B04 adds the fixed public sample manifest, an inert/bounded verification entry and a portable environment guard. **The live 20-article quality gate has not passed.** Reader configuration stays disabled with an empty verified hostname list; this document grants no production release.
+
+| Gate | implemented | offline_passed | live_passed | deployed |
+| --- | --- | --- | --- | --- |
+| B01 bounded public candidate reader | yes | yes | no: successful hosted Jina body not verified | no |
+| B02 candidate/cache/adopt/restore/version fences | yes | yes | no public-provider acceptance | no |
+| B03 detail operations and mobile text rendering | yes | yes | no public-provider acceptance | no |
+| B04 public sample bookkeeping and portable guard | yes | yes | no: quality/completeness remains unknown | no |
+
+Runtime evidence is bound to B03 `c818665a1ebccb7c910e99e65fea755b023f7a51`, and its additional layout check to `d611c409`. Independent QA used actual `npm run build` with a fresh native PostgreSQL ledger, applying 29 real migration files ending `0030_collection_coverage.sql`. Separate dev/built 1280×844 and 390×844 detail flows passed real serverFns/transactions/version triggers, candidate-only read, cache, reader-disabled adoption/restore, persistence, conflicts, preserved OCR/history and unchanged automatic model/extract counts. Actual 20-second drip cancellation measured 19,997/20,010 ms with destroyed request, closed response and no active transport. A native two-process shared-DB schedule proved its specific lease/cache/stale-adopt interleavings. Long-token dev/built measurements passed using the existing inherited wrapping rule; no runtime wrapping fix or manufactured failure is claimed.
+
+Detailed source/evidence: `.superpowers/sdd/2026-10-13-collection-capability-roadmap/task-B02-report.md`, `task-B03-report.md`, `scratch/ui-B03-report.md` and `scratch/ui-B03-longtoken-prefixed-report.md`. Screenshots/verdicts are the `screenshots/readiness-b03-76349378-8c59-4f43-be6a-8e20c5ecea53-{dev,built}-result.json` and the layout verdicts named in those reports. These controlled upstream fixtures are not successful public-page readings.
+
+### Fixed sample/reference contract
+
+[article-reader-samples.json](../../validation/collection/article-reader-samples.json) fixes 20 distinct HTTPS articles across three existing business publishers: 9 ifanr, 10 sspai, 1 qbitai. The exact observed `go-post.sspai.com` addresses remain unchanged. Reference page shapes include short/long text and illustrations; **Feed-missing/summary/body-already-existing distribution remains unknown**, because no matching original Feed/item payload was captured. Each record keeps original Feed body `null`, Feed status `unknown`, and the original article hostname's independent DNS status unprobed.
+
+Public publisher pages were observed through the official-site web route on 2026-10-13. Only short **paraphrased reference facts** are retained: beginning, ending and three middle points. They are not literal markers and must never be passed to `includes()` as a completeness oracle. Literal beginning/ending fields are `null`, `manual_reference_required=true`, and no candidate comparison has occurred. The ifanr 1681605 display title omits the source page's invisible control characters; exact raw title equality is not asserted. Future manual comparison must verify the actual title/domain/beginning/ending/three middle facts; visible length alone, a returned response, adoption or absence of challenge words is insufficient.
+
+| Sample | Fixed original article |
+| --- | --- |
+| B04-01 | [www.ifanr.com/1683545](https://www.ifanr.com/1683545) |
+| B04-02 | [www.ifanr.com/1682644](https://www.ifanr.com/1682644) |
+| B04-03 | [www.ifanr.com/1681605](https://www.ifanr.com/1681605) |
+| B04-04 | [www.ifanr.com/1678195](https://www.ifanr.com/1678195) |
+| B04-05 | [www.ifanr.com/1678196](https://www.ifanr.com/1678196) |
+| B04-06 | [www.ifanr.com/1676929](https://www.ifanr.com/1676929) |
+| B04-07 | [www.ifanr.com/1675465](https://www.ifanr.com/1675465) |
+| B04-08 | [www.ifanr.com/1674363](https://www.ifanr.com/1674363) |
+| B04-09 | [www.ifanr.com/1673651](https://www.ifanr.com/1673651) |
+| B04-10 | [sspai.com/post/110939](https://sspai.com/post/110939) |
+| B04-11 | [sspai.com/post/107458](https://sspai.com/post/107458) |
+| B04-12 | [sspai.com/post/108407](https://sspai.com/post/108407) |
+| B04-13 | [sspai.com/post/108066](https://sspai.com/post/108066) |
+| B04-14 | [sspai.com/post/105732](https://sspai.com/post/105732) |
+| B04-15 | [sspai.com/post/112552](https://sspai.com/post/112552) |
+| B04-16 | [sspai.com/post/109346](https://sspai.com/post/109346) |
+| B04-17 | [sspai.com/post/112100](https://sspai.com/post/112100) |
+| B04-18 | [go-post.sspai.com/post/109365](https://go-post.sspai.com/post/109365) |
+| B04-19 | [go-post.sspai.com/post/111706](https://go-post.sspai.com/post/111706) |
+| B04-20 | [www.qbitai.com/2026/07/443842.html](https://www.qbitai.com/2026/07/443842.html) |
+
+All 20 currently have explicit `not_attempted_due_to_shared_provider_block`, candidate usability/completeness `unknown`, and adoption not requested. This is a decision based on prior shared-reader evidence, **not a claim that each original article URL or hostname was tested and blocked**:
+
+- A05's five guarded Feed failures: `artifacts/collection-capability/public-observation/snapshot-bKCaf0/rounds.jsonl` and `summary.json`.
+- B01's actual anonymous Jina 401/IP-reputation response for example.com: `.superpowers/sdd/2026-10-13-collection-capability-roadmap/task-B01-report.md`, “Official contract and live sample”; actual rejection shape also remains in `src/lib/server/article-reader.test.ts`.
+- Independent disposable-container DNS-only diagnostic: `.superpowers/sdd/2026-10-13-collection-capability-roadmap/scratch/network-dns-diagnostic.md`, including r.jina.ai benchmarking addresses.
+
+No repeated live request, DNS override, Key/Cookie, authentication retry or heavy browser fallback was used for B04. Current actual sample metrics: request-return rate `null`, candidate-usable rate `null`, verified-complete rate `null`, error-page false-pass rate `null`; verified hostname allowlist `[]`. No unknown result enters the completeness numerator. Target ≥90% applies only to reachable in-scope samples after actual comparison; zero error-page false acceptance must also be demonstrated then. Until that live gate passes, no publisher hostname is promoted to supported status. Third-party charges remain unknown, not reported as zero from lack of a key.
+
+### Reproducible B04 checks and later opt-in reading
+
+Run from the repository root using the existing isolation wrapper:
+
+```powershell
+node scripts/readiness-offline.mjs -- node --test scripts/service-env-least-privilege.test.mjs
+node scripts/readiness-offline.mjs -- node validation/collection/article-reader-validation.mjs --self-check
+node scripts/readiness-offline.mjs -- node validation/collection/article-reader-validation.mjs
+```
+
+The first checks all public template variable inventories and runtime isolation. The second rejects duplicate URLs, fabricated Feed status and paraphrases disguised as literal references; exercises one shared provider failure without 20 retries, bounded batch admission, unknown completion for returned candidates and unknown partial progress after child interruption. Its fixtures are bookkeeping checks, not public-reader results. The third emits the honest 20-row prior-barrier report with no network. The modified test remains in existing `npm test`; the runner has this independent documented entry. Actual B04 output/logs: `scratch/b04-{boundary-red,boundary-green,service-env,self-check}.log` and `scratch/b04-public-bookkeeping.json` under the roadmap execution directory.
+
+Only after the network environment has changed to permit policy-valid public resolution and the provider's anonymous route is available may an operator explicitly request:
+
+```powershell
+node scripts/readiness-offline.mjs -- node --experimental-strip-types validation/collection/article-reader-validation.mjs --run --network-changed
+```
+
+`--run` alone refuses without making a request. The normal real reader retains exact HTTPS/query/hash/WeChat/DNS/body/timeout protections; the validation-only host set does not change application configuration. The child drops ambient secrets/config and egress declarations, has a 60-second process ceiling and admits requests for at most 40 seconds (each actual reader has its 20-second total budget). The first shared DNS/auth failure stops remaining requests. No item, cursor, production configuration or adoption is changed. Candidate bytes/digest/hostname are recorded without archiving publisher full text; usability and completeness remain unknown until manual comparison. An interrupted child reports unknown partial progress, not a fabricated completed run.
+
+### Disable/rollback and packaging boundary
+
+`ARTICLE_READER_ENABLED=false` forbids new reads. Existing completed candidates are retained and may be adopted; already adopted body and guarded restore continue working. Ordinary Feed collection remains independent, and summaries cannot replace adopted full text. Failure/conflict preserves original body; restore requires the adopted material version and refuses to erase later OCR/ASR or edits. Rollback never resets source cursors, deletes items or removes snapshots. The B02 focused checks and B03 native dev/built flows above are the current implementation evidence for those properties; no broad suite was repeated just to restate them.
+
+The server reader uses no Key/Cookie; public templates contain placeholders plus disabled/blank reader settings. B04 adds no secrets/config reads or package generation. The existing source pack exclusion policy remains unchanged, and no fresh source archive or production image is claimed. R01 owns the refreshed full-suite/build/release ledger; production publication and 72-hour observation remain pending.

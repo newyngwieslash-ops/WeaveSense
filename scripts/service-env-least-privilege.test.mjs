@@ -10,9 +10,9 @@
  *
  * 这里断言两件事：
  *   1. compose 里每个服务的 env_file 指向它自己的 env/<service>.env；
- *   2. 每个文件只含该服务真正读取的变量（白名单来自 write-service-envs.mjs）。
+ *   2. 公开模板只声明该服务需要的凭据和明确列出的非敏感设置。
  *
- * 纯文本断言，不读凭据内容，不连任何服务。
+ * 纯文本断言，只读仓库公开模板，不打开真实凭据文件，不连服务。
  */
 
 import assert from "node:assert/strict";
@@ -75,25 +75,19 @@ test("credential variables are not interpolated from the command line", () => {
   }
 });
 
-test("each service env file declares only that service's variables", () => {
-  // 文件由 write-service-envs.mjs 生成；这里只校验**变量名集合**，不读值。
+test("public templates declare only service credentials and allowed settings", () => {
+  const optionalSettings = { app: ["ARTICLE_READER_ENABLED", "ARTICLE_READER_ALLOWED_HOSTS"] };
   for (const [service, names] of Object.entries(SERVICE_VARS)) {
-    let text;
-    try {
-      text = readFileSync(`F:/loom-backups/env/${service}.env`, "utf8");
-    } catch {
-      // 凭据文件在工作树外、可能不在（如新开发机）。守护测试只在它存在时校验内容，
-      // 上面的 compose 断言仍会强制"每服务一个文件"的结构。
-      continue;
-    }
+    const text = readFileSync(new URL(`../env-templates/${service}.env`, import.meta.url), "utf8");
     const declared = text.split(/\r?\n/)
       .map((line) => /^([A-Z_][A-Z0-9_]*)=/.exec(line)?.[1])
       .filter(Boolean);
-    assert.deepEqual(
-      [...declared].sort(),
-      [...names].sort(),
-      `${service}.env must declare exactly ${names.join(", ")}`,
-    );
+    assert.deepEqual(declared.sort(), [...names, ...(optionalSettings[service] ?? [])].sort(),
+      `${service} public template must contain exactly its credential and setting allowlist`);
+    if (service === "app") {
+      assert.match(text, /^ARTICLE_READER_ENABLED=false$/m);
+      assert.match(text, /^ARTICLE_READER_ALLOWED_HOSTS=$/m);
+    }
   }
 });
 
@@ -107,15 +101,16 @@ test("no credential appears in the repository tree", () => {
 test("optional OpenCode runtime has only task credentials and an isolated network", () => {
   const blocks = serviceBlocks(compose);
   const runtime = blocks["opencode-runtime"].join("\n");
-  for (const text of ['profiles: ["opencode"]', 'networks: ["opencode-runtime"]', 'user: "1000:1000"', "read_only: true", 'cap_drop: ["ALL"]', 'security_opt: ["no-new-privileges:true"]', "pids_limit: 64", "mem_limit: 768m"]) {
+  for (const text of ['profiles: ["opencode"]', 'networks: ["opencode-runtime"]', 'user: "1000:1000"', "read_only: true", 'cap_drop: ["ALL"]', 'security_opt: ["no-new-privileges:true"]', "pids_limit: 512", "mem_limit: 768m"]) {
     assert.ok(runtime.includes(text), `runtime requires ${text}`);
   }
   assert.ok(!/^\s+(?:ports|volumes|env_file|extra_hosts):/m.test(runtime));
   for (const secret of ["AGENT_MODEL_API_KEY", "XAI_API_KEY", "AGENT_DATA_TOKEN", "AGENT_SERVICE_TOKEN", "OPENCODE_WORKER_TOKEN", "OPENCODE_BRIDGE_CONTROL_TOKEN", "DATABASE_URL"]) {
     assert.ok(!runtime.includes(secret), `runtime must not receive ${secret}`);
   }
+  assert.ok(runtime.includes("OPENCODE_MAX_OUTPUT_TOKENS: ${AGENT_ASSISTANT_MAX_OUTPUT_TOKENS:-1800}"));
   const names = [...runtime.matchAll(/^ {6}([A-Z_]+):/gm)].map(match => match[1]);
-  assert.deepEqual(names.sort(), ["OPENCODE_RUNTIME_TOKEN", "OPENCODE_BRIDGE_URL", "OPENCODE_MODEL_NAME"].sort());
+  assert.deepEqual(names.sort(), ["OPENCODE_RUNTIME_TOKEN", "OPENCODE_BRIDGE_URL", "OPENCODE_MODEL_NAME", "OPENCODE_MAX_OUTPUT_TOKENS"].sort());
   assert.match(compose, /networks:\s*\n {2}opencode-runtime:\s*\n {4}internal: true\s*\n {4}driver_opts:\s*\n {6}com\.docker\.network\.bridge\.gateway_mode_ipv4: isolated/);
 });
 

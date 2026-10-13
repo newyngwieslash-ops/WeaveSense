@@ -1,0 +1,867 @@
+{
+  "version": 2,
+  "preparedAt": "2026-10-13",
+  "siteCount": 3,
+  "sites": [
+    "ifanr",
+    "sspai",
+    "qbitai"
+  ],
+  "verifiedSupportedHostnames": [],
+  "proposedReferenceHostnames": [
+    "www.ifanr.com",
+    "sspai.com",
+    "go-post.sspai.com",
+    "www.qbitai.com"
+  ],
+  "limitations": [
+    "Publisher page references are not readArticle results.",
+    "Go-post hostname is kept exactly, not rewritten.",
+    "Feed-missing/summary/body-existing distribution remains unknown.",
+    "Production allowlist remains unchanged, no live verified complete results.",
+    "Only short paraphrases retained; no publisher full text archived."
+  ],
+  "samples": [
+    {
+      "id": "B04-01",
+      "url": "https://www.ifanr.com/1683545",
+      "title": "为什么 ChatGPT 总爱在标题里塞色情赌博小广告？",
+      "sourceHostname": "www.ifanr.com",
+      "selection": "proposed_reference_sample",
+      "reference": {
+        "observedAt": "2026-10-13",
+        "accessRoute": "official_publisher_page_via_web_tool",
+        "markerMode": "paraphrase_not_independent_fact_verification",
+        "middleFacts": [
+          "独立标题接口",
+          "cl100k_base 与 o200k_base 词元表",
+          "广告词元与清洗语料差异"
+        ],
+        "candidateComparison": "not_performed",
+        "openingParaphrase": "会话标题出现异常字串",
+        "endingParaphrase": "换词表需要重训，广告问题可能持续",
+        "literalOpening": null,
+        "literalEnding": null,
+        "manual_reference_required": true,
+        "middleFactsVerifiedAgainstCandidate": "unknown"
+      },
+      "publicPageCategory": {
+        "length": "long",
+        "format": "illustrated"
+      },
+      "originalFeed": {
+        "status": "unknown",
+        "body": null,
+        "reason": "No matching Feed/item captured"
+      },
+      "reader": {
+        "requestStatus": "not_attempted_due_to_shared_provider_block",
+        "candidateUsable": "unknown",
+        "verifiedComplete": "unknown",
+        "exception": "prior_shared_reader_barrier"
+      },
+      "adoptionStatus": "not_requested",
+      "originalHostDns": "not_probed_for_this_sample"
+    },
+    {
+      "id": "B04-02",
+      "url": "https://www.ifanr.com/1682644",
+      "title": "ChatGPT 一夜抄完半个 AI 圈，现场演示频频翻车",
+      "sourceHostname": "www.ifanr.com",
+      "selection": "proposed_reference_sample",
+      "reference": {
+        "observedAt": "2026-10-13",
+        "accessRoute": "official_publisher_page_via_web_tool",
+        "markerMode": "paraphrase_not_independent_fact_verification",
+        "middleFacts": [
+          "Dot 与 Space 发布",
+          "Blossom 演示",
+          "Pages 协作材料"
+        ],
+        "candidateComparison": "not_performed",
+        "openingParaphrase": "Pro 额度调整",
+        "endingParaphrase": "担忧信息权限交给黑盒",
+        "literalOpening": null,
+        "literalEnding": null,
+        "manual_reference_required": true,
+        "middleFactsVerifiedAgainstCandidate": "unknown"
+      },
+      "publicPageCategory": {
+        "length": "long",
+        "format": "illustrated"
+      },
+      "originalFeed": {
+        "status": "unknown",
+        "body": null,
+        "reason": "No matching Feed/item captured"
+      },
+      "reader": {
+        "requestStatus": "not_attempted_due_to_shared_provider_block",
+        "candidateUsable": "unknown",
+        "verifiedComplete": "unknown",
+        "exception": "prior_shared_reader_barrier"
+      },
+      "adoptionStatus": "not_requested",
+      "originalHostDns": "not_probed_for_this_sample"
+    },
+    {
+      "id": "B04-03",
+      "url": "https://www.ifanr.com/1681605",
+      "title": "刚刚，GPT-6 新模型掀桌！「白菜价」杀进 DeepSeek 腹地",
+      "sourceHostname": "www.ifanr.com",
+      "selection": "proposed_reference_sample",
+      "reference": {
+        "observedAt": "2026-10-13",
+        "accessRoute": "official_publisher_page_via_web_tool",
+        "markerMode": "paraphrase_not_independent_fact_verification",
+        "middleFacts": [
+          "Sol/Luna 任务分工",
+          "DeepSWE v1.1",
+          "缓存输入九成折扣"
+        ],
+        "candidateComparison": "not_performed",
+        "openingParaphrase": "模型价格竞争",
+        "endingParaphrase": "低价将是头部模型共同面对的问题",
+        "literalOpening": null,
+        "literalEnding": null,
+        "manual_reference_required": true,
+        "middleFactsVerifiedAgainstCandidate": "unknown"
+      },
+      "publicPageCategory": {
+        "length": "long",
+        "format": "illustrated"
+      },
+      "originalFeed": {
+        "status": "unknown",
+        "body": null,
+        "reason": "No matching Feed/item captured"
+      },
+      "reader": {
+        "requestStatus": "not_attempted_due_to_shared_provider_block",
+        "candidateUsable": "unknown",
+        "verifiedComplete": "unknown",
+        "exception": "prior_shared_reader_barrier"
+      },
+      "adoptionStatus": "not_requested",
+      "originalHostDns": "not_probed_for_this_sample"
+    },
+    {
+      "id": "B04-04",
+      "url": "https://www.ifanr.com/1678195",
+      "title": "GPT-6 突然全量上线，额度重置再+1，全网实测效果太离谱",
+      "sourceHostname": "www.ifanr.com",
+      "selection": "proposed_reference_sample",
+      "reference": {
+        "observedAt": "2026-10-13",
+        "accessRoute": "official_publisher_page_via_web_tool",
+        "markerMode": "paraphrase_not_independent_fact_verification",
+        "middleFacts": [
+          "CLI 0.153.0",
+          "3295 可编辑构件",
+          "游戏原型不等于商业成品"
+        ],
+        "candidateComparison": "not_performed",
+        "openingParaphrase": "Astra 全量开放",
+        "endingParaphrase": "重新审視自己的工作流",
+        "literalOpening": null,
+        "literalEnding": null,
+        "manual_reference_required": true,
+        "middleFactsVerifiedAgainstCandidate": "unknown"
+      },
+      "publicPageCategory": {
+        "length": "long",
+        "format": "illustrated"
+      },
+      "originalFeed": {
+        "status": "unknown",
+        "body": null,
+        "reason": "No matching Feed/item captured"
+      },
+      "reader": {
+        "requestStatus": "not_attempted_due_to_shared_provider_block",
+        "candidateUsable": "unknown",
+        "verifiedComplete": "unknown",
+        "exception": "prior_shared_reader_barrier"
+      },
+      "adoptionStatus": "not_requested",
+      "originalHostDns": "not_probed_for_this_sample"
+    },
+    {
+      "id": "B04-05",
+      "url": "https://www.ifanr.com/1678196",
+      "title": "刚刚，GPT-6 震撼发布！人类进入 AGI 大分工时代",
+      "sourceHostname": "www.ifanr.com",
+      "selection": "proposed_reference_sample",
+      "reference": {
+        "observedAt": "2026-10-13",
+        "accessRoute": "official_publisher_page_via_web_tool",
+        "markerMode": "paraphrase_not_independent_fact_verification",
+        "middleFacts": [
+          "KiCad PCB 演示",
+          "Codex 跨上下文笔记",
+          "网络安全分级"
+        ],
+        "candidateComparison": "not_performed",
+        "openingParaphrase": "Astra 发布定位",
+        "endingParaphrase": "进入办公室实验室带来人机重新分工",
+        "literalOpening": null,
+        "literalEnding": null,
+        "manual_reference_required": true,
+        "middleFactsVerifiedAgainstCandidate": "unknown"
+      },
+      "publicPageCategory": {
+        "length": "long",
+        "format": "illustrated"
+      },
+      "originalFeed": {
+        "status": "unknown",
+        "body": null,
+        "reason": "No matching Feed/item captured"
+      },
+      "reader": {
+        "requestStatus": "not_attempted_due_to_shared_provider_block",
+        "candidateUsable": "unknown",
+        "verifiedComplete": "unknown",
+        "exception": "prior_shared_reader_barrier"
+      },
+      "adoptionStatus": "not_requested",
+      "originalHostDns": "not_probed_for_this_sample"
+    },
+    {
+      "id": "B04-06",
+      "url": "https://www.ifanr.com/1676929",
+      "title": "OpenAI 的中场战事",
+      "sourceHostname": "www.ifanr.com",
+      "selection": "proposed_reference_sample",
+      "reference": {
+        "observedAt": "2026-10-13",
+        "accessRoute": "official_publisher_page_via_web_tool",
+        "markerMode": "paraphrase_not_independent_fact_verification",
+        "middleFacts": [
+          "Codex 新产品主轴",
+          "训练暂停与安全监控",
+          "个人 AGI 硬件"
+        ],
+        "candidateComparison": "not_performed",
+        "openingParaphrase": "行业竞争中的处境",
+        "endingParaphrase": "质疑公司的主业，附 TIME 原报道",
+        "literalOpening": null,
+        "literalEnding": null,
+        "manual_reference_required": true,
+        "middleFactsVerifiedAgainstCandidate": "unknown"
+      },
+      "publicPageCategory": {
+        "length": "long",
+        "format": "illustrated"
+      },
+      "originalFeed": {
+        "status": "unknown",
+        "body": null,
+        "reason": "No matching Feed/item captured"
+      },
+      "reader": {
+        "requestStatus": "not_attempted_due_to_shared_provider_block",
+        "candidateUsable": "unknown",
+        "verifiedComplete": "unknown",
+        "exception": "prior_shared_reader_barrier"
+      },
+      "adoptionStatus": "not_requested",
+      "originalHostDns": "not_probed_for_this_sample"
+    },
+    {
+      "id": "B04-07",
+      "url": "https://www.ifanr.com/1675465",
+      "title": "Claude 给所有 AI 文字加了水印，全球用户彻底怒了！",
+      "sourceHostname": "www.ifanr.com",
+      "selection": "proposed_reference_sample",
+      "reference": {
+        "observedAt": "2026-10-13",
+        "accessRoute": "official_publisher_page_via_web_tool",
+        "markerMode": "paraphrase_not_independent_fact_verification",
+        "middleFacts": [
+          "概率性文字水印",
+          "declaude.org 项目",
+          "标记与作者归属差别"
+        ],
+        "candidateComparison": "not_performed",
+        "openingParaphrase": "用户矛盾的产品感受",
+        "endingParaphrase": "人机共创难以由水印判定作者",
+        "literalOpening": null,
+        "literalEnding": null,
+        "manual_reference_required": true,
+        "middleFactsVerifiedAgainstCandidate": "unknown"
+      },
+      "publicPageCategory": {
+        "length": "long",
+        "format": "illustrated"
+      },
+      "originalFeed": {
+        "status": "unknown",
+        "body": null,
+        "reason": "No matching Feed/item captured"
+      },
+      "reader": {
+        "requestStatus": "not_attempted_due_to_shared_provider_block",
+        "candidateUsable": "unknown",
+        "verifiedComplete": "unknown",
+        "exception": "prior_shared_reader_barrier"
+      },
+      "adoptionStatus": "not_requested",
+      "originalHostDns": "not_probed_for_this_sample"
+    },
+    {
+      "id": "B04-08",
+      "url": "https://www.ifanr.com/1674363",
+      "title": "解读｜OpenAI 音箱：果味设计，但比苹果多走一步",
+      "sourceHostname": "www.ifanr.com",
+      "selection": "proposed_reference_sample",
+      "reference": {
+        "observedAt": "2026-10-13",
+        "accessRoute": "official_publisher_page_via_web_tool",
+        "markerMode": "paraphrase_not_independent_fact_verification",
+        "middleFacts": [
+          "古尔曼音箱爆料",
+          "移动机械部件",
+          "随身携带属性"
+        ],
+        "candidateComparison": "not_performed",
+        "openingParaphrase": "近期硬件与诉讼新闻",
+        "endingParaphrase": "个人 AI 硬件入口竞争，封面 AI 生成说明",
+        "literalOpening": null,
+        "literalEnding": null,
+        "manual_reference_required": true,
+        "middleFactsVerifiedAgainstCandidate": "unknown"
+      },
+      "publicPageCategory": {
+        "length": "unknown",
+        "format": "illustrated"
+      },
+      "originalFeed": {
+        "status": "unknown",
+        "body": null,
+        "reason": "No matching Feed/item captured"
+      },
+      "reader": {
+        "requestStatus": "not_attempted_due_to_shared_provider_block",
+        "candidateUsable": "unknown",
+        "verifiedComplete": "unknown",
+        "exception": "prior_shared_reader_barrier"
+      },
+      "adoptionStatus": "not_requested",
+      "originalHostDns": "not_probed_for_this_sample"
+    },
+    {
+      "id": "B04-09",
+      "url": "https://www.ifanr.com/1673651",
+      "title": "DeepSeek 给大模型划出的「斩杀线」，斩的到底是什么",
+      "sourceHostname": "www.ifanr.com",
+      "selection": "proposed_reference_sample",
+      "reference": {
+        "observedAt": "2026-10-13",
+        "accessRoute": "official_publisher_page_via_web_tool",
+        "markerMode": "paraphrase_not_independent_fact_verification",
+        "middleFacts": [
+          "OpenCode 免费和付费用量",
+          "MoE 激活参数",
+          "低比特量化不等于 API 成绩"
+        ],
+        "candidateComparison": "not_performed",
+        "openingParaphrase": "单日八万亿 Token",
+        "endingParaphrase": "高价模型须证明剩余优势值得成本",
+        "literalOpening": null,
+        "literalEnding": null,
+        "manual_reference_required": true,
+        "middleFactsVerifiedAgainstCandidate": "unknown"
+      },
+      "publicPageCategory": {
+        "length": "long",
+        "format": "illustrated"
+      },
+      "originalFeed": {
+        "status": "unknown",
+        "body": null,
+        "reason": "No matching Feed/item captured"
+      },
+      "reader": {
+        "requestStatus": "not_attempted_due_to_shared_provider_block",
+        "candidateUsable": "unknown",
+        "verifiedComplete": "unknown",
+        "exception": "prior_shared_reader_barrier"
+      },
+      "adoptionStatus": "not_requested",
+      "originalHostDns": "not_probed_for_this_sample"
+    },
+    {
+      "id": "B04-10",
+      "url": "https://sspai.com/post/110939",
+      "title": "AI抹平了技术门槛，却放大了行动差距",
+      "sourceHostname": "sspai.com",
+      "selection": "proposed_reference_sample",
+      "reference": {
+        "observedAt": "2026-10-13",
+        "accessRoute": "official_publisher_page_via_web_tool",
+        "markerMode": "paraphrase_not_independent_fact_verification",
+        "middleFacts": [
+          "具体工作场景",
+          "真实用户反馈环",
+          "收费验证需求"
+        ],
+        "candidateComparison": "not_performed",
+        "openingParaphrase": "独立开发者能更快做雏形",
+        "endingParaphrase": "行动差距很早出现，附 Solo 订阅说明",
+        "literalOpening": null,
+        "literalEnding": null,
+        "manual_reference_required": true,
+        "middleFactsVerifiedAgainstCandidate": "unknown"
+      },
+      "publicPageCategory": {
+        "length": "long",
+        "format": "illustrated"
+      },
+      "originalFeed": {
+        "status": "unknown",
+        "body": null,
+        "reason": "No matching Feed/item captured"
+      },
+      "reader": {
+        "requestStatus": "not_attempted_due_to_shared_provider_block",
+        "candidateUsable": "unknown",
+        "verifiedComplete": "unknown",
+        "exception": "prior_shared_reader_barrier"
+      },
+      "adoptionStatus": "not_requested",
+      "originalHostDns": "not_probed_for_this_sample"
+    },
+    {
+      "id": "B04-11",
+      "url": "https://sspai.com/post/107458",
+      "title": "什么在这个 AI 时代尤为重要",
+      "sourceHostname": "sspai.com",
+      "selection": "proposed_reference_sample",
+      "reference": {
+        "observedAt": "2026-10-13",
+        "accessRoute": "official_publisher_page_via_web_tool",
+        "markerMode": "paraphrase_not_independent_fact_verification",
+        "middleFacts": [
+          "时间决策成长",
+          "时间管道体积",
+          "系统读书改善提问"
+        ],
+        "candidateComparison": "not_performed",
+        "openingParaphrase": "上门部署 AI Agent 现象",
+        "endingParaphrase": "人生差距取决于时间选择与持续成长",
+        "literalOpening": null,
+        "literalEnding": null,
+        "manual_reference_required": true,
+        "middleFactsVerifiedAgainstCandidate": "unknown"
+      },
+      "publicPageCategory": {
+        "length": "long",
+        "format": "text"
+      },
+      "originalFeed": {
+        "status": "unknown",
+        "body": null,
+        "reason": "No matching Feed/item captured"
+      },
+      "reader": {
+        "requestStatus": "not_attempted_due_to_shared_provider_block",
+        "candidateUsable": "unknown",
+        "verifiedComplete": "unknown",
+        "exception": "prior_shared_reader_barrier"
+      },
+      "adoptionStatus": "not_requested",
+      "originalHostDns": "not_probed_for_this_sample"
+    },
+    {
+      "id": "B04-12",
+      "url": "https://sspai.com/post/108407",
+      "title": "2026，少用 AI",
+      "sourceHostname": "sspai.com",
+      "selection": "proposed_reference_sample",
+      "reference": {
+        "observedAt": "2026-10-13",
+        "accessRoute": "official_publisher_page_via_web_tool",
+        "markerMode": "paraphrase_not_independent_fact_verification",
+        "middleFacts": [
+          "运营转为开发者",
+          "AI 改变细读习惯",
+          "专注与主动降速"
+        ],
+        "candidateComparison": "not_performed",
+        "openingParaphrase": "写作延后与最近分享经历",
+        "endingParaphrase": "恢复细读运动与原速生活",
+        "literalOpening": null,
+        "literalEnding": null,
+        "manual_reference_required": true,
+        "middleFactsVerifiedAgainstCandidate": "unknown"
+      },
+      "publicPageCategory": {
+        "length": "short",
+        "format": "illustrated"
+      },
+      "originalFeed": {
+        "status": "unknown",
+        "body": null,
+        "reason": "No matching Feed/item captured"
+      },
+      "reader": {
+        "requestStatus": "not_attempted_due_to_shared_provider_block",
+        "candidateUsable": "unknown",
+        "verifiedComplete": "unknown",
+        "exception": "prior_shared_reader_barrier"
+      },
+      "adoptionStatus": "not_requested",
+      "originalHostDns": "not_probed_for_this_sample"
+    },
+    {
+      "id": "B04-13",
+      "url": "https://sspai.com/post/108066",
+      "title": "AI 时代的技术平权：30 分钟，我逆向了一个空气净化器并接入了智能家居",
+      "sourceHostname": "sspai.com",
+      "selection": "proposed_reference_sample",
+      "reference": {
+        "observedAt": "2026-10-13",
+        "accessRoute": "official_publisher_page_via_web_tool",
+        "markerMode": "paraphrase_not_independent_fact_verification",
+        "middleFacts": [
+          "Surge 导出 HAR",
+          "get_status 观察模式",
+          "SSH 修改 HA 配置"
+        ],
+        "candidateComparison": "not_performed",
+        "openingParaphrase": "Airproce 接入 Home Assistant",
+        "endingParaphrase": "知道能做什么的想象力更稀缺",
+        "literalOpening": null,
+        "literalEnding": null,
+        "manual_reference_required": true,
+        "middleFactsVerifiedAgainstCandidate": "unknown"
+      },
+      "publicPageCategory": {
+        "length": "short",
+        "format": "illustrated"
+      },
+      "originalFeed": {
+        "status": "unknown",
+        "body": null,
+        "reason": "No matching Feed/item captured"
+      },
+      "reader": {
+        "requestStatus": "not_attempted_due_to_shared_provider_block",
+        "candidateUsable": "unknown",
+        "verifiedComplete": "unknown",
+        "exception": "prior_shared_reader_barrier"
+      },
+      "adoptionStatus": "not_requested",
+      "originalHostDns": "not_probed_for_this_sample"
+    },
+    {
+      "id": "B04-14",
+      "url": "https://sspai.com/post/105732",
+      "title": "对于 2025 年AI 给我带来的思考回顾",
+      "sourceHostname": "sspai.com",
+      "selection": "proposed_reference_sample",
+      "reference": {
+        "observedAt": "2026-10-13",
+        "accessRoute": "official_publisher_page_via_web_tool",
+        "markerMode": "paraphrase_not_independent_fact_verification",
+        "middleFacts": [
+          "忽视 Google 的反思",
+          "训练算法与规模",
+          "投资判断与学习"
+        ],
+        "candidateComparison": "not_performed",
+        "openingParaphrase": "记录个人 AI 思考的必要",
+        "endingParaphrase": "说明仅用 AI 检查错字和事实",
+        "literalOpening": null,
+        "literalEnding": null,
+        "manual_reference_required": true,
+        "middleFactsVerifiedAgainstCandidate": "unknown"
+      },
+      "publicPageCategory": {
+        "length": "long",
+        "format": "text"
+      },
+      "originalFeed": {
+        "status": "unknown",
+        "body": null,
+        "reason": "No matching Feed/item captured"
+      },
+      "reader": {
+        "requestStatus": "not_attempted_due_to_shared_provider_block",
+        "candidateUsable": "unknown",
+        "verifiedComplete": "unknown",
+        "exception": "prior_shared_reader_barrier"
+      },
+      "adoptionStatus": "not_requested",
+      "originalHostDns": "not_probed_for_this_sample"
+    },
+    {
+      "id": "B04-15",
+      "url": "https://sspai.com/post/112552",
+      "title": "WAIC 2026观察：当Token成为算力新标尺，AI一体机迎来价值重估",
+      "sourceHostname": "sspai.com",
+      "selection": "proposed_reference_sample",
+      "reference": {
+        "observedAt": "2026-10-13",
+        "accessRoute": "official_publisher_page_via_web_tool",
+        "markerMode": "paraphrase_not_independent_fact_verification",
+        "middleFacts": [
+          "安全效率两本账",
+          "Smart 推理加速套件",
+          "金融教育案例"
+        ],
+        "candidateComparison": "not_performed",
+        "openingParaphrase": "Token 工厂与企业诉求",
+        "endingParaphrase": "评价转向稳定低成本可运营的 Token 产能",
+        "literalOpening": null,
+        "literalEnding": null,
+        "manual_reference_required": true,
+        "middleFactsVerifiedAgainstCandidate": "unknown"
+      },
+      "publicPageCategory": {
+        "length": "long",
+        "format": "unknown"
+      },
+      "originalFeed": {
+        "status": "unknown",
+        "body": null,
+        "reason": "No matching Feed/item captured"
+      },
+      "reader": {
+        "requestStatus": "not_attempted_due_to_shared_provider_block",
+        "candidateUsable": "unknown",
+        "verifiedComplete": "unknown",
+        "exception": "prior_shared_reader_barrier"
+      },
+      "adoptionStatus": "not_requested",
+      "originalHostDns": "not_probed_for_this_sample"
+    },
+    {
+      "id": "B04-16",
+      "url": "https://sspai.com/post/109346",
+      "title": "工作流会变吗",
+      "sourceHostname": "sspai.com",
+      "selection": "proposed_reference_sample",
+      "reference": {
+        "observedAt": "2026-10-13",
+        "accessRoute": "official_publisher_page_via_web_tool",
+        "markerMode": "paraphrase_not_independent_fact_verification",
+        "middleFacts": [
+          "微积分示例缺乏普遍证据",
+          "修正时间影响选型",
+          "内部真实任务评估"
+        ],
+        "candidateComparison": "not_performed",
+        "openingParaphrase": "模型价格速度与工作流",
+        "endingParaphrase": "减少解释修正监督以扩展任务边界",
+        "literalOpening": null,
+        "literalEnding": null,
+        "manual_reference_required": true,
+        "middleFactsVerifiedAgainstCandidate": "unknown"
+      },
+      "publicPageCategory": {
+        "length": "short",
+        "format": "text"
+      },
+      "originalFeed": {
+        "status": "unknown",
+        "body": null,
+        "reason": "No matching Feed/item captured"
+      },
+      "reader": {
+        "requestStatus": "not_attempted_due_to_shared_provider_block",
+        "candidateUsable": "unknown",
+        "verifiedComplete": "unknown",
+        "exception": "prior_shared_reader_barrier"
+      },
+      "adoptionStatus": "not_requested",
+      "originalHostDns": "not_probed_for_this_sample"
+    },
+    {
+      "id": "B04-17",
+      "url": "https://sspai.com/post/112100",
+      "title": "为了跟上最新版本，我被AI搞得焦虑了",
+      "sourceHostname": "sspai.com",
+      "selection": "proposed_reference_sample",
+      "reference": {
+        "observedAt": "2026-10-13",
+        "accessRoute": "official_publisher_page_via_web_tool",
+        "markerMode": "paraphrase_not_independent_fact_verification",
+        "middleFacts": [
+          "童年 Windows 98",
+          "网址导航失去惊喜",
+          "追逐模型算力"
+        ],
+        "candidateComparison": "not_performed",
+        "openingParaphrase": "早期电脑探索与 AI 焦虑",
+        "endingParaphrase": "怀念探索快乐，附公众号首发署名",
+        "literalOpening": null,
+        "literalEnding": null,
+        "manual_reference_required": true,
+        "middleFactsVerifiedAgainstCandidate": "unknown"
+      },
+      "publicPageCategory": {
+        "length": "short",
+        "format": "illustrated"
+      },
+      "originalFeed": {
+        "status": "unknown",
+        "body": null,
+        "reason": "No matching Feed/item captured"
+      },
+      "reader": {
+        "requestStatus": "not_attempted_due_to_shared_provider_block",
+        "candidateUsable": "unknown",
+        "verifiedComplete": "unknown",
+        "exception": "prior_shared_reader_barrier"
+      },
+      "adoptionStatus": "not_requested",
+      "originalHostDns": "not_probed_for_this_sample"
+    },
+    {
+      "id": "B04-18",
+      "url": "https://go-post.sspai.com/post/109365",
+      "title": "万字剖析：千问App深度体验报告（2026）",
+      "sourceHostname": "go-post.sspai.com",
+      "selection": "proposed_reference_sample",
+      "reference": {
+        "observedAt": "2026-10-13",
+        "accessRoute": "official_publisher_page_via_web_tool",
+        "markerMode": "paraphrase_not_independent_fact_verification",
+        "middleFacts": [
+          "通义命名定位混乱",
+          "首页导航设计",
+          "新用户引导与功能收敛"
+        ],
+        "candidateComparison": "not_performed",
+        "openingParaphrase": "整理两周的产品深度报告",
+        "endingParaphrase": "少数价值场景做到极致比堆功能更有效",
+        "literalOpening": null,
+        "literalEnding": null,
+        "manual_reference_required": true,
+        "middleFactsVerifiedAgainstCandidate": "unknown"
+      },
+      "publicPageCategory": {
+        "length": "long",
+        "format": "illustrated"
+      },
+      "originalFeed": {
+        "status": "unknown",
+        "body": null,
+        "reason": "No matching Feed/item captured"
+      },
+      "reader": {
+        "requestStatus": "not_attempted_due_to_shared_provider_block",
+        "candidateUsable": "unknown",
+        "verifiedComplete": "unknown",
+        "exception": "prior_shared_reader_barrier"
+      },
+      "adoptionStatus": "not_requested",
+      "originalHostDns": "not_probed_for_this_sample"
+    },
+    {
+      "id": "B04-19",
+      "url": "https://go-post.sspai.com/post/111706",
+      "title": "100 天从创意到落地：我们做了一台可以随口问 AI 的对讲机",
+      "sourceHostname": "go-post.sspai.com",
+      "selection": "proposed_reference_sample",
+      "reference": {
+        "observedAt": "2026-10-13",
+        "accessRoute": "official_publisher_page_via_web_tool",
+        "markerMode": "paraphrase_not_independent_fact_verification",
+        "middleFacts": [
+          "父亲不擅长手机",
+          "博物馆实地调研",
+          "FDM 光固化打样"
+        ],
+        "candidateComparison": "not_performed",
+        "openingParaphrase": "硬件研发投产历经 108 天",
+        "endingParaphrase": "末尾作者版权与少数派独家使用声明",
+        "literalOpening": null,
+        "literalEnding": null,
+        "manual_reference_required": true,
+        "middleFactsVerifiedAgainstCandidate": "unknown"
+      },
+      "publicPageCategory": {
+        "length": "long",
+        "format": "illustrated"
+      },
+      "originalFeed": {
+        "status": "unknown",
+        "body": null,
+        "reason": "No matching Feed/item captured"
+      },
+      "reader": {
+        "requestStatus": "not_attempted_due_to_shared_provider_block",
+        "candidateUsable": "unknown",
+        "verifiedComplete": "unknown",
+        "exception": "prior_shared_reader_barrier"
+      },
+      "adoptionStatus": "not_requested",
+      "originalHostDns": "not_probed_for_this_sample"
+    },
+    {
+      "id": "B04-20",
+      "url": "https://www.qbitai.com/2026/07/443842.html",
+      "title": "模型不是企业的护城河，那什么才是？",
+      "sourceHostname": "www.qbitai.com",
+      "selection": "proposed_reference_sample",
+      "reference": {
+        "observedAt": "2026-10-13",
+        "accessRoute": "official_publisher_page_via_web_tool",
+        "markerMode": "paraphrase_not_independent_fact_verification",
+        "middleFacts": [
+          "852 可复现任务",
+          "Harness 和模型一样重要",
+          "DNA Memory Process"
+        ],
+        "candidateComparison": "not_performed",
+        "openingParaphrase": "模型变强但企业未一起变强",
+        "endingParaphrase": "模型更换仍保留积累，附论文代码官网",
+        "literalOpening": null,
+        "literalEnding": null,
+        "manual_reference_required": true,
+        "middleFactsVerifiedAgainstCandidate": "unknown"
+      },
+      "publicPageCategory": {
+        "length": "long",
+        "format": "illustrated"
+      },
+      "originalFeed": {
+        "status": "unknown",
+        "body": null,
+        "reason": "No matching Feed/item captured"
+      },
+      "reader": {
+        "requestStatus": "not_attempted_due_to_shared_provider_block",
+        "candidateUsable": "unknown",
+        "verifiedComplete": "unknown",
+        "exception": "prior_shared_reader_barrier"
+      },
+      "adoptionStatus": "not_requested",
+      "originalHostDns": "not_probed_for_this_sample"
+    }
+  ],
+  "sharedReaderBarrier": {
+    "status": "known_block_from_prior_evidence",
+    "observedAt": "2026-10-13",
+    "evidence": [
+      {
+        "path": "artifacts/collection-capability/public-observation/snapshot-bKCaf0/rounds.jsonl",
+        "kind": "guarded_feed_snapshot",
+        "scope": "Five seed Feed requests failed blocked_address; not these twenty article URLs"
+      },
+      {
+        "path": ".superpowers/sdd/2026-10-13-collection-capability-roadmap/task-B01-report.md",
+        "kind": "anonymous_jina_rejection",
+        "scope": "B01 official-contract/live-sample section records actual anonymous HTTP401 for example.com; not these twenty URLs"
+      },
+      {
+        "path": ".superpowers/sdd/2026-10-13-collection-capability-roadmap/scratch/network-dns-diagnostic.md",
+        "kind": "isolated_docker_dns",
+        "scope": "Disposable DNS-only diagnostic includes r.jina.ai benchmarking addresses; no article HTTP response"
+      }
+    ]
+  }
+}
