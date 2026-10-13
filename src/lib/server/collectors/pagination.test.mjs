@@ -279,7 +279,10 @@ test("every finite feed route records initial, overlap, gap and empty window cov
     });
   } finally {
     globalThis.fetch = originalFetch;
-    for (const [key, value] of Object.entries(previousEnv)) value === undefined ? delete process.env[key] : process.env[key] = value;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
 });
 
