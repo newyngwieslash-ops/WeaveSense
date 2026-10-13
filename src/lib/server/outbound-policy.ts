@@ -190,7 +190,7 @@ export async function readCapped(body: BodyLike, maxBytes: number, signal?: Abor
       }
     } catch (error) {
       try {
-        await reader.cancel();
+        await withSignal(reader.cancel(), signal);
       } catch {
         // Already torn down; the original error is the one that matters.
       }
@@ -545,7 +545,7 @@ export async function publicFetch(
     const status = response.status ?? 0;
 
     if (REDIRECT_CODES.has(status)) {
-      await withSignal(cancelBody(response.body), signal);
+      await cancelBody(response.body, signal);
       const rawLocation = response.headers?.location;
       const location = Array.isArray(rawLocation) ? rawLocation[0] : rawLocation;
       if (!location) throw new Error("redirect_without_location");
@@ -555,7 +555,7 @@ export async function publicFetch(
       continue;
     }
     if (status < 200 || status >= 300) {
-      await withSignal(cancelBody(response.body), signal);
+      await cancelBody(response.body, signal);
       throw new Error(`HTTP ${status}`);
     }
 
@@ -570,10 +570,10 @@ export async function publicFetch(
 }
 
 /** Rejected responses must not drain an unbounded body in the background. */
-async function cancelBody(body: BodyLike): Promise<void> {
+async function cancelBody(body: BodyLike, signal: AbortSignal): Promise<void> {
   if ("getReader" in body) {
     const reader = body.getReader();
-    try { await reader.cancel(); } finally { reader.releaseLock(); }
+    try { await withSignal(reader.cancel(), signal); } finally { reader.releaseLock(); }
   } else {
     (body as { destroy?: () => void }).destroy?.();
   }

@@ -393,6 +393,28 @@ test("caller cancellation cancels a pending stream read and releases its lock", 
   } finally { clearTimeout(timer); }
 });
 
+test("nonsettling Web stream cancellation stays within the deadline and releases the lock", { timeout: 400 }, async () => {
+  const keepAlive = setTimeout(() => {}, 1000);
+  try {
+    for (const status of [200, 302, 500]) {
+      let cancelled = false;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) { controller.enqueue(new Uint8Array(2)); },
+        cancel() { cancelled = true; return new Promise<void>(() => {}); },
+      });
+      const started = Date.now();
+      await assert.rejects(() => publicFetch("https://example.com/", {
+        timeoutMs: 25, maxBytes: 1,
+        resolver: resolverFor({ "example.com": ["93.184.216.34"] }),
+        transport: async () => ({ status, headers: { location: "https://example.com/next" }, body }),
+      }), /response_too_large|timeout|aborted/i);
+      assert.equal(cancelled, true, "underlying cancellation must still be invoked");
+      assert.equal(body.locked, false, "cleanup must release the reader even if cancellation never settles");
+      assert.ok(Date.now() - started < 150, "cancellation cleanup shares the request deadline");
+    }
+  } finally { clearTimeout(keepAlive); }
+});
+
 test("the environment declaration is honoured, and read per call", () => {
   const saved = process.env.LOOM_EGRESS_CIDRS;
   try {
