@@ -1,0 +1,38 @@
+[
+  {
+    "id": "src_github_agent_reach_releases",
+    "platform": "rss",
+    "name": "Agent-Reach 发布动态",
+    "handle": "Panniantong/Agent-Reach",
+    "url": "https://github.com/Panniantong/Agent-Reach",
+    "feed_url": "https://github.com/Panniantong/Agent-Reach/releases.atom",
+    "adapter": "rss",
+    "interval_minutes": 180,
+    "enabled": false,
+    "notes": "GitHub 公开 releases Atom 窗口；首次/持续读取待验证；仅发布动态，非项目搜索、issues、commits、完整版本历史；C03 72小时验收未通过，默认停用"
+  },
+  {
+    "id": "src_github_obscura_releases",
+    "platform": "rss",
+    "name": "Obscura 发布动态",
+    "handle": "h4ckf0r0day/obscura",
+    "url": "https://github.com/h4ckf0r0day/obscura",
+    "feed_url": "https://github.com/h4ckf0r0day/obscura/releases.atom",
+    "adapter": "rss",
+    "interval_minutes": 180,
+    "enabled": false,
+    "notes": "GitHub 公开 releases Atom 窗口；实际Feed是否存在/有发布待验证；仅发布动态，非项目搜索、issues、commits、完整版本历史；C03 72小时验收未通过，默认停用"
+  },
+  {
+    "id": "src_github_jina_reader_releases",
+    "platform": "rss",
+    "name": "Jina Reader 发布动态",
+    "handle": "jina-ai/reader",
+    "url": "https://github.com/jina-ai/reader",
+    "feed_url": "https://github.com/jina-ai/reader/releases.atom",
+    "adapter": "rss",
+    "interval_minutes": 180,
+    "enabled": false,
+    "notes": "GitHub 公开 releases Atom 窗口；实际Feed是否存在/有发布待验证；仅发布动态，非项目搜索、issues、commits、完整版本历史；C03 72小时验收未通过，默认停用"
+  }
+]
