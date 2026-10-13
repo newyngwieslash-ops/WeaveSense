@@ -10,6 +10,8 @@ import { readFileSync, writeFileSync, appendFileSync, mkdirSync, mkdtempSync, re
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
+import { PassThrough } from 'node:stream';
+import { createInterface } from 'node:readline';
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import { createServer } from 'vite';
 import { offlineEnv } from '../../scripts/readiness-offline.mjs';
@@ -181,6 +183,19 @@ async function selfCheck(collectSource, runSourceJob, sql, policy) {
   assert.equal(preflight.preflight_error, 'blocked_address');
   assert.equal(preflight.attempted_source_jobs, 0); assert.equal(preflight.http_requests, 0);
   assert.equal(preflight.observed_hours, 0); assert.equal(preflight.missing_reference_ids, null);
+  const stopInput = new PassThrough();
+  try {
+    const stopped = await observe(runSourceJob, sql, policy, '--snapshot', {
+      input: stopInput, resolver: { async lookup() {
+        stopInput.write('st'); await delay(0); stopInput.write('op\n');
+        return PUBLIC.lookup();
+      } }, transport: async () => { throw new Error('fragmented stop must prevent transport'); },
+    });
+    assert.equal(stopped.interruption, 'interrupted');
+    assert.equal(stopped.attempted_source_jobs, 0); assert.equal(stopped.http_requests, 0);
+    assert.equal(stopInput.listenerCount('data'), 0, 'stop reader releases its input listener');
+    assert.equal(stopInput.readableFlowing, false, 'stop reader leaves input paused');
+  } finally { stopInput.destroy(); }
   assert.deepEqual(JSON.parse(readFileSync(cfgPath, 'utf8').replace(/^\uFEFF/, '')).map(s => s.enabled), [false, false, false]);
   console.log(JSON.stringify({ mode: 'self-check', offline: 'passed', synthetic_transport_calls: requests,
     real_http_requests: 0, live_gate: 'pending', observed_hours: 0, config_enabled: sources.map(s => s.enabled) }));
@@ -194,9 +209,11 @@ async function observe(runSourceJob, sql, policy, mode, testIo = null) {
   let interruption = '', fatal = '', preflightError = '', preflightMessage = '', requests = 0, attempted = 0;
   const stop = () => { interruption = 'interrupted'; abort.abort(); };
   const onInput = input => { if (String(input).trim() === 'stop') stop(); };
+  const input = testIo?.input ?? (!testIo ? process.stdin : null);
+  const lines = input ? createInterface({ input, crlfDelay: Infinity }) : null;
+  lines?.on('line', onInput);
   if (!testIo) {
     process.on('SIGINT', stop); process.on('SIGTERM', stop);
-    process.stdin.on('data', onInput); process.stdin.resume();
   }
   let startedAt = new Date().toISOString(), start = performance.now(), summary;
   try {
@@ -299,7 +316,7 @@ async function observe(runSourceJob, sql, policy, mode, testIo = null) {
       if (!testIo) { console.log(JSON.stringify(summary)); if (fatal || preflightError || interruption || (rounds === 25 && summary.acceptance !== 'passed')) process.exitCode = 1; }
     } finally {
       process.off('SIGINT', stop); process.off('SIGTERM', stop);
-      if (!testIo) { process.stdin.off('data', onInput); process.stdin.pause(); }
+      lines?.off('line', onInput); lines?.close(); input?.pause();
     }
   }
   return summary;
