@@ -378,8 +378,8 @@ test("keeps the mirrored canonical algorithm in parity", () => {
   }
 });
 
-test("normalizes at most 24 valid primary entries", async (t) => {
-  const entries = Array.from({ length: 26 }, (_, index) => `
+test("normalizes every valid entry in a bounded primary feed", async (t) => {
+  const entries = Array.from({ length: 60 }, (_, index) => `
     <entry><title>标题 ${index}</title><published>2026-08-28T08:00:00+08:00</published>
     <link rel="alternate" href="https://mp.weixin.qq.com/s?__biz=MzA1&amp;mid=${index + 1}&amp;idx=1&amp;sn=abc"/>
     <content><![CDATA[正文 ${index}]]></content><media:thumbnail url="https://mmbiz.qpic.cn/${index}.jpg"/></entry>`).join("");
@@ -394,11 +394,28 @@ test("normalizes at most 24 valid primary entries", async (t) => {
     account_id: "gh_example", name: "示例号",
     primary_feed_url: `http://127.0.0.1:${port}/feed.atom`,
   }, new Date("2026-08-28T09:00:00Z"), new Set(["127.0.0.1"]));
-  assert.equal(items.length, 24);
+  assert.equal(items.length, 60);
+  assert.equal(items.at(-1).canonical_id, "wx:MzA1:60:1");
   assert.equal(items[0].provider, "primary");
   assert.equal(items[0].discovered_at, "2026-08-28T09:00:00.000Z");
   assert.equal(items[0].cover_url, "https://mmbiz.qpic.cn/0.jpg");
   assert.equal(items[0].body_complete, true);
+});
+
+test("accepts 1000 primary entries and explicitly rejects feeds above the entry limit", async (t) => {
+  const entry = `<entry><title>标题</title><published>2026-08-28T08:00:00Z</published>
+    <link href="https://mp.weixin.qq.com/s?__biz=MzA1&amp;mid=1&amp;idx=1"/></entry>`;
+  let count = 1000;
+  const upstream = createServer((_req, res) => res.end(
+    `<feed xmlns="http://www.w3.org/2005/Atom">${entry.repeat(count)}</feed>`)).listen(0, "127.0.0.1");
+  await once(upstream, "listening");
+  t.after(() => upstream.close());
+  const source = { account_id: "gh_example", name: "示例号",
+    primary_feed_url: `http://127.0.0.1:${upstream.address().port}/feed` };
+  const hosts = new Set(["127.0.0.1"]);
+  assert.equal((await fetchPrimary(source, new Date(), hosts)).length, 1000);
+  count = 1001;
+  await assert.rejects(fetchPrimary(source, new Date(), hosts), /primary_feed_entry_limit/);
 });
 
 test("primary marks trusted content complete and summaries incomplete", async (t) => {

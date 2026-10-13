@@ -1,4 +1,4 @@
-import { XMLParser } from "fast-xml-parser";
+import { XMLParser, XMLValidator } from "fast-xml-parser";
 import type { MediaType, PlatformId } from "../platforms.ts";
 import { stripHtml } from "../format.ts";
 import type { NormalizedItem } from "./collectors/types.ts";
@@ -98,6 +98,7 @@ function loomExtra(item: Record<string, unknown>, platform: PlatformId): Record<
 }
 
 export function parseFeedXml(xml: string, sourceId: string, platform: PlatformId): NormalizedItem[] {
+  if (XMLValidator.validate(xml) !== true) throw new Error("invalid_feed_xml");
   const doc = parser.parse(xml) as Record<string, unknown>;
   const rss = doc.rss as Record<string, unknown> | undefined;
   const atom = doc.feed as Record<string, unknown> | undefined;
@@ -112,7 +113,12 @@ export function parseFeedXml(xml: string, sourceId: string, platform: PlatformId
     items = asArray(rdf.item) as Record<string, unknown>[];
   }
 
-  return items.slice(0, 24).map((raw) => {
+  if (!["rss", "feed", "rdf:RDF"].some((root) => Object.hasOwn(doc, root))) {
+    throw new Error("invalid_feed_root");
+  }
+  if (items.length > 1000) throw new Error("feed_entry_limit");
+
+  return items.map((raw) => {
     const url = pickLink(raw.link) || textOf(raw.guid) || textOf(raw.id);
     const title = stripHtml(textOf(raw.title) || "未命名");
     const rawBody = textOf(

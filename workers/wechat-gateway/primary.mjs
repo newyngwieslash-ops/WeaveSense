@@ -174,7 +174,8 @@ export async function fetchPrimary(source, now = new Date(), allowedFeedHosts) {
   const discoveredAt = now.toISOString();
   const items = [];
   const invalid = [];
-  for (const [index, entry] of entries.slice(0, 24).entries()) {
+  if (entries.length > 1000) throw new Error("primary_feed_entry_limit");
+  for (const [index, entry] of entries.entries()) {
     try {
       items.push(normalizeEntry(entry, source, discoveredAt));
     } catch (error) {

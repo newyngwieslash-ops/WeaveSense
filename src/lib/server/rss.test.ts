@@ -12,7 +12,7 @@ function atomEntry(body: string, thumbnail = "https://cdn.example.com/cover.jpg"
       <title>微信长文</title>
       <author><name>公众号作者</name></author>
       <published>${publishedAt}</published>
-      <link rel="alternate" href="${articleUrl}" />
+      <link rel="alternate" href="${articleUrl.replaceAll("&", "&amp;")}" />
       <content type="html"><![CDATA[${body}]]></content>
       ${thumbnail ? `<media:thumbnail url="${thumbnail}" />` : ""}
       <loom:provider>primary</loom:provider>
@@ -24,6 +24,24 @@ function atomEntry(body: string, thumbnail = "https://cdn.example.com/cover.jpg"
 }
 
 describe("parseFeedXml", () => {
+  it("keeps every entry in a bounded feed", () => {
+    const entries = Array.from({ length: 60 }, (_, i) =>
+      `<item><guid>entry-${i}</guid><link>https://example.com/${i}</link><title>${i}</title></item>`).join("");
+    const items = parseFeedXml(`<rss><channel>${entries}</channel></rss>`, "s", "rss");
+    assert.equal(items.length, 60);
+    assert.equal(items.at(-1)?.external_id, "entry-59");
+    assert.throws(() => parseFeedXml("<html><body>login</body></html>", "s", "rss"), /invalid_feed/);
+    assert.throws(() => parseFeedXml("<rss><channel>", "s", "rss"), /invalid_feed/);
+    assert.deepEqual(parseFeedXml("<rss><channel/></rss>", "s", "rss"), []);
+  });
+
+  it("accepts 1000 entries and explicitly rejects feeds above the entry limit", () => {
+    const entry = "<item><guid>entry</guid><link>https://example.com/entry</link><title>entry</title></item>";
+    assert.equal(parseFeedXml(`<rss><channel>${entry.repeat(1000)}</channel></rss>`, "s", "rss").length, 1000);
+    assert.throws(() => parseFeedXml(`<rss><channel>${entry.repeat(1001)}</channel></rss>`, "s", "rss"),
+      /feed_entry_limit/);
+  });
+
   it("keeps WeChat Atom article metadata and its complete body", () => {
     const body = "正文".repeat(5000);
     const [item] = parseFeedXml(atomEntry(body), "source-1", "wechat");
