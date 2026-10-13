@@ -49,7 +49,7 @@ const resolver = { async lookup() { return [{ address: "93.184.216.34", family: 
 
 /** Route each known host to a canned response; an unrouted host is a hard error. */
 /**
- * @param {Record<string, () => { status: number; body: string; contentType?: string }>} routes
+ * @param {Record<string, (url: URL) => { status: number; body: string; contentType?: string }>} routes
  */
 function routedTransport(routes) {
   /** @type {string[]} */
@@ -59,7 +59,7 @@ function routedTransport(routes) {
     calls.push(url.href);
     const route = routes[url.hostname];
     if (!route) throw new Error(`unrouted host: ${url.hostname}`);
-    const { status, body, contentType = "text/xml" } = route();
+    const { status, body, contentType = "text/xml" } = route(url);
     return { status, headers: { "content-type": contentType }, body: bodyOf(body) };
   };
   return { transport, calls };
@@ -73,12 +73,13 @@ const io = (transport, maxBytes) => ({ resolver, transport, maxBytes });
 
 /**
  * @typedef {{ source: string; status: string; count: number; error_code?: string }} Attempt
- * @typedef {{ url: string }} Item
+ * @typedef {{ url: string; external_id: string; extra: Record<string, unknown> }} Item
  * @typedef {{ items: Item[]; attempts: Attempt[] }} Batch
  * @typedef {(phrase: string, platforms: string[], io?: unknown) => Promise<Batch>} CollectKeyword
+ * @typedef {(groups: Item[][], limit?: number) => Item[]} MergeKeywordResults
  */
 
-/** @param {(collectKeyword: CollectKeyword) => Promise<void>} fn */
+/** @param {(collectKeyword: CollectKeyword, mergeKeywordResults: MergeKeywordResults) => Promise<void>} fn */
 async function withKeyword(fn) {
   const vite = await createServer({
     configFile: false,
@@ -88,11 +89,85 @@ async function withKeyword(fn) {
   });
   try {
     const mod = await vite.ssrLoadModule("/src/lib/server/collectors/keyword.ts");
-    await fn(mod.collectKeyword);
+    await fn(mod.collectKeyword, mod.mergeKeywordResults);
   } finally {
     await vite.close();
   }
 }
+
+test("keyword merge shares the 40-item budget equally across five full sources", async () => {
+  await withKeyword(async (_, mergeKeywordResults) => {
+    const groups = Array.from({ length: 5 }, (_, g) => Array.from({ length: 24 }, (_, i) => ({
+      external_id: `${g}-${i}`, url: `https://example.com/${g}/${i}`, extra: { origin: `group-${g}` },
+    })));
+    const merged = mergeKeywordResults(groups);
+    assert.equal(merged.length, 40);
+    for (let g = 0; g < 5; g++) {
+      assert.equal(merged.filter((x) => x.extra.origin === `group-${g}`).length, 8);
+    }
+    assert.deepEqual(merged.slice(0, 5), groups.map((group) => group[0]), "preserve source round-robin order");
+    assert.equal(mergeKeywordResults([[groups[0][0]], [groups[0][0]]]).length, 1);
+    assert.equal(mergeKeywordResults(groups, 0).length, 0);
+    assert.equal(mergeKeywordResults(groups, -1).length, 0);
+    assert.equal(mergeKeywordResults(groups, 100).length, 40);
+    assert.equal(mergeKeywordResults(groups, 3).length, 3);
+    for (const limit of [NaN, Infinity, 1.5]) assert.equal(mergeKeywordResults(groups, limit).length, 40);
+    assert.deepEqual(mergeKeywordResults([]), []);
+  });
+});
+
+test("keyword merge refills duplicate slots and drains remaining sources", async () => {
+  await withKeyword(async (_, mergeKeywordResults) => {
+    const shared = { external_id: "shared", url: "https://example.com/shared", extra: {} };
+    const groups = Array.from({ length: 5 }, (_, g) => [shared, shared,
+      ...Array.from({ length: 24 }, (_, i) => ({
+        external_id: `${g}-${i}`, url: `https://example.com/${g}/${i}`, extra: { origin: `group-${g}` },
+      })),
+    ]);
+    const merged = mergeKeywordResults(groups);
+    assert.equal(merged.length, 40, "duplicate heads must not consume the unique-item budget");
+    assert.equal(new Set(merged.map((item) => item.url)).size, 40);
+    assert.deepEqual(merged.slice(0, 5), [shared, ...groups.slice(1).map((group) => group[2])],
+      "skip duplicates within a source's turn, not after taking a fixed quota");
+    assert.deepEqual(mergeKeywordResults([[], groups[1], []], 40), [shared, ...groups[1].slice(2)],
+      "an exhausted source must not prevent peers filling available slots");
+    const fallback = { external_id: "no-url", url: "", extra: {} };
+    assert.deepEqual(mergeKeywordResults([[{ ...fallback, external_id: "" }, fallback], [fallback]]), [fallback]);
+    const prefix = `https://example.com/${"x".repeat(320)}`;
+    const distinct = [0, 1].map((i) => ({ external_id: String(i), url: `${prefix}/${i}`, extra: {} }));
+    assert.deepEqual(mergeKeywordResults([distinct]), distinct, "dedupe uses the complete URL");
+  });
+});
+
+test("saturated early news sources cannot starve bilibili in collectKeyword", async () => {
+  await withKeyword(async (collectKeyword) => {
+    /** @param {string} source */
+    const feed = (source) => `<rss version="2.0"><channel><title>n</title>${
+      Array.from({ length: 24 }, (_, i) => `<item><title>${source}-${i}</title>
+        <link>https://example.com/${source}/${i}</link><guid>${source}-${i}</guid></item>`).join("")
+    }</channel></rss>`;
+    const { transport, calls } = routedTransport({
+      "news.google.com": (url) => ({ status: 200, body: feed(
+        url.searchParams.get("q")?.includes("site:youtube.com") ? "youtube_news"
+          : url.searchParams.get("hl") === "zh-CN" ? "google_news_zh" : "google_news_en",
+      ) }),
+      "hnrss.org": () => ({ status: 200, body: feed("hacker_news") }),
+      "api.bilibili.com": () => ({ status: 200, contentType: "application/json", body: JSON.stringify({
+        code: 0, data: { result: Array.from({ length: 12 }, (_, i) => ({ bvid: `BV${i}`, title: `B站${i}` })) },
+      }) }),
+    });
+    const batch = await collectKeyword("电池", [], io(transport));
+    assert.equal(calls.length, 5);
+    assert.equal(batch.items.length, 40);
+    for (const attempt of batch.attempts) {
+      assert.equal(attempt.status, "ok");
+      assert.equal(attempt.count, attempt.source === "bilibili_search" ? 12 : 24,
+        "attempt.count records the source return count before merge");
+      assert.equal(batch.items.filter((item) => item.extra.origin === attempt.source).length, 8, attempt.source);
+    }
+    assert.equal(batch.attempts.length, 5);
+  });
+});
 
 test("all sources succeeding yields items and ok attempts", async () => {
   await withKeyword(async (collectKeyword) => {
