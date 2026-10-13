@@ -1,5 +1,5 @@
 import { createHash, createHmac } from "node:crypto";
-import { minioConfigured, prod } from "./config";
+import { minioConfigured, prod } from "./config.ts";
 
 let healthCache: { at: number; value: { ok: boolean; error?: string } } | null = null;
 
@@ -30,10 +30,10 @@ function signingKey(day: string): Buffer {
   return hmac(kService, "aws4_request");
 }
 
-function objectUrl(key: string): URL {
+function objectUrl(key: string, privateSubtitle = false): URL {
   const { url } = endpointHost();
-  const path = prod.minioForcePathStyle
-    ? `${url.pathname.replace(/\/$/, "")}/${prod.minioBucket}/${key}`.replace(/\/+/g, "/")
+  const path = prod.minioForcePathStyle || privateSubtitle
+    ? `${url.pathname.replace(/\/$/, "")}/${privateSubtitle ? "loom-subtitles" : prod.minioBucket}/${key}`.replace(/\/+/g, "/")
     : `${url.pathname.replace(/\/$/, "")}/${key}`;
   return new URL(path.startsWith("/") ? path : `/${path}`, url.origin);
 }
@@ -72,8 +72,9 @@ async function s3(
   key: string,
   body?: Buffer,
   contentType?: string,
+  privateSubtitle = false,
 ): Promise<{ ok: boolean; status: number; bytes: Buffer }> {
-  const target = objectUrl(key);
+  const target = objectUrl(key, privateSubtitle);
   const payload = body ?? Buffer.alloc(0);
   const bodyHash = sha256Hex(payload);
   const extra: Record<string, string> = {};
@@ -85,6 +86,7 @@ async function s3(
     headers,
     body: body && method !== "GET" && method !== "HEAD" ? new Uint8Array(body) : undefined,
     signal: AbortSignal.timeout(30000),
+    redirect: "error",
   });
   const bytes = Buffer.from(await res.arrayBuffer());
   return { ok: res.ok, status: res.status, bytes };
@@ -126,6 +128,14 @@ export async function getObject(key: string): Promise<{ ok: boolean; bytes: Buff
   const result = await s3("GET", key);
   if (!result.ok) return { ok: false, bytes: Buffer.alloc(0), error: `读取失败 ${result.status}` };
   return { ok: true, bytes: result.bytes };
+}
+
+/** Only server-owned IDs/digests reach the fixed private bucket; never return a public URL. */
+export async function putSubtitleObject(itemId: string, digest: string, body: Buffer): Promise<{ ok: boolean }> {
+  if (!minioConfigured() || prod.minioBucket === "loom-subtitles" || !/^[A-Za-z0-9_-]{1,128}$/.test(itemId) || !/^[a-f0-9]{64}$/.test(digest)
+      || body.length > 2 * 1024 * 1024 || sha256Hex(body) !== digest) return { ok: false };
+  try { return { ok: (await s3("PUT", `${itemId}/${digest}.json3`, body, "application/json; charset=utf-8", true)).ok }; }
+  catch { return { ok: false }; }
 }
 
 export async function minioHealth(): Promise<{ ok: boolean; error?: string }> {

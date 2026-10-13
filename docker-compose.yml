@@ -72,7 +72,9 @@ services:
       - |
         sleep 4
         mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        [ "$$MINIO_BUCKET" != "loom-subtitles" ] || exit 1
         mc mb -p "local/$$MINIO_BUCKET" || true
+        mc mb --ignore-existing local/loom-subtitles && mc anonymous set none local/loom-subtitles || exit 1
         if [ "$$MINIO_BUCKET_ACCESS" = "public" ]; then
           mc anonymous set download "local/$$MINIO_BUCKET"
         else
@@ -261,6 +263,49 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  subtitle-worker:
+    profiles: ["subtitles"]
+    build: ./workers/subtitle
+    image: weavesense-subtitle:2026.08.19
+    env_file:
+      - path: F:/loom-backups/env/subtitle-worker.env
+        required: false
+    environment:
+      SUBTITLE_ROLE: worker
+    networks: ["subtitle-internal"]
+    dns: ["127.0.0.1"]
+    init: true
+    user: "1000:1000"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 64
+    mem_limit: 256m
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,uid=1000,gid=1000
+    restart: unless-stopped
+
+  subtitle-egress:
+    profiles: ["subtitles"]
+    build: ./workers/subtitle
+    image: weavesense-subtitle:2026.08.19
+    env_file:
+      - path: F:/loom-backups/env/subtitle-egress.env
+        required: false
+    environment:
+      SUBTITLE_ROLE: egress
+    networks: ["default", "subtitle-internal"]
+    init: true
+    user: "1000:1000"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 64
+    mem_limit: 256m
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,uid=1000,gid=1000
+    restart: unless-stopped
+
   app:
     # 2026-09-30 merge: comet/local-model-settings is merged into main, so the
     # root tree now IS the production source. `build: .` is safe again (T24's
@@ -301,6 +346,8 @@ services:
       LOOM_MODEL_CONFIG: /app/config/model.local.json
       LOOM_MODEL_MANAGE_ALLOWED: "true"
       TELEGRAM_WORKER_URL: http://telethon:8787
+      SUBTITLE_ENABLED: ${SUBTITLE_ENABLED:-false}
+      SUBTITLE_URL: http://subtitle-egress:8794
       MINIO_ENDPOINT: http://minio:9000
       XAI_API_KEY: ${XAI_API_KEY:-}
       TICK_LIMIT: ${TICK_LIMIT:-20}
@@ -391,6 +438,10 @@ volumes:
 # Re-run validation/agent/opencode/isolation.test.mjs on each deployment host.
 networks:
   opencode-runtime:
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+  subtitle-internal:
     internal: true
     driver_opts:
       com.docker.network.bridge.gateway_mode_ipv4: isolated

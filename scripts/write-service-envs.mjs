@@ -38,6 +38,13 @@ export const SERVICE_VARS = {
   scheduler: ["CRON_SECRET"],
 };
 
+// Optional profile credentials never become mandatory for ordinary env generation.
+export const SUBTITLE_SERVICE_VARS = {
+  app: ["SUBTITLE_SERVICE_TOKEN"],
+  "subtitle-worker": ["SUBTITLE_SERVICE_TOKEN", "SUBTITLE_PROXY_TOKEN"],
+  "subtitle-egress": ["SUBTITLE_SERVICE_TOKEN", "SUBTITLE_PROXY_TOKEN"],
+};
+
 function parseEnv(text) {
   const values = {};
   for (const line of text.split(/\r?\n/)) {
@@ -49,7 +56,15 @@ function parseEnv(text) {
 
 function main() {
   const values = parseEnv(readFileSync(SOURCE, "utf8"));
-  const required = [...new Set(Object.values(SERVICE_VARS).flat())];
+  const services = { ...SERVICE_VARS };
+  if (process.argv.includes("--subtitles")) {
+    for (const [service, names] of Object.entries(SUBTITLE_SERVICE_VARS)) services[service] = [...(services[service] ?? []), ...names];
+    if (values.SUBTITLE_SERVICE_TOKEN === values.SUBTITLE_PROXY_TOKEN ||
+        ![values.SUBTITLE_SERVICE_TOKEN, values.SUBTITLE_PROXY_TOKEN].every(value => /^[A-Za-z0-9_-]{24,128}$/.test(value ?? ""))) {
+      throw new Error("独立字幕令牌必须为不同的 24–128 位字母数字值");
+    }
+  }
+  const required = [...new Set(Object.values(services).flat())];
   const missing = required.filter((name) => !values[name]);
   if (missing.length) {
     console.error(`缺少变量：${missing.join(", ")}（来源 ${SOURCE}）`);
@@ -59,7 +74,7 @@ function main() {
   const check = process.argv.includes("--check");
   if (!check) mkdirSync(OUT_DIR, { recursive: true });
 
-  for (const [service, names] of Object.entries(SERVICE_VARS)) {
+  for (const [service, names] of Object.entries(services)) {
     const body = names.map((name) => `${name}=${values[name]}`).join("\n") + "\n";
     if (check) {
       console.log(`${service}: ${names.join(" ")}`);

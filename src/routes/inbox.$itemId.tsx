@@ -8,7 +8,8 @@ import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PlatformChip } from "@/components/platform-chip";
-import { analyzeItemFn, extractItemFn, getItemFn, previewArticleFn, adoptArticleFn, restoreArticleFn } from "@/lib/server/fns";
+import { analyzeItemFn, extractItemFn, getItemFn, previewArticleFn, adoptArticleFn, restoreArticleFn, readSubtitleFn } from "@/lib/server/fns";
+import { subtitleLanguages, subtitleErrorCopy, type SubtitleLanguage } from "@/lib/subtitle-contract";
 import { articleErrorCopy } from "@/lib/article-contract";
 import { MEDIA_TYPE_LABEL, type MediaType } from "@/lib/platforms";
 import { formatCount, formatDateTime } from "@/lib/format";
@@ -102,6 +103,22 @@ function ItemPage() {
     onSettled: refreshArticle,
   });
   const articlePending = preview.isPending || adopt.isPending || restore.isPending;
+  const [subtitleLanguage, setSubtitleLanguage] = useState<SubtitleLanguage>("en");
+  const [subtitleNotice, setSubtitleNotice] = useState({ itemId: "", message: "" });
+  const subtitles = useMutation({
+    mutationFn: () => readSubtitleFn({ data: { id: itemId, language: subtitleLanguage } }),
+    onMutate: () => setSubtitleNotice({ itemId, message: "" }),
+    onSuccess: r => setSubtitleNotice({ itemId, message: r.ok ? r.status === "no_subtitles" ? "此视频未提供可用字幕"
+      : `已读取${r.kind === "manual" ? "人工" : "自动"}字幕 · ${r.language}` : r.error }),
+    onError: () => setSubtitleNotice({ itemId, message: subtitleErrorCopy(undefined) }),
+    onSettled: refreshArticle,
+  });
+  const subtitleStatus = subtitles.isPending ? "正在读取字幕…"
+    : subtitleNotice.itemId === itemId && subtitleNotice.message ? subtitleNotice.message
+    : item?.extra.transcript_state === "no_subtitles" ? "此视频未提供可用字幕"
+    : item?.extra.transcript_state === "ok" ? `${item.extra.transcript_kind === "manual" ? "人工" : "自动"}字幕 · ${item.extra.transcript_language}`
+    : !detail.data?.subtitleReader.available ? subtitleErrorCopy(detail.data?.subtitleReader.reason)
+    : "读取所选语言的现有字幕，成功后附加到正文。";
   const articleStatus = preview.isPending ? "读取中…" : adopt.isPending ? "采用中…" : restore.isPending ? "恢复中…"
     : candidateStale ? articleErrorCopy("article_conflict")
     : articleNotice.itemId === itemId && articleNotice.message ? articleNotice.message
@@ -181,6 +198,24 @@ function ItemPage() {
                 打开原页
                 <ExternalLink className="size-3.5" />
               </a>
+            ) : null}
+            {item.platform === "youtube" ? (
+              <section className="mt-6 border-t border-border pt-5" aria-labelledby="subtitle-heading">
+                <h3 id="subtitle-heading" className="font-display text-lg">视频字幕</h3>
+                <p role="status" aria-live="polite" data-testid="subtitle-status" className="mt-2 text-sm text-muted">{subtitleStatus}</p>
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <label htmlFor="subtitle-language" className="text-sm text-muted">字幕语言</label>
+                  <select id="subtitle-language" value={subtitleLanguage} disabled={subtitles.isPending}
+                    onChange={event => setSubtitleLanguage(event.target.value as SubtitleLanguage)}
+                    className="h-11 rounded-md border border-border bg-surface px-3 text-sm text-fg">
+                    {subtitleLanguages.map(language => <option key={language} value={language}>{language === "en" ? "英语" : language === "zh-Hans" ? "简体中文" : "繁体中文"}</option>)}
+                  </select>
+                  <Button variant="outline" data-testid="subtitle-read-button" aria-busy={subtitles.isPending}
+                    disabled={subtitles.isPending || !detail.data?.subtitleReader.available} onClick={() => subtitles.mutate()}>
+                    {subtitles.isPending ? "读取中…" : "读取字幕"}
+                  </Button>
+                </div>
+              </section>
             ) : null}
             <section className="mt-6 min-w-0 border-t border-border pt-5" aria-labelledby="article-reader-heading">
               <h3 id="article-reader-heading" className="font-display text-lg">原文读取</h3>

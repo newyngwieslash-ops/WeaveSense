@@ -169,10 +169,8 @@ export async function mergeExistingItem(sql: Queryable, itemId: string, item: {
       title=coalesce(nullif(title,''),nullif($2,''),title),
       body=case when $14::boolean and coalesce(extra->>'body_complete','false') <> 'true'
           and nullif($3,'') is not null then $3 || case
-        when position('[OCR:' in body)>0 or position('[ASR:' in body)>0 then E'\n\n' || substring(body from case
-          when position('[OCR:' in body)=0 then position('[ASR:' in body)
-          when position('[ASR:' in body)=0 then position('[OCR:' in body)
-          else least(position('[OCR:' in body),position('[ASR:' in body)) end)
+        when body ~ '\\[(OCR:|ASR:|字幕:)' then E'\n\n' || substring(body from
+          least(nullif(position('[OCR:' in body),0),nullif(position('[ASR:' in body),0),nullif(position('[字幕:' in body),0)))
         else '' end
         else coalesce(nullif(body,''),nullif($3,''),body) end,
       author=coalesce(nullif(author,''),nullif($4,''),author),
@@ -191,7 +189,7 @@ export async function mergeExistingItem(sql: Queryable, itemId: string, item: {
           from jsonb_array_elements_text(items.matched_keywords || $13::jsonb)) merged)
     where id=$1`, [itemId, item.title, item.body, item.author, item.url, item.media_type,
     JSON.stringify(item.media_urls), item.thumbnail_url, item.views, item.likes, item.published_at,
-    JSON.stringify(Object.fromEntries(Object.entries(item.extra).filter(([key]) => !key.startsWith("article_")))),
+    JSON.stringify(Object.fromEntries(Object.entries(item.extra).filter(([key]) => !key.startsWith("article_") && !key.startsWith("transcript_")))),
     JSON.stringify(matchedKeywords), incomingComplete]);
 }
 

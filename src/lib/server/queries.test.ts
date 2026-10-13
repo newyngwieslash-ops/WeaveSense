@@ -51,3 +51,10 @@ test("item projection validates versions and exposes candidate only in explicit 
   assert.equal(mapItem({ material_version: 0n }).material_version, 0);
   assert.equal(extra.article_previous_body, "旧正文");
 });
+
+test("subtitle private fields never appear in list or detail", () => {
+  const extra = { transcript_language: "en", transcript_kind: "manual", transcript_state: "ok", transcript_digest: "hash",
+    transcript_object_key: "private/key", transcript_raw_json3: "private", transcript_claim_token: "private", transcript_object_url: "private" };
+  for (const opts of [{}, { articleDetail: true }]) assert.deepEqual(mapItem({ extra }, opts).extra,
+    { transcript_language: "en", transcript_kind: "manual", transcript_state: "ok", transcript_digest: "hash" });
+});

@@ -76,7 +76,7 @@ test("credential variables are not interpolated from the command line", () => {
 });
 
 test("public templates declare only service credentials and allowed settings", () => {
-  const optionalSettings = { app: ["ARTICLE_READER_ENABLED", "ARTICLE_READER_ALLOWED_HOSTS"] };
+  const optionalSettings = { app: ["ARTICLE_READER_ENABLED", "ARTICLE_READER_ALLOWED_HOSTS", "SUBTITLE_ENABLED", "SUBTITLE_SERVICE_TOKEN"] };
   for (const [service, names] of Object.entries(SERVICE_VARS)) {
     const text = readFileSync(new URL(`../env-templates/${service}.env`, import.meta.url), "utf8");
     const declared = text.split(/\r?\n/)
@@ -87,6 +87,7 @@ test("public templates declare only service credentials and allowed settings", (
     if (service === "app") {
       assert.match(text, /^ARTICLE_READER_ENABLED=false$/m);
       assert.match(text, /^ARTICLE_READER_ALLOWED_HOSTS=$/m);
+      assert.match(text, /^SUBTITLE_ENABLED=false$/m);
     }
   }
 });
@@ -129,4 +130,22 @@ test("trusted OpenCode controls hold no supplier key and services stay disabled 
   assert.ok(app.includes("AGENT_RESEARCH_RUNTIME: ${AGENT_RESEARCH_RUNTIME:-eino}"));
   assert.ok(app.includes("AGENT_OPENCODE_WORKER_ENABLED: ${AGENT_OPENCODE_WORKER_ENABLED:-false}"));
   assert.ok(app.includes("AGENT_ASYNC_RESEARCH_ENABLED: ${AGENT_ASYNC_RESEARCH_ENABLED:-false}"));
+});
+
+test("subtitle optional profile has isolated worker and private raw bucket", () => {
+  const blocks=serviceBlocks(compose);
+  const worker=blocks["subtitle-worker"].join("\n"), egress=blocks["subtitle-egress"].join("\n");
+  for (const block of [worker,egress]) {
+    assert.match(block,/profiles: \["subtitles"\]/); assert.match(block,/read_only: true/);
+    assert.match(block,/cap_drop: \["ALL"\]/); assert.match(block,/size=32m/);
+    assert.doesNotMatch(block,/ports:|volumes:|privileged:|MINIO_|DATABASE_URL|LOOM_EGRESS_CIDRS/);
+  }
+  assert.match(worker,/networks: \["subtitle-internal"\]/); assert.match(worker,/dns: \["127\.0\.0\.1"\]/);
+  assert.match(egress,/networks: \["default", "subtitle-internal"\]/);
+  assert.doesNotMatch(blocks.app.join("\n"),/subtitle-internal/);
+  assert.match(blocks["minio-init"].join("\n"),/mc mb --ignore-existing local\/loom-subtitles && mc anonymous set none local\/loom-subtitles \|\| exit 1/);
+  for(const name of ["subtitle-worker","subtitle-egress"]) {
+    const declared=readFileSync(new URL(`../env-templates/${name}.env`,import.meta.url),'utf8').trim().split(/\r?\n/).map(x=>x.split('=')[0]);
+    assert.deepEqual(declared,["SUBTITLE_SERVICE_TOKEN","SUBTITLE_PROXY_TOKEN"]);
+  }
 });

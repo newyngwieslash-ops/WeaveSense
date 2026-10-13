@@ -20,6 +20,8 @@ import { importWechatSources, previewWechatImport } from "./wechat-import";
 import { createProductionWechatGatewayClient } from "./wechat-gateway-client";
 import { articleAdoptInput, articlePreviewInput, articleRestoreInput, articleErrorCopy } from "../article-contract";
 import { adoptArticle, articleAvailability, previewArticle, restoreArticle } from "./article-enrichment";
+import { readSubtitle, subtitleAvailability } from "./subtitles";
+import { subtitleInput, subtitleErrorCopy } from "../subtitle-contract";
 import { materialFingerprint } from "./agent-context";
 import { mapAgentItem } from "./agent-retrieval";
 
@@ -369,7 +371,7 @@ export const getItemFn = createServerFn({ method: "GET" })
        where i.id = $1`,
       [data.id],
     );
-    if (!row) return { item: null, analysis: null, media: [], extracts: [], articleReader: { available: false, reason: "" }, analysisStale: false };
+    if (!row) return { item: null, analysis: null, media: [], extracts: [], articleReader: { available: false, reason: "" }, subtitleReader: { available: false, reason: "" }, analysisStale: false };
     const [analysis] = await sql.query<Record<string, unknown>>(
       `select a.*, r.response_json, r.material_hash as run_material_hash
        from analyses a
@@ -402,6 +404,7 @@ export const getItemFn = createServerFn({ method: "GET" })
       analysis: analysis ? mapAnalysis(analysis) : null,
       analysisStale: Boolean(analysis && analysis.run_material_hash !== materialFingerprint(mapAgentItem(row))),
       articleReader: articleAvailability({ media_type: row.media_type, platform: row.platform, url: row.url, extra: row.extra }),
+      subtitleReader: subtitleAvailability(row),
       media,
       extracts,
     };
@@ -416,6 +419,17 @@ export const previewArticleFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     try { await previewArticle(data.id); return { ok: true }; }
     catch (error) { return { ok: false, error: articleErrorCopy(error instanceof Error ? error.message : undefined) }; }
+  });
+
+export const readSubtitleFn = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const parsed = subtitleInput.safeParse(input);
+    if (!parsed.success) throw new Error(subtitleErrorCopy("subtitle_invalid_input"));
+    return parsed.data;
+  })
+  .handler(async ({ data }) => {
+    try { return { ok: true as const, ...await readSubtitle(data.id, data.language) }; }
+    catch (error) { return { ok: false as const, error: subtitleErrorCopy(error instanceof Error ? error.message : undefined) }; }
   });
 
 export const adoptArticleFn = createServerFn({ method: "POST" })

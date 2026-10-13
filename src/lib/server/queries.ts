@@ -84,6 +84,7 @@ export function mapItem(row: Record<string, unknown>, options: { articleDetail?:
   const version = typeof value === "number" || typeof value === "bigint" || (typeof value === "string" && value.trim()) ? Number(value) : NaN;
   const extra = toScalarRecord(asJson<Record<string, unknown>>(row.extra, {}));
   for (const key of ["article_previous_body", "article_claim_token", "article_claimed_at", ...(!options.articleDetail ? ["article_candidate"] : [])]) delete extra[key];
+  for (const key of Object.keys(extra)) if (key.startsWith("transcript_") && !["transcript_language", "transcript_kind", "transcript_provider", "transcript_digest", "transcript_state"].includes(key)) delete extra[key];
   return {
     ...(Number.isSafeInteger(version) && version >= 0 ? { material_version: version } : {}),
     id: String(row.id),

@@ -96,6 +96,19 @@ test("real candidate adoption preserves tails, advances trigger version, invalid
   await assert.rejects(restoreArticleWith({ sql: f.sql, itemId: "item-1", expectedVersion: 2 }), /article_conflict/);
 });
 
+test("mixed subtitle OCR ASR tails survive common merge and article adoption; later subtitle blocks restore", async t => {
+  const f = await setup(t);
+  const tail = "[字幕: en; manual]\ncaption\n\n[OCR:image]\n识别\n\n[ASR:audio]\n转写";
+  await f.sql.query("update items set body=$1,extra=extra || $2::jsonb where id='item-1'", ["摘要\n\n"+tail, JSON.stringify({transcript_digest:"kept",transcript_object_key:"private/kept"})]);
+  const before=await f.row();
+  const candidate=await previewArticleWith({sql:f.sql,itemId:"item-1",io:fixtureIo()});
+  const adopted=await adoptArticleWith({sql:f.sql,itemId:"item-1",digest:candidate.digest,expectedVersion:Number(before.material_version)});
+  assert.equal((await f.row()).body,candidate.body+"\n\n"+tail);
+  assert.equal((await f.row()).extra.transcript_digest,"kept");
+  await f.sql.query("update items set body=body||E'\\n\\n[字幕: zh-Hans; manual]\\n新字幕' where id='item-1'");
+  await assert.rejects(restoreArticleWith({sql:f.sql,itemId:"item-1",expectedVersion:adopted.materialVersion}),/article_conflict/);
+});
+
 test("fetch admission, lease expiry and token fencing survive material races without HTTP transactions", async t => {
   const f = await setup(t); let release!: () => void; let started!: () => void;
   const began = new Promise<void>(resolve => { started = resolve; });

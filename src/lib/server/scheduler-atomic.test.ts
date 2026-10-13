@@ -45,7 +45,7 @@ test("ordinary feed merge cannot forge article audit, snapshots or leases", asyn
   await mergeExistingItem(sql, "audit", { title: "", body: "新摘要", author: "", url: "", media_type: "article",
     media_urls: [], thumbnail_url: "", views: null, likes: null, published_at: null,
     extra: { provider: "feed", body_complete: false, article_state: "error", article_previous_body: "恶意正文",
-      article_claim_token: "feed-token", article_candidate: "伪造候选" } }, ["新增词"]);
+      article_claim_token: "feed-token", article_candidate: "伪造候选", transcript_state: "forged", transcript_object_key: "forged" } }, ["新增词"]);
   const [row] = await sql.query<{ body: string; extra: Record<string, unknown>; material_version: bigint }>("select * from items where id='audit'");
   assert.equal(row.body, "采用的全文"); assert.equal(Number(row.material_version), 0);
   assert.deepEqual(row.extra, { body_complete: true, article_state: "adopted", article_previous_body: "旧正文",
