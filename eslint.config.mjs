@@ -20,6 +20,8 @@ export default tseslint.config(
       // Vendored local Comet bundle and generated orchestration state are not app source.
       ".agents/skills/comet/scripts/**",
       ".omx/**",
+      // Git-ignored task scratch includes generated reports and isolated tool environments.
+      ".superpowers/sdd/**",
     ],
   },
   js.configs.recommended,

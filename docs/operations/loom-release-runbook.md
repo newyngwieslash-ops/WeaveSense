@@ -1,4 +1,37 @@
-# 织识 Loom 正式发布运行手册（T24 / Gate D）
+# 织识 Loom 发布与回退运行手册
+
+## 2026-10-13 collection-capability 当前绑定
+
+**状态：not_deployed；仅本地实现/离线验证。** R01不执行生产构建、部署、镜像push、凭据读写或持续观察。以下绑定与[验收记录](collection-capability-acceptance.md)对应；正式发布需要另行授权并补齐真实门禁。
+
+| 字段 | 当前记录 |
+| --- | --- |
+| 当前实现/条件评审基线 | `8bd35fd62bd387b2af503d24e581550d31aadc76`，R01检查脚本/文档变更另见本任务提交与最终QA报告 |
+| 应用运行证据SHA | `42b508d03b9ac6b4769a8a845afd733cca90af41`，后续worker修复不改应用 |
+| worker修复SHA / 本地离线镜像ID | `7e588e62` / `sha256:3346991de8f9e5292cfc8eccc2b2824795377bc47c3ebc445b8a2f06050e2803` |
+| 最新迁移 | 完整清单29项至`0030_collection_coverage.sql`；发布时绑定实际库的完整ledger，不从编号推算数量 |
+| 功能/配置 | ARTICLE_READER_ENABLED=false、verified allowlist=[]；SUBTITLE_ENABLED=false、subtitles profile关闭；三份GitHubmanifest enabled=false |
+| 支持范围 | Feed当前响应窗口、原文候选/采用/恢复的离线流程、en/zh-Hans/zh-Hant字幕实现；真实reader支持host=[]、字幕extractor host完整性provisional；GitHub仅3仓库releases Atom |
+| 检查与报告 | 当前统一npm/build/UI实际结果与路径以[验收记录](collection-capability-acceptance.md#r01-portable-checks-and-final-unified-verification)为准；原始报告保留 |
+| 本轮生产镜像/回滚镜像ID | unknown / unknown（未生成或切换，不能借用9月ID作为当前回滚点） |
+| 生产备份与实际迁移 | 未执行；需要正式切换前备份路径/digest/恢复演练和完整应用ledger |
+| 实网/时长 | A05 24h、B04live20、C01realTube、C0372h pending；生产72h not_started |
+
+每次正式发布必须冻结完整40位源码SHA、镜像ID/digest、迁移名称清单、非秘密开关、支持站点/平台、每个检查报告路径与确切前一服务镜像。记录应用和worker各自版本、测试是否针对同一源码；不得用本地worker隔离通过推导生产已发布。凭据值不进入记录，也不读取旧F:文件来补字段。
+
+### 后续获授权时的回退约束
+
+先建立当前数据库备份及恢复证据，核验镜像与迁移兼容，再按获批范围逐一切换服务。遇到问题先关闭新原文读取和字幕feature/profile，保留现有采集、已采用正文、已完成候选、受版本保护的恢复、OCR/ASR/字幕尾段、历史分析与私有JSON3。
+
+A04只追加coverage列；兼容旧代码回退保留`0030`和完整迁移ledger，不删列/表。任何回退不重置cursor、不删除items/快照、不覆盖用户编辑或后续材料。字幕旧代码读写兼容需在隔离副本演练；不得为回退删除private bucket。绑定确切前一镜像，使用`--no-deps`只重建一个已授权服务，不批量连带重建数据库/MinIO/Telethon，不动数据卷。
+
+当前benchmark DNS被拒，旧文档里的`LOOM_EGRESS_CIDRS`放行例子不属于本轮授权或默认配置。没有真实可用HTTP/Feed证据就保留pending，不能为验收扩大出口/改DNS/更换URL/读Cookie。72h观察需记录失败率、相对于实际响应的遗漏/重复、窗口缺口、候选可用率、超时、内存与冲突；微信费用沿原账本，未知第三方费用不得填0。
+
+## 2026-09 历史发布、事故与加固记录
+
+以下旧路径/镜像/批量命令/出口声明只解释当时操作，不是当前执行指令或新授权；当前版本、逐服务更新和保护数据的约束优先。
+
+### 织识 Loom 正式发布运行手册（T24 / Gate D）
 
 日期：2026-09-17。**状态：待用户逐条批准后执行。**
 
@@ -98,7 +131,7 @@ docker compose up -d app scheduler
 
 ---
 
-# ⚠️ T24 执行事故与修复记录（2026-09-17）
+### ⚠️ T24 执行事故与修复记录（2026-09-17）
 
 **如实记录，不掩饰。本次事故由助手的操作失误造成。**
 
@@ -183,7 +216,7 @@ docker compose up -d --force-recreate --no-deps app scheduler
 
 ---
 
-# ⚠️ 未处理的安全加固项（用户决定暂缓，2026-09-17）
+### ⚠️ 未处理的安全加固项（用户决定暂缓，2026-09-17）
 
 **用户明确选择"先不改，记录待办"。以下是完整现状与操作步骤，供后续执行。**
 
@@ -219,17 +252,17 @@ docker compose up -d --force-recreate --no-deps app scheduler
 ```bash
 NEW_PG_PW=$(openssl rand -hex 24)
 NEW_MINIO_PW=$(openssl rand -hex 24)
-# 追加到 F:\loom-backups\.env.t24（600 权限、工作树外、绝不入 git）
+### 追加到 F:\loom-backups\.env.t24（600 权限、工作树外、绝不入 git）
 ```
 
 ### 2. PostgreSQL（**不改数据，只改角色密码**）
 
 ```bash
-# 2a. 改密码（幂等，可重复执行）
+### 2a. 改密码（幂等，可重复执行）
 docker exec gig5cyrba5yn3tsi-grok-workspace-postgres-1   psql -U loom -d loom -c "ALTER USER loom WITH PASSWORD '<新密码>';"
 
-# 2b. 更新连接方（app / scheduler）——每个服务单独重建，不牵动依赖
-#     必须用 --no-deps，且只指定一个服务（见本文件 T24 事故教训）
+### 2b. 更新连接方（app / scheduler）——每个服务单独重建，不牵动依赖
+###     必须用 --no-deps，且只指定一个服务（见本文件 T24 事故教训）
 docker compose up -d --force-recreate --no-deps app
 docker compose up -d --force-recreate --no-deps scheduler
 ```

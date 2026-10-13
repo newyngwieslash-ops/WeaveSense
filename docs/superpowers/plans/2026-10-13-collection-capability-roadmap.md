@@ -14,7 +14,7 @@
 
 ## Global Constraints
 
-- 本轮交付是方案与任务清单，不安装工具、不执行应用改造、不调用真实付费服务、不发布。
+- 原规划轮只交付方案；后续用户已授权整份路线图实施与离线验证。真实付费调用、生产发布和未满足条件的实网/浏览器实验不由实施授权自动开启。
 - 沿用 Ponytail full：“No new dependency if it can be avoided.”、“Fewest files possible.”。不新增通用采集框架、消息中间件、向量数据库或新的 Agent 框架。
 - 根目录 `E:/AI-JIANSHI-20260825/WeaveSense`，命令默认从此目录执行；以下路径相对该根目录。实施时依据真实 Windows/Docker 环境，不把历史 `/workspace` 当作本机路径。
 - 不重建已有数据库或登录系统；沿用本机服务边界，不扩展公网访问面。
@@ -26,6 +26,30 @@
 - 不丢弃已有用户改动：当前 `src/routeTree.gen.ts` 已修改，`docker-compose.dev-hybrid.yml` 与 `docker-compose.override.yml` 是未跟踪文件。提交使用明确文件列表，不使用 `git add -A`。
 
 ---
+
+## 0.1 执行状态（2026-10-13；代码与实网分别记录）
+
+实现授权已覆盖整份路线图；沿用`codex/collection-capability`隔离工作树。A/B和C代码/条件评估已评审；R01统一门禁进行中。本轮没有部署，持续观察没有启动。原始条目含实网/发布条件时，离线通过不把整个复选框勾完。
+
+- [x] A01–A04代码、定向检查与独立评审。
+- [x] A05真实业务离线60条/重放和负载验证；五源快照失败证据保留。
+- [ ] A05有效网络下真实24小时验收。
+- [x] B01–B03有界读取、候选/CAS/恢复、nativePG/dev+built/移动端离线验证与评审。
+- [x] B04固定20参考地址、未知结果账本、失败停止、portable public-template检查与评审。
+- [ ] B04真实20篇正文/Feed分布/完整率及错误页误通过验收。
+- [x] C01验证工具/固定工具版本和10合成字幕；C02默认关闭实现获用户例外授权。
+- [ ] C01真实业务视频/人工自动字幕/时间轴验收。
+- [x] C02协议/类型/私有存储/材料CAS/UI、Linux10/真实隔离、nativePG/privateMinIO/dev+built离线验证及worker修复评审。
+- [ ] C02真实视频/节点重启/extractor目标主机完整性与启用门禁。
+- [x] C03选择GitHub，三份停用清单与44合成调用、有限观察器和评审。
+- [ ] C03真实72小时/新发布/参考IDs/实际费用；当前0小时。
+- [x] C04条件评估经评审：waiting_for_verified_js_gap。
+- [ ] C04条件成立后的20页同目标浏览器实验；当前未触发，不填not_needed。
+- [x] R01稳定QA helper、Node常用入口与可选Python/Docker命令；portability RED后2/2 GREEN。
+- [ ] R01本轮完整npm/gateway/typecheck/lint/nativePG-build/selecteddevbuilt检查与最终评审（结果后附）。
+- [ ] 正式生产备份/发布/回滚镜像绑定与发布后72h观察。
+
+最新证据与支持范围：[统一验收](../../operations/collection-capability-acceptance.md)、[当前状态](../../operations/loom-current-status.md)、[回退手册](../../operations/loom-release-runbook.md)。
 
 ## 1. 当前基线与旧计划关系
 
@@ -63,7 +87,7 @@
 | B03 | P1 | 详情页正文状态与采用流程 | A04、B02 | 手机/桌面可用；无自动付费分析 |
 | B04 | P1 | 正文真实验收、回滚和 B 版交付 | B03 | 代表样本有对照证据，关闭功能不影响采集 |
 | C01 | P2 | YouTube 字幕可行性验证 | A05 | 明确人工字幕、自动字幕、无字幕和失败边界 |
-| C02 | P2 | 单平台字幕读取与入库 | C01 通过 | 用户按需提取；字幕进入同一材料和引用链 |
+| C02 | P2 | 单平台字幕读取与入库 | 用户允许默认关闭实现；真实启用仍需C01通过 | 用户按需提取；字幕进入同一材料和引用链 |
 | C03 | P2 | 一个新渠道的 Agent-Reach/上游工具试点 | A05 | 有新增且有用的材料，明确固定信源与搜索差异 |
 | C04 | 条件 | 动态网页 Playwright/Obscura 对照试验 | B04 且有 JS 页面缺口 | 同样本同限制比较，不凭项目宣传换引擎 |
 | R01 | 发布门 | 每个子项目的文档、版本、持续观测 | 对应子项目 | 代码、镜像、验收范围一致；可回退 |
@@ -326,9 +350,9 @@ export type ArticleCandidate = {
 };
 ```
 
-- [ ] 写失败检查，覆盖：私网输入、带凭据 URL、未许可域名、带 query/hash 输入（首版保守拒绝，避免传递签名/访问令牌）、坏 JSON、空正文、超大正文、登录/挑战页。失败不能返回 body_complete:true。至少一次通过实际 reader 的 `publicFetch` seam，而不是只测试字符串函数。
-- [ ] 正文开关 `ARTICLE_READER_ENABLED=false`；`ARTICLE_READER_ALLOWED_HOSTS` 默认空；首版只允许 HTTPS、443 端口、精确 hostname，不接受通配符。默认仅供无需凭据的公开文章试点；微信继续由网关处理。输入来源为数据库中的 item.url，不接受浏览器传任意 URL。
-- [ ] 复用 `assertPublicUrl()` 与 `resolvePublicAddresses()` 检查原文，固定请求 `https://r.jina.ai/`，不让客户端指定代理地址。原文 hash/query 不能静默删除后读取另一份资源。reader 请求设置：
+- [x] 写失败检查，覆盖：私网输入、带凭据 URL、未许可域名、带 query/hash 输入（首版保守拒绝，避免传递签名/访问令牌）、坏 JSON、空正文、超大正文、登录/挑战页。失败不能返回 body_complete:true。至少一次通过实际 reader 的 `publicFetch` seam，而不是只测试字符串函数。
+- [x] 正文开关 `ARTICLE_READER_ENABLED=false`；`ARTICLE_READER_ALLOWED_HOSTS` 默认空；首版只允许 HTTPS、443 端口、精确 hostname，不接受通配符。默认仅供无需凭据的公开文章试点；微信继续由网关处理。输入来源为数据库中的 item.url，不接受浏览器传任意 URL。
+- [x] 复用 `assertPublicUrl()` 与 `resolvePublicAddresses()` 检查原文，固定请求 `https://r.jina.ai/`，不让客户端指定代理地址。原文 hash/query 不能静默删除后读取另一份资源。reader 请求设置：
 
 ```ts
 const response = await publicFetch(`https://r.jina.ai/${target.href}`, {
@@ -343,7 +367,7 @@ const response = await publicFetch(`https://r.jina.ai/${target.href}`, {
 
 `target` 是已通过前述验证的 URL。官方 JSON 模式已核对，但字段形状以执行时的公开样本固化到测试；只接收 `data.content`、`data.url`、`data.title` 的已验证字段。响应来源 URL 必须再次通过相同 allowlist/公网验证；不把代理域名当作原文引用。托管服务自身下游导航不受本机 DNS pinning 控制，文档须明确这一信任边界；需要完全控制下游时转 C04 隔离自托管试点。
 
-- [ ] 使用 zod 校验响应，标准库生成摘要；不要使用会主动裁剪文本的 token-limit 参数，不生成 AI 正文：
+- [x] 使用 zod 校验响应，标准库生成摘要；不要使用会主动裁剪文本的 token-limit 参数，不生成 AI 正文：
 
 ```ts
 const readerEnvelope = z.object({
@@ -357,8 +381,8 @@ const digest = createHash('sha256').update(value.url).update('\0').update(body).
 
 z、createHash 在文件顶部分别从 `zod`、`node:crypto` 导入。挑战页只做保守拒绝，不能用“未命中几个词”作为全文证明；最终是否采用由 B03 展示内容后决定。
 
-- [ ] 先验证现有 transport 的 timeout 是否覆盖 DNS、重定向和慢速读体；当前 `publicFetch` 没有全程 signal 参数。为它增加可选 `signal?: AbortSignal`，默认组合内部 `AbortSignal.timeout(timeoutMs)`，传给 pinnedTransport 并在读体时取消底层流；不能只 Promise.race 放弃等待。慢速滴送测试必须在 20 秒总期限内结束，socket/reader 被释放。若该基础修复未通过，B 不能发布。
-- [ ] 执行 `node --experimental-strip-types --test src/lib/server/article-reader.test.ts src/lib/server/outbound-policy.test.ts src/lib/server/outbound-policy.integration.test.ts`，全通过后提交：`feat: read bounded public article candidates`。
+- [x] 先验证现有 transport 的 timeout 是否覆盖 DNS、重定向和慢速读体；当前 `publicFetch` 没有全程 signal 参数。为它增加可选 `signal?: AbortSignal`，默认组合内部 `AbortSignal.timeout(timeoutMs)`，传给 pinnedTransport 并在读体时取消底层流；不能只 Promise.race 放弃等待。慢速滴送测试必须在 20 秒总期限内结束，socket/reader 被释放。若该基础修复未通过，B 不能发布。
+- [x] 执行 `node --experimental-strip-types --test src/lib/server/article-reader.test.ts src/lib/server/outbound-policy.test.ts src/lib/server/outbound-policy.integration.test.ts`，全通过后提交：`feat: read bounded public article candidates`。
 
 ### B02：保存候选、采用与回退，不覆盖并发内容
 
@@ -366,8 +390,8 @@ z、createHash 在文件顶部分别从 `zod`、`node:crypto` 导入。挑战页
 
 **Interfaces:** 导出 `previewArticle(itemId: string)`、`adoptArticle(itemId: string, digest: string, expectedVersion: number)`、`restoreArticle(itemId: string, expectedVersion: number)`。只在服务端读写候选正文；客户端不能提交正文、provider、sourceUrl 或 body_complete。
 
-- [ ] 在 PGLite 中加载 items 相关真实迁移和材料版本 trigger；调用真实业务函数验证：首次保存候选不改 body；重复读取不重复出网；采用一次推进版本，再次采用不附加第二份；版本冲突拒绝；OCR/ASR 保留；完整正文不被自动降级；失败旧正文不变。
-- [ ] 候选与审计使用扁平 extra 字段：
+- [x] 在 PGLite 中加载 items 相关真实迁移和材料版本 trigger；调用真实业务函数验证：首次保存候选不改 body；重复读取不重复出网；采用一次推进版本，再次采用不附加第二份；版本冲突拒绝；OCR/ASR 保留；完整正文不被自动降级；失败旧正文不变。
+- [x] 候选与审计使用扁平 extra 字段：
 
 ```ts
 type ArticleExtra = {
@@ -387,7 +411,7 @@ type ArticleExtra = {
 
 候选最大 2 MiB；旧正文快照最多保留一份。已采用/恢复候选时清除 `article_candidate` 大字段，保留摘要、来源、时间。正文长度不是完整性依据。
 
-- [ ] `previewArticle` 流程：读取条目和 version → 检查平台 article、开关/白名单 → 若相同 URL/版本有 24 小时内候选直接返回 → 抓取 → CAS 保存候选。单进程全局一个 reader in-flight，超过直接 `article_busy`；同条目 DB 中用短租约进一步防重复。租约字段放 `extra.article_claim_token/article_claimed_at`，原子 UPDATE 领取、按 token 释放，不在 HTTP 期间持有事务。
+- [x] `previewArticle` 流程：读取条目和 version → 检查平台 article、开关/白名单 → 若相同 URL/版本有 24 小时内候选直接返回 → 抓取 → CAS 保存候选。单进程全局一个 reader in-flight，超过直接 `article_busy`；同条目 DB 中用短租约进一步防重复。租约字段放 `extra.article_claim_token/article_claimed_at`，原子 UPDATE 领取、按 token 释放，不在 HTTP 期间持有事务。
 
 ```sql
 update items set extra = extra || $3::jsonb
@@ -399,7 +423,7 @@ returning id;
 
 所有 lease 字段仅本功能写入 ISO 时间，释放使用 `extra - 'article_claim_token' - 'article_claimed_at'` 并检查 token；异常与取消也释放。首版注释：`ponytail: one reader request per app process; use a shared admission limit before multi-replica enrichment.` 不声称此限制是每日费用硬上限；首版不配置付费 Key、不后台批量调用。
 
-- [ ] `adoptArticle` 使用现有 Sql.transaction（不能用连接池上散发 BEGIN/COMMIT）：锁定 item → 检查 digest、candidate_version、expectedVersion → 保留旧 body/complete 快照 → 调用 `mergeExistingItem` → 清理候选、释放锁。同一事务重新按 `itemMatchesPhrase` 计算新增正文命中的启用关键词，传给 merge，不让补全文字永远无法被检索/打标。
+- [x] `adoptArticle` 使用现有 Sql.transaction（不能用连接池上散发 BEGIN/COMMIT）：锁定 item → 检查 digest、candidate_version、expectedVersion → 保留旧 body/complete 快照 → 调用 `mergeExistingItem` → 清理候选、释放锁。同一事务重新按 `itemMatchesPhrase` 计算新增正文命中的启用关键词，传给 merge，不让补全文字永远无法被检索/打标。
 
 ```ts
 if (row.material_version !== expectedVersion) throw new Error('article_conflict');
@@ -416,9 +440,9 @@ await mergeExistingItem(tx, itemId, {
 
 `normalizedItem` 从锁定 row 构建现有 merge 所需字段，`matchedPhrases` 来自同一事务读取的启用关键词。`tx` 使用现有事务回调提供的连接。查询后的 version 强制转为安全整数后比较，不拿 PG bigint 字符串与 number 直接比较。完整标记只在用户采用动作发生后写入。
 
-- [ ] 补充 `mergeExistingItem` 对文章元数据的保护：普通 Feed 更新不得清除/覆盖 `article_*` 审计与快照。源上报完整正文的逻辑维持；摘要不能覆盖采用后的完整 body。更新 `mapItem()`，返回校验后的 `material_version`，候选内容只能在条目详情中返回；列表不要携带大候选字段。
-- [ ] `restoreArticle` 仅在当前 version 等于 article_adopted_version 且 expectedVersion 一致时恢复快照；有新 OCR/ASR 或后续编辑时返回冲突，不能回滚掉它们。采用正文后，在同一事务内读取 trigger 生成的实际 material_version，写入 article_adopted_version，不在客户端估算加一。采用和恢复都将 pipeline_status 置 ingested，旧分析保持历史，不自动重跑付费模型。
-- [ ] 同一测试中验证材料版本 trigger 生效，已有 Agent 检查点失效机制被触发；详情旧分析标为“正文已更新，分析可能过期”。执行 `node --experimental-strip-types --test src/lib/server/article-enrichment.test.ts src/lib/server/scheduler-atomic.test.ts src/lib/server/agent-integrity.test.ts`。提交：`feat: adopt article candidates with version checks`。
+- [x] 补充 `mergeExistingItem` 对文章元数据的保护：普通 Feed 更新不得清除/覆盖 `article_*` 审计与快照。源上报完整正文的逻辑维持；摘要不能覆盖采用后的完整 body。更新 `mapItem()`，返回校验后的 `material_version`，候选内容只能在条目详情中返回；列表不要携带大候选字段。
+- [x] `restoreArticle` 仅在当前 version 等于 article_adopted_version 且 expectedVersion 一致时恢复快照；有新 OCR/ASR 或后续编辑时返回冲突，不能回滚掉它们。采用正文后，在同一事务内读取 trigger 生成的实际 material_version，写入 article_adopted_version，不在客户端估算加一。采用和恢复都将 pipeline_status 置 ingested，旧分析保持历史，不自动重跑付费模型。
+- [x] 同一测试中验证材料版本 trigger 生效，已有 Agent 检查点失效机制被触发；详情旧分析标为“正文已更新，分析可能过期”。执行 `node --experimental-strip-types --test src/lib/server/article-enrichment.test.ts src/lib/server/scheduler-atomic.test.ts src/lib/server/agent-integrity.test.ts`。提交：`feat: adopt article candidates with version checks`。
 
 ### B03：详情页提供清楚的读取与采用流程
 
@@ -426,7 +450,7 @@ await mergeExistingItem(tx, itemId, {
 
 **Interfaces:** 新增 `previewArticleFn({id})`、`adoptArticleFn({id,digest,material_version})`、`restoreArticleFn({id,material_version})`；响应固定 `{ok:boolean,error?:string}`，刷新后由 getItemFn 提供当前状态。
 
-- [ ] 使用 zod strict 验证入口，禁止混入任意 URL/正文；例如：
+- [x] 使用 zod strict 验证入口，禁止混入任意 URL/正文；例如：
 
 ```ts
 const articleAdoptInput = z.object({
@@ -441,8 +465,8 @@ export const adoptArticleFn = createServerFn({method: 'POST'})
 
 preview/restore 使用同一字段定义 pick 出对应字段；业务错误映射固定中文文案，不透传外部响应或 secret。
 
-- [ ] 按 design-ui 指引复用现有详情页样式。原文正文仍为主内容，候选单独区域：来源链接、读取时间、候选文本、“采用正文”按钮；采用后提供“恢复此前正文”。候选不得用 dangerouslySetInnerHTML 渲染。
-- [ ] mutation 使用与现有 extract 相同的 invalidateQueries 模式；只刷新 `item/inbox/overview`，不触发 analyze/extract。按未配置、读取中、候选就绪、失败、版本冲突、已采用分别显示状态。
+- [x] 按 design-ui 指引复用现有详情页样式。原文正文仍为主内容，候选单独区域：来源链接、读取时间、候选文本、“采用正文”按钮；采用后提供“恢复此前正文”。候选不得用 dangerouslySetInnerHTML 渲染。
+- [x] mutation 使用与现有 extract 相同的 invalidateQueries 模式；只刷新 `item/inbox/overview`，不触发 analyze/extract。按未配置、读取中、候选就绪、失败、版本冲突、已采用分别显示状态。
 
 ```tsx
 <Button variant="outline" disabled={preview.isPending || !item || !readerAvailable}
@@ -453,8 +477,8 @@ preview/restore 使用同一字段定义 pick 出对应字段；业务错误映�
 
 `readerAvailable` 从服务端详情返回的开关/条目资格决定，不根据浏览器 env 猜测；所有 endpoint 仍重复校验。冲突文案为“内容已更新，请重新读取后采用”，不能覆盖新内容。
 
-- [ ] 在现有 readiness UI 用离线候选条目操作：读取、核对、采用、刷新、恢复、版本冲突；mock 只替换受控 reader 网络输入，数据库及服务端入口真实执行。检查候选脚本文本被显示为文本、按钮有可访问名称、390px 无溢出、错误无未捕获异常。
-- [ ] 同一场景验证开发与构建产物，截图写 `screenshots/`；提交：`feat: expose article enrichment in item details`。
+- [x] 在现有 readiness UI 用离线候选条目操作：读取、核对、采用、刷新、恢复、版本冲突；mock 只替换受控 reader 网络输入，数据库及服务端入口真实执行。检查候选脚本文本被显示为文本、按钮有可访问名称、390px 无溢出、错误无未捕获异常。
+- [x] 同一场景验证开发与构建产物，截图写 `screenshots/`；提交：`feat: expose article enrichment in item details`。
 
 ### B04：正文实测与开关回退
 
@@ -465,7 +489,7 @@ preview/restore 使用同一字段定义 pick 出对应字段；业务错误映�
 - [ ] 选 2—3 个业务相关的公开站点，20 篇样本，含短文、长文、图文、正文缺失及正文已有条目。首版只把验证过的 hostname 加入 allowlist；带 query 的地址标为首版不支持，不能悄悄换 URL。
 - [ ] 对比题目、来源域名、正文开头/末尾及 3 处中间事实；登录页/导航页/错误页不得作为可采用正文通过验收。指标分开记录请求成功率、候选可用率、经核验完整率，unknown 不进入完整分子。
 - [ ] 通过条件：20 项均有明确结果；可访问且在声明范围内的样本候选可用率目标 ≥90%；错误页误通过为 0；失败旧正文保持不变；重复采用/并发冲突检查通过。达不到时缩小支持站点，不自动换重型浏览器扩大承诺。
-- [ ] 验证 `ARTICLE_READER_ENABLED=false` 后禁止新读取，原有采集、已采用 body 和回退仍可使用；已经完成的候选不删除。服务端配置和源码包不含 Key/Cookie。
+- [x] 验证 `ARTICLE_READER_ENABLED=false` 后禁止新读取，原有采集、已采用 body 和回退仍可使用；已经完成的候选不删除。服务端配置和源码包不含 Key/Cookie。
 - [ ] 以 R01 发布门交付 B 版。提交：`docs: publish verified article enrichment scope`。
 
 ## 6. C：视频字幕与渠道扩展任务
@@ -491,7 +515,7 @@ subprocess.run([
 
 - [ ] 人工字幕优先，同语言没有人工字幕时才取自动字幕。下载限制为单条视频、单一已列出的 language、JSON3 字幕；使用 `--write-subs --write-auto-subs --sub-format json3 --sub-langs <已验证语言>`，保留 `--skip-download --no-playlist --ignore-config`。临时目录独立，45 秒硬截止。
 - [ ] 核对文字与时间轴；没有字幕必须明确记录，不自动调用 ASR、不自动下载音轨。yt-dlp 所需 JS runtime/附加组件按本次版本检查并记录，不能假定单个包足够。
-- [ ] C01 通过才实施 C02：公开且实际提供目标语言字幕的样本可读取；人工/自动来源准确；无字幕不会伪造文本。提交仅样本的公开 URL 与脱敏报告：`docs: verify youtube subtitle pilot`。
+- [ ] 用户已明确允许C01实网未通过时实现/离线验证C02，feature/profile必须关闭；真实启用仍要求C01通过：公开且实际提供目标语言字幕的样本可读取；人工/自动来源准确；无字幕不会伪造文本。提交仅样本的公开 URL 与脱敏报告：`docs: verify youtube subtitle pilot`。
 
 ### C02：字幕作为独立可选节点接入
 
@@ -499,9 +523,9 @@ subprocess.run([
 
 **Interfaces:** 内部 `POST /v1/transcript` 只收 `{video_id, language}`；host 固定 YouTube，Bearer 独立凭据。返回 `{status:'ok'|'no_subtitles',video_id,language,kind:'manual'|'automatic'|'none',text}`；技术失败为非 2xx 稳定错误码。控制面 `readSubtitle(itemId)` 从 DB 解析 video ID。
 
-- [ ] 先写协议检查：缺 token 401、非法 ID 400、插件自定义参数不能输入、无字幕 no_subtitles、上游失败非成功、超时进程回收；单字幕超过 2 MiB 显式失败。test_server.py 使用 unittest 和假的 yt-dlp 子进程输出，不需要真实账号。
-- [ ] 将 C01 通过的工具版本固定在 requirements/镜像中，独立 profile `subtitles` 默认不启用，不给 Telethon 镜像增加无关包。节点并发 1、单任务 45 秒、客户端期限 50 秒；请求 JSON 4 KiB、输出 2 MiB。生产节点以 asyncio 子进程流式累计 stdout/stderr，达到上限立即终止并回收，不能直接沿用 C01 的 capture_output 后置检查；临时卷固定 32 MiB，单文件 2 MiB，finally 清理，关闭匿名健康以外接口。
-- [ ] JSON3 文本解析首版保留事件顺序，只去掉完全相同的相邻段；不做会吞掉真实重复语句的全文 set 去重：
+- [x] 先写协议检查：缺 token 401、非法 ID 400、插件自定义参数不能输入、无字幕 no_subtitles、上游失败非成功、超时进程回收；单字幕超过 2 MiB 显式失败。test_server.py 使用 unittest 和假的 yt-dlp 子进程输出，不需要真实账号。
+- [x] 将 C01 通过的工具版本固定在 requirements/镜像中，独立 profile `subtitles` 默认不启用，不给 Telethon 镜像增加无关包。节点并发 1、单任务 45 秒、客户端期限 50 秒；请求 JSON 4 KiB、输出 2 MiB。生产节点以 asyncio 子进程流式累计 stdout/stderr，达到上限立即终止并回收，不能直接沿用 C01 的 capture_output 后置检查；临时卷固定 32 MiB，单文件 2 MiB，finally 清理，关闭匿名健康以外接口。
+- [x] JSON3 文本解析首版保留事件顺序，只去掉完全相同的相邻段；不做会吞掉真实重复语句的全文 set 去重：
 
 ```python
 def transcript_text(payload):
@@ -515,9 +539,9 @@ def transcript_text(payload):
 
 解析前检查 events/list、segs/list、utf8/string 并限制元素总量 100000；坏结构返回 invalid_response。滚动字幕可能有重叠，保存原始 JSON3 在受限对象存储以便后续校正；首版不承诺逐字去重质量。通过 `MinIO/storage.ts` 的既有存储入口，不直接把本地临时文件路径暴露给产品。
 
-- [ ] 控制面收到结果后，以现有 material_version 做 CAS，在 body 末尾添加一个明确的 `[字幕: language; manual|automatic]` 区块；保存 `extra.transcript_language/kind/provider/digest/state`。重复 digest 不追加；不同字幕不自动覆盖已有字幕，先返回冲突/重新选择提示。更新共享正文合并逻辑，同时保留 OCR/ASR/字幕附加区块，添加混合正文回归；不得只改详情页。
+- [x] 控制面收到结果后，以现有 material_version 做 CAS，在 body 末尾添加一个明确的 `[字幕: language; manual|automatic]` 区块；保存 `extra.transcript_language/kind/provider/digest/state`。重复 digest 不追加；不同字幕不自动覆盖已有字幕，先返回冲突/重新选择提示。更新共享正文合并逻辑，同时保留 OCR/ASR/字幕附加区块，添加混合正文回归；不得只改详情页。
 - [ ] 节点出口只允许完成该固定 extractor 所需的公开目标，拒绝私网和任意 extractor 跳转；应用只收 video ID 不等于下游请求安全，容器网络出口隔离和 DNS 规则需与协议测试一起验收。功能开关关闭时不发外部请求，节点不可用返回 subtitle_unavailable，RSS 视频列表照常入库。
-- [ ] UI 在 YouTube 条目显示“读取字幕”，成功标注人工/自动及语言；无字幕显示“此视频未提供可用字幕”。不接入自动付费 ASR。定向检查：
+- [x] UI 在 YouTube 条目显示“读取字幕”，成功标注人工/自动及语言；无字幕显示“此视频未提供可用字幕”。不接入自动付费 ASR。定向检查：
 
 ```text
 python -m unittest discover -s workers/subtitle -p test_server.py
@@ -532,10 +556,10 @@ node --experimental-strip-types --test src/lib/server/subtitles.test.ts src/lib/
 
 **Interfaces:** 固定信源必须归一化到 CollectorBatch；关键词搜索必须归一化到 KeywordBatch，并通过 A03 公平合并。两者的能力、配额和可回补范围分别记录。
 
-- [ ] 根据当前缺失的业务材料选一个平台。默认优先补已有信源的可用性；不因工具支持平台多就全部开启。平台/具体账号未确定前，本任务状态为 `waiting_for_target`，不阻塞 A/B/C01。
+- [x] 根据当前缺失的业务材料选一个平台。默认优先补已有信源的可用性；不因工具支持平台多就全部开启。平台/具体账号未确定前，本任务状态为 `waiting_for_target`，不阻塞 A/B/C01。
 - [ ] 若需要 Agent-Reach，按用户已安装的 agent-reach 技能和官方安装说明，在隔离环境只检查目标 channel；不批量安装其全部上游组件、不修改全局 Agent 配置。报告记录 doctor 和真实读取结果，两者分开。
 - [ ] 对 3 个固定信源或 5 个关键词验证：首次读取、重复读取、新条目、过期登录、限流、暂时失败。保存参考 ID 和原始公开 URL。不要把“登录态已存在”当作后台长期稳定的证据。
-- [ ] Feed 可满足则直接接现有 rsshubAdapter；原生 adapter 必须返回统一契约，覆盖与错误码不可省略：
+- [x] Feed 可满足则直接接现有 rsshubAdapter；原生 adapter 必须返回统一契约，覆盖与错误码不可省略：
 
 ```ts
 return {
@@ -628,4 +652,4 @@ node scripts/browser-smoke.mjs http://127.0.0.1:8081/ screenshots/collection-bui
 
 自检映射：采集条数 A02；关键词公平 A03；窗口与历史边界 A04；原文读取 B01；无损合并/版本/回退 B02；可操作界面 B03；真实质量 B04；字幕 C01/C02；新平台 C03；浏览器 C04；验证/发布/观测 R01。旧稳定性计划中的独立议题没有被伪装成已完成。
 
-执行方式可选：按任务委派实施，或当前会话顺序实施。默认起点均为 A01，A/B 不依赖尚未选定的新平台。本文所有任务复选框保持未完成，表示本轮仅完成规划。
+执行方式可选：按任务委派实施，或当前会话顺序实施。实施已完成至C04条件评估并进入R01统一验证；A/B不依赖尚待实网验收的新平台。本轮实施/离线进度已在0.1节与各任务复选框更新；真实样本、条件实验、持续运行和部署门禁保持未勾选。不能把代码完成写成完整实网验收。

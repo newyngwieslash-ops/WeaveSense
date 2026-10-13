@@ -19,7 +19,7 @@
  * written for a human look: HTTP 200 is not acceptance.
  *
  * Usage: node scripts/readiness-ui.mjs <origin> <tag> [--expect]
- *   --article-only (or --article) --control-dir <scratch path> runs B03 against
+ *   --article-only (or --article) --control-dir <isolated control path> runs B03 against
  *   the real seeded database/serverFns and controlled reader network only.
  *   <origin> must be an isolated instance; 8182 and 8080 are refused.
  */
@@ -30,10 +30,11 @@ import { chromium } from "playwright";
 const origin = process.argv[2];
 const tag = process.argv[3] ?? "dev";
 const expectFixtures = process.argv.includes("--expect");
+const skipArticleTimeout = process.argv.includes("--skip-timeouts");
 const articleLayoutOnly = process.argv.includes("--article-layout-only");
 const articleOnly = process.argv.includes("--article-only") || process.argv.includes("--article") || articleLayoutOnly;
 const controlDir = process.argv[process.argv.indexOf("--control-dir") + 1];
-if (articleOnly) assert.ok(process.argv.includes("--control-dir") && controlDir, "article QA requires scratch SQL control directory");
+if (articleOnly) assert.ok(process.argv.includes("--control-dir") && controlDir, "article QA requires isolated SQL control directory");
 assert.ok(origin, "usage: readiness-ui.mjs <origin> <tag> [--expect]");
 assert.ok(!["8182", "8080"].includes(new URL(origin).port),
   "an isolated instance is required (8182/8080 are the user's environments)");
@@ -93,10 +94,10 @@ const measure = () => ({
 });
 
 async function checkArticles() {
-  // Scratch fixtures/control own isolated data and network; no app test endpoint.
-  const scratch = "../.superpowers/sdd/2026-10-13-collection-capability-roadmap/scratch/";
-  const { control } = await import(new URL(scratch + "b03-control.mjs", import.meta.url));
-  const { ORIGINAL_BODY, CANDIDATE_BODY, CONCURRENT_BODY, SCRIPT_TEXT, LONG_TOKEN } = await import(new URL(scratch + "b03-fixtures.mjs", import.meta.url));
+  // Portable fixtures/control own isolated data and network; no app test endpoint.
+  const fixtures = "../validation/collection/";
+  const { control } = await import(new URL(fixtures + "b03-control.mjs", import.meta.url));
+  const { ORIGINAL_BODY, CANDIDATE_BODY, CONCURRENT_BODY, SCRIPT_TEXT, LONG_TOKEN } = await import(new URL(fixtures + "b03-fixtures.mjs", import.meta.url));
   const state = () => control(controlDir, { op: "state" });
   const row = (snapshot, id) => snapshot.rows.find(item => item.id === id);
   for (const width of [1280, 390]) {
@@ -233,7 +234,7 @@ async function checkArticles() {
       await status("原文操作失败，请稍后重试"); await idle();
       assert.equal(await page.getByTestId("item-body").innerText(), ORIGINAL_BODY);
       await screenshot("failed");
-      if (width === 1280) {
+      if (width === 1280 && !skipArticleTimeout) {
         await open("timeout"); const start = Date.now(); await read();
         await status("读取超时，请稍后重试"); await idle();
         assert.ok(Date.now() - start >= 19_000 && Date.now() - start < 30_000, "real 20s deadline must abort drip response");
@@ -336,13 +337,13 @@ try {
 
   const consoleErrors = results.flatMap((r) => r.errors ?? []);
   assert.deepEqual(consoleErrors, [], `console/page errors: ${consoleErrors.join(" | ")}`);
-  writeFileSync(`screenshots/readiness-${tag}-result.json`, JSON.stringify({ origin, tag, results, ok: true }, null, 2));
+  writeFileSync(`screenshots/readiness-${tag}-result.json`, JSON.stringify({ origin, tag, timeouts_skipped: articleOnly && skipArticleTimeout, timeout_evidence: articleOnly && skipArticleTimeout ? { source_sha: "c818665a1ebccb7c910e99e65fea755b023f7a51", report: "docs/operations/collection-capability-acceptance.md#b01b04-article-enrichment-scope-2026-10-13" } : null, results, ok: true }, null, 2));
   console.log(JSON.stringify({ ok: true, origin, tag, checks: results.length, screenshots: results.length }, null, 2));
   await browser.close();
   void expectFixtures;
 } catch (error) {
   writeFileSync(`screenshots/readiness-${tag}-result.json`,
-    JSON.stringify({ origin, tag, results, ok: false, error: String(error?.message ?? error) }, null, 2));
+    JSON.stringify({ origin, tag, timeouts_skipped: articleOnly && skipArticleTimeout, timeout_evidence: articleOnly && skipArticleTimeout ? { source_sha: "c818665a1ebccb7c910e99e65fea755b023f7a51", report: "docs/operations/collection-capability-acceptance.md#b01b04-article-enrichment-scope-2026-10-13" } : null, results, ok: false, error: String(error?.message ?? error) }, null, 2));
   console.error(JSON.stringify({ ok: false, error: String(error?.message ?? error) }, null, 2));
   await browser.close();
   process.exit(1);

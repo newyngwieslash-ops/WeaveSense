@@ -90,7 +90,7 @@ After the A04 final cursor fix, the controller's full build passed using a tempo
 
 Dev and current built output passed desktop/mobile QA: five coverage states × two modes × two viewports = 20 article checks; console/page errors 0, horizontal overflow 0, baseline divergence false. Desktop/mobile screenshots were visually inspected. Evidence: `screenshots/collection-jobs-2026-10-13T05-52-05-430Z/result.json` and paired screenshots; method/timing detail in `scratch/ui-final-report.md`. The generic one-second smoke timer needed a bounded fixture-readiness wait in a scratch adapter; original smoke checks and error collection were preserved. This uses isolated fixtures and establishes UI rendering, not upstream or production reliability.
 
-**Full `npm test` is not reported green.** The controller hit two existing deployment assertions: MINIO_ENDPOINT environment inventory and opencode `pids_limit` expected 64 / actual 512. The relevant scripts/Compose are unchanged against `bec6212a`. The existing service-env test reads `F:/loom-backups/env/*.env` internally and prints key names, so the entire controller suite is not described as secret-file-free. Remaining stages ran separately; keyword/pagination and research stages passed. Three legacy-model checks initially conflicted with the deliberately nonexistent model-config override; direct-Node focused reruns with that variable blank passed without the autodiscovery wrapper. These baseline gate limitations remain explicit.
+**Historical A-only full `npm test` failed.** That earlier controller hit two existing deployment assertions: MINIO_ENDPOINT environment inventory and opencode `pids_limit` expected 64 / actual 512. The relevant scripts/Compose are unchanged against `bec6212a`. At that earlier revision the service-env test read `F:/loom-backups/env/*.env` internally and prints key names, so the entire controller suite is not described as secret-file-free. Remaining stages ran separately; keyword/pagination and research stages passed. Three legacy-model checks initially conflicted with the deliberately nonexistent model-config override; direct-Node focused reruns with that variable blank passed without the autodiscovery wrapper. These historical failures remain visible. B04 subsequently replaced real-secret inventory reads with public-template assertions and corrected the MINIO/pids-limit inventory; C02 extended its topology/template guard. Current checks do not read F: env files. The final R01 full-suite result is reported separately rather than inferred from either old failures or focused passes.
 
 Historical A05 scope ended at A05 code and offline verification; B/C had not been implemented at that point. Current B implementation and remaining public-quality gates are recorded below. Live 24-hour acceptance, deployed uptime and release remain pending.
 
@@ -200,8 +200,61 @@ node scripts/readiness-offline.mjs -- node --experimental-strip-types validation
 
 The server reader uses no Key/Cookie; public templates contain placeholders plus disabled/blank reader settings. B04 adds no secrets/config reads or package generation. The existing source pack exclusion policy remains unchanged, and no fresh source archive or production image is claimed. R01 owns the refreshed full-suite/build/release ledger; production publication and 72-hour observation remain pending.
 
+## C01–C04 scope and pending live gates
+
+C02 application QA is bound to `42b508d03b9ac6b4769a8a845afd733cca90af41`; the relay-only fix is `7e588e62` and leaves those application files unchanged. Actual reviewed local worker image is `sha256:3346991de8f9e5292cfc8eccc2b2824795377bc47c3ebc445b8a2f06050e2803`: Linux10 tests with zero failures/errors/skips and actual worker network-isolation controls passed. The real >5s relay regression supplies response-header/shared46s deadline proof; the independent application fixture does not cross that relay. Older worker-image/protocol9 evidence and the app report's then-pending relay defect are historical, superseded only for that fixed issue. No image push or production activation is claimed.
+
+Unchanged app QA used actual `npm run build` on fresh native PostgreSQL, 29 migration names through `0030_collection_coverage.sql`, separate dev/built databases and real private MinIO. Both 1280/390 detail flows exercised strict serverFns, material triggers/CAS, finite en/zh-Hans/zh-Hant manual/automatic subtitles, repeat/conflict/no-subtitles/malformed/upload-failure behavior, preserved OCR/ASR/history, unchanged automatic-job counts and safe public projection. Four known-present JSON3 objects were authenticated-read byte-for-byte; anonymous GET actually returned403/AccessDenied. The original dev client50s drip measured50,015ms with closed transport/active0. Dev desktop/mobile screenshots were inspected together, errors0/overflowfalse; all exact owned resources were removed. Evidence: `scratch/ui-C02-report.md`, `scratch/c02-fix1-isolation.json` and `screenshots/c02-6a867a2c-307d-436c-a75e-04d2cc3c3459/{dev,built}-result.json` under the roadmap execution/worktree roots. These are controlled upstream fixtures, not real YouTube readings.
+
+`SUBTITLE_ENABLED=false` and the optional `subtitles` profile remain off. The fixed extractor's public-host completeness is provisional; live support is not established merely by allowing `www.youtube.com:443`. No arbitrary URL/flags/Cookie reaches the worker, no paid ASR/model fallback, no public transcript object key. Exact raw JSON3 stays in private `loom-subtitles`; text/metadata stay subject to material-version checks. [Subtitle pilot](subtitle-pilot.md) retains actual C01 tool/synthetic evidence and the real-service prerequisites.
+
+C03 `187a245a` uses existing RSS/collector/scheduler code and the three disabled Agent-Reach/Obscura/Jina-reader release manifests. Its final44 synthetic calls, zero real HTTP, refusal/inert checks passed and task review is approved. [Channel pilot](channel-pilot.md) records raw/normalized IDs, incomparable windows, finite stop and actual72h/new-arrival conditions. Live duration is0, real release IDs/fees/omissions unknown; GitHub code/issues/commits/repository search is outside this pilot. No source was inserted/enabled in production. C04's reviewed assessment `8bd35fd6` remains conditional as described below.
+
 ## C04 conditional browser assessment (2026-10-13)
 
 The conditional assessment is implemented; status is **`waiting_for_verified_js_gap`**. The browser experiment is untriggered and live acceptance remains pending. B04 made no actual reads of its 20 articles, captured no original Feed bodies and has no candidate/reference comparison or verified completeness. Its retained paraphrased references do not establish literal extraction markers. The prior DNS/provider failures prove neither JS dependence nor ordinary HTTP/Feed sufficiency; `not_needed` is unsupported. No browser benchmark, page manifest, browser-collector service or Obscura dependency is added before the condition is proved. Evidence is the B04 scope/barrier record above and `.superpowers/sdd/2026-10-13-collection-capability-roadmap/scratch/task-C04-notes.md`.
 
 The trigger is policy-valid reachable HTTP/Feed evidence, actual reference comparison and an in-scope target demonstrably missing without JS and available through JS rendering. Fix access/account scope, selectors and literal markers first; only demonstrated HTTP/Feed satisfaction permits `not_needed`. A triggered comparison uses the same 20 eligible public pages and extraction targets: existing Playwright/Chromium first, then fixed-version Obscura through the same CDP extraction script and waits, concurrency 1, a fresh finally-closed context and a true 30-second total deadline per page. Navigation, subresources, WebSockets, service workers and downloads require controlled egress. Record engine/version/URL/status/marker result/duration/peak RSS/error. Adoption requires key-page correctness no worse than Chromium, no new resource leaks and at least 30% improvement in duration or peak memory; otherwise retain Chromium/existing flow. The pilot grants no all-platform compatibility or deployment claim.
+
+## R01 portable checks and final unified verification
+
+R01 reuses the seven B03 and six C02 QA helpers under tracked `validation/collection/`. `scripts/readiness-ui.mjs` imports the stable B03 fixtures/control; no ignored plan-scratch module is needed to reproduce a clean checkout. Fixture/backend/business assertions remain the existing ones. Helper source/preload paths are separate from ignored `artifacts/collection-capability/ui/` controls/logs/reports; screenshots stay under `screenshots/`. Owned apps stop before PostgreSQL/MinIO disposal, and cleanup failures remain failures.
+
+The new portability regression first failed on the absent stable helper, then passed both clean-checkout dependency and inert-preload/safe-default checks. Scoped helper/UI lint passed with no warnings after two transferred-helper findings were repaired. No framework, main dependency, migration or production behavior was added.
+
+`npm test` now invokes `test:collection`, which runs the existing article-reader/enrichment/subtitles/article-contract checks, the portable dependency/env regression, and article-validation/C03-observer self-checks. Default tests require no Docker, Python, yt-dlp or real network. Use explicit allowlisted test values; direct Node tests use blank model configuration to preserve valid fallback assertions:
+
+```powershell
+$r01PreviousOverrides = $env:LOOM_OFFLINE_OVERRIDES
+$r01NpmCli = Join-Path (Split-Path (Get-Command node).Source) 'node_modules/npm/bin/npm-cli.js'
+try {
+  $env:LOOM_OFFLINE_OVERRIDES = '{"LOOM_RUNTIME_MODE":"test","AI_ENGINE":"legacy","DATABASE_URL":"","LOOM_MODEL_CONFIG":"","XAI_API_KEY":"","AUTO_ANALYZE":"false","EXTRACT_AUTO":"false","AGENT_WORKER_ENABLED":"false","AGENT_ASYNC_RESEARCH_ENABLED":"false","AGENT_OPENCODE_WORKER_ENABLED":"false","AGENT_ASSISTANT_ENABLED":"false","AGENT_ASSISTANT_ACTIONS_ENABLED":"false","ARTICLE_READER_ENABLED":"false","ARTICLE_READER_ALLOWED_HOSTS":"","SUBTITLE_ENABLED":"false","SUBTITLE_URL":"","SUBTITLE_SERVICE_TOKEN":""}'
+  node scripts/readiness-offline.mjs -- node $r01NpmCli run test:collection
+} finally {
+  if ($null -eq $r01PreviousOverrides) { Remove-Item Env:LOOM_OFFLINE_OVERRIDES -ErrorAction SilentlyContinue }
+  else { $env:LOOM_OFFLINE_OVERRIDES = $r01PreviousOverrides }
+}
+```
+
+For the full gate use the same wrapper/environment with npm `test`, `gateway:test`, `typecheck`, `lint` and retain each actual exit/log; a failed internal && stage leaves later stages unrun. Full application builds must instead use a nonexistent absolute model-config path and a generated disposable native-PG DSN. The existing portable build helper runs actual npm build including db:migrate on an initially empty ledger and compares exact migration names; a no-DATABASE_URL migration skip or bare Vite build is insufficient. Vite refuses root dotenv filenames before startup; no secrets/model/F: env contents are read.
+
+Optional full QA entries, with cached Docker PostgreSQL/MinIO images and installed Playwright Chromium, start only disposable loopback instances and never user8080/8182 services:
+
+```text
+npm run qa:collection:articles -- --native-fence
+npm run qa:collection:subtitles
+```
+
+The default article QA retains its real20s deadline and optional native two-process schedule; subtitle QA retains the real50s client case. For relocation-only final detail flows, explicit `--skip-timeouts` retains read/cache/adopt/restore/CAS/private-storage checks while omitting unchanged20/50s delays. Verdicts record `timeouts_skipped:true` and the original runtime SHA/evidence; omitted cases do not count as a fresh deadline pass. Final QA can share one actual build/migration helper and separate fixture/object state. Earlier unchanged worker isolation/native schedules need not repeat merely to quote them.
+
+C01 stdlib self-check (also replays ten fixtures) and optional C02 Python units use a supplied supported interpreter; they are separate documented commands, not global prerequisites for npm test:
+
+```text
+node scripts/readiness-offline.mjs -- <absolute-Python-executable> -I validation/collection/subtitle-validation.py --self-check
+node scripts/readiness-offline.mjs -- <absolute-Python3.12> -I -m unittest discover -s workers/subtitle -p test_server.py
+npm run test:subtitles:isolation -- <existing-local-report-directory>/isolation.json
+```
+
+Replace the Python placeholders with real executable paths: Python >=3.10 for C01, Python3.12 for C02 units. Local Windows units may skip Linux process/file-limit checks and cannot replace the optional Docker Linux proof. The Docker script uses only disposable resources and the local `weavesense-subtitle:2026.08.19` image; bind its inspected ID to the reviewed image above. No image install/pull, service activation, real subtitle/feed read or endurance observer is part of these default checks. Missing optional prerequisite is reported unmet, never a silent success.
+
+**Final R01 gates, in progress:** actual npm test exited0 (293315ms), gateway:test exited0 with117 passed/0fail/0skip, and typecheck exited0. New collection stage ran24 typed tests, portable2 tests, article bookkeeping self-check and C03 self-check44 synthetic calls/0realHTTP. First full lint failed with364 errors/38warnings solely while traversing generated ignored task/tool scratch; its raw failure is retained. The authorized fix ignores only .superpowers/sdd/**, keeping stable validation/collection and all real source checked; full lint rerun is pending. Actual native-PG npm build/ledger and selected dev+built desktop/mobile detail verdicts remain pending. Command logs/exits: .superpowers/sdd/2026-10-13-collection-capability-roadmap/scratch/r01-final-9b8dc68d-9375-44b1-951e-0f74767a70d3/{gates.json,test.log,gateway-test.log,typecheck.log,lint.log}. Historical results above are not substitutes. Deployment/source archive/production image and production72h remain not_done/not_started.
