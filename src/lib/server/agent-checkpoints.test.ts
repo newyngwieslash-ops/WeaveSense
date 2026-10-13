@@ -5,6 +5,9 @@ import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 import { beginRun } from "./agent-runs.ts";
 import { loadCheckpoint, saveCheckpoint } from "./agent-checkpoints.ts";
+import { appendEvidenceReceipt } from "./agent-runs.ts";
+import { evidenceSourceFor } from "./agent-context.ts";
+import { mapAgentItem } from "./agent-retrieval.ts";
 
 async function setup() {
   const pg = new PGlite();
@@ -56,4 +59,22 @@ test("runtime version mismatch refuses restore", async () => {
   assert.equal(loaded.ok, false);
   if (!loaded.ok) assert.equal(loaded.error, "version_mismatch");
   await pg.close();
+});
+
+test("checkpoint material guard uses persisted tool receipts and keeps external evidence independent", async t => {
+  const f = await setup(); t.after(() => f.pg.close());
+  await f.sql.query("insert into sources(id,platform,name) values('s','rss','信源')");
+  await f.sql.query("insert into items(id,source_id,platform,external_id,body) values('i','s','rss','i','原始材料')");
+  const [row] = await f.sql.query<Record<string, unknown>>("select i.*,s.name as source_name from items i join sources s on s.id=i.source_id where i.id='i'");
+  const item = mapAgentItem(row);
+  const source = evidenceSourceFor(item, { start: 0, end: Array.from(item.body).length, text: item.body }, "full");
+  await appendEvidenceReceipt(f.sql, { runId: f.runId, receipt: { type: "evidence", origin: "mcp", evidence_id: "external", item_id: null, text: "独立外部证据" } });
+  await saveCheckpoint(f.sql, { checkPointId: "cp-material", runId: f.runId, claimToken: f.claim, sequence: 1,
+    schemaVersion: "1", runtimeVersion: "eino-v0.9.19", payload: Buffer.from("opaque") });
+  const load = () => loadCheckpoint(f.sql, { checkPointId: "cp-material", runId: f.runId, runtimeVersion: "eino-v0.9.19" });
+  assert.equal((await load()).ok, true, "MCP evidence must not be treated as library material");
+  await appendEvidenceReceipt(f.sql, { runId: f.runId, receipt: { type: "evidence", origin: "internal", ...source } });
+  assert.equal((await load()).ok, true);
+  await f.sql.query("insert into extract_jobs(id,item_id,kind,status,result_text) values('revision','i','ocr','ok','新OCR')");
+  assert.deepEqual(await load(), { ok: false, error: "checkpoint_input_changed" });
 });

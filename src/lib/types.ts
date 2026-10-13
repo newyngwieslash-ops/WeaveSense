@@ -36,6 +36,8 @@ export type KeywordRow = {
 
 export type JsonScalar = string | number | boolean | null;
 
+export type ArticleAvailability = { available: boolean; reason?: string };
+
 export type ItemRow = {
   material_version?: number;
   id: string;

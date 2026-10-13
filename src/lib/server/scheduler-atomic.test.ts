@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 import { readFile } from "node:fs/promises";
-import { tagCorpusWithPhrase, finishSourceJob } from "./scheduler-atomic.ts";
+import { tagCorpusWithPhrase, finishSourceJob, mergeExistingItem } from "./scheduler-atomic.ts";
 
 /**
  * T07: historical keyword tagging must cover the WHOLE corpus, repeatedly and
@@ -33,6 +33,24 @@ async function itemsDb() {
   };
   return { pg, sql };
 }
+
+test("ordinary feed merge cannot forge article audit, snapshots or leases", async t => {
+  const pg = new PGlite(); await pg.waitReady; t.after(() => pg.close());
+  for (const name of ["0002_schema.sql", "0003_keywords.sql", "0004_production.sql", "0019_agent_material_revision.sql"]) {
+    await pg.exec(await readFile(new URL(`../../../migrations/${name}`, import.meta.url), "utf8"));
+  }
+  const sql = { async query<T>(text: string, params: unknown[] = []) { return (await pg.query<T>(text, params)).rows; } };
+  await sql.query(`insert into items(id,source_id,platform,external_id,body,extra)
+    values('audit','s','rss','audit','采用的全文','{"body_complete":true,"article_state":"adopted","article_previous_body":"旧正文","article_adopted_version":3}')`);
+  await mergeExistingItem(sql, "audit", { title: "", body: "新摘要", author: "", url: "", media_type: "article",
+    media_urls: [], thumbnail_url: "", views: null, likes: null, published_at: null,
+    extra: { provider: "feed", body_complete: false, article_state: "error", article_previous_body: "恶意正文",
+      article_claim_token: "feed-token", article_candidate: "伪造候选" } }, ["新增词"]);
+  const [row] = await sql.query<{ body: string; extra: Record<string, unknown>; material_version: bigint }>("select * from items where id='audit'");
+  assert.equal(row.body, "采用的全文"); assert.equal(Number(row.material_version), 0);
+  assert.deepEqual(row.extra, { body_complete: true, article_state: "adopted", article_previous_body: "旧正文",
+    article_adopted_version: 3, provider: "feed" });
+});
 
 /** Insert `count` matching rows plus `nonMatching` rows that must never be tagged. */
 async function seed(pg: PGlite, phrase: string, count: number, nonMatching: number, preTagged = 0) {

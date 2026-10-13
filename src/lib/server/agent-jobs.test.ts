@@ -5,6 +5,9 @@ import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 import { enqueueResearchJob } from "./agent-queue.ts";
 import { handleAgentJobs } from "./agent-jobs.ts";
+import { saveCheckpoint } from "./agent-checkpoints.ts";
+import { mapAgentItem } from "./agent-retrieval.ts";
+import { evidenceSourceFor } from "./agent-context.ts";
 
 async function setup() {
   const pg = new PGlite();
@@ -97,4 +100,31 @@ test("renewing a lease preserves the originally persisted execution deadline", a
     const [after] = await sql.query<{ expires_at: string }>("select expires_at from ai_runs where id=$1", [claim.body.run_id]);
     assert.equal(String(after.expires_at), String(before.expires_at));
   } finally { await pg.close(); }
+});
+
+for (const changed of [false, true]) test(`expired checkpoint ${changed ? "refuses changed library material" : "resumes unchanged library material"}`, async t => {
+  const f = await setup(); t.after(() => f.pg.close());
+  const [raw] = await f.sql.query<Record<string, unknown>>("select i.*,s.name as source_name from items i join sources s on s.id=i.source_id where i.id='item-1'");
+  const item = mapAgentItem(raw);
+  const source = evidenceSourceFor(item, { start: 0, end: Array.from(item.body).length, text: item.body }, "full");
+  const job = await enqueueResearchJob(f.sql, { question: "电池", requestId: randomUUID(), materialHash: "h", snapshot: { sources: [source] } });
+  assert.ok(job);
+  const claim = await handleAgentJobs({ sql: f.sql, authorized: true, action: "claim", params: {} });
+  assert.equal(claim.status, 200);
+  assert.equal(await saveCheckpoint(f.sql, { runId: String(claim.body.run_id), checkPointId: "cp", claimToken: String(claim.body.claim_token),
+    sequence: 1, schemaVersion: "1", runtimeVersion: "eino-v0.9.19", payload: Buffer.from("opaque-state") }), "ok");
+  if (changed) await f.sql.query("update items set body=body||'最新材料' where id='item-1'");
+  await f.sql.query("update ai_jobs set lease_until=now()-interval '1 minute' where id=$1", [claim.body.job_id]);
+  const resumed = await handleAgentJobs({ sql: f.sql, authorized: true, action: "claim", params: {} });
+  if (changed) {
+    assert.equal(resumed.status, 404); assert.notEqual(resumed.body.resume, true);
+    const [run] = await f.sql.query<{ status: string; error_code: string; claim_token: string }>("select * from ai_runs where id=$1", [claim.body.run_id]);
+    assert.equal(run.status, "outcome_unknown"); assert.equal(run.error_code, "checkpoint_input_changed");
+    assert.equal(run.claim_token, claim.body.claim_token, "stale checkpoint must not receive a new owner token");
+    assert.equal((await f.sql.query("select * from ai_model_calls")).length, 0);
+    assert.equal((await f.sql.query("select * from knowledge_notes")).length, 0);
+  } else {
+    assert.equal(resumed.status, 200); assert.equal(resumed.body.resume, true);
+    assert.notEqual(resumed.body.claim_token, claim.body.claim_token); assert.equal(resumed.body.sequence, 1);
+  }
 });

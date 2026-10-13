@@ -3,8 +3,8 @@ import { agentTransaction, lockRun, ownsRun } from "./agent-transaction.ts";
 import { completeJobSchema, checkpointActionSchema, renewJobSchema, claimJobSchema } from "../agent-contract.ts";
 import { settleJobBudget } from "./agent-budget.ts";
 import { randomBytes, randomUUID } from "node:crypto";
-import { beginRun, hashCanonical, receiptsForRun } from "./agent-runs.ts";
-import { loadCheckpoint, saveCheckpoint } from "./agent-checkpoints.ts";
+import { beginRun, receiptsForRun } from "./agent-runs.ts";
+import { loadCheckpoint, saveCheckpoint, checkpointInputError } from "./agent-checkpoints.ts";
 import { claimAiJob, finishAiJob, expireQueuedResearchJobs } from "./agent-queue.ts";
 import { hashRunToken } from "./agent-data.ts";
 import { parseExecuteResponse } from "../agent-contract.ts";
@@ -173,20 +173,26 @@ async function handleAgentJobsInner(opts: {
             model_profile: run.request_json.model_profile, runtime_version: "1.3.13", runtime_binding: binding, phase: "reconcile" } };
         }
       }
+      let recoveryError = "recovery_unsafe";
       if (provider === "eino" && run?.status === "running" && new Date(run.expires_at)>new Date(clock.now) && cp && cp.runtime_version === "eino-v0.9.19"
         && facts.uncertain === 0 && facts.n === Number(cp.model_call_count) && run.events_json.length === Number(cp.evidence_event_count)) {
-        const token = randomUUID(), dataToken = randomBytes(32).toString("hex");
-        await opts.sql.query("update ai_jobs set claim_token=$2,attempts=attempts+1,lease_until=least($3::timestamptz,clock_timestamp()+interval '60 seconds') where id=$1",[expired.id,token,run.expires_at]);
-        await opts.sql.query("update ai_runs set claim_token=$2,data_token_hash=$3 where id=$1",[run.id,token,hashRunToken(dataToken)]);
-        await opts.sql.query("update agent_checkpoints set claim_token=$2 where run_id=$1",[run.id,token]);
-        return { status:200,body:{job_id:expired.id,run_id:run.id,claim_token:token,data_access_token:dataToken,mode:run.mode,
-          question:run.request_json.question,input:{question:run.request_json.question,sources:runtimeSources(run.request_json.sources??[]),range:run.request_json.range??null},
-          policy:run.request_json.policy,resume:true,sequence:cp.sequence,
-          ...(run.request_json.governed ? { governed: true, producer_model_calls: run.request_json.role_limits?.producer,
-            producer_deadline_at: run.request_json.producer_deadline_at, skill_snapshot_digest: run.request_json.skill_snapshot_digest, phase: "producer" } : {}) } };
+        const invalid = await checkpointInputError(opts.sql, run);
+        const [currentClock] = await opts.sql.query<{ now: Date }>("select clock_timestamp() as now");
+        if (invalid) recoveryError = invalid;
+        else if (new Date(run.expires_at) > new Date(currentClock.now) && expired.claim_token === run.claim_token) {
+          const token = randomUUID(), dataToken = randomBytes(32).toString("hex");
+          await opts.sql.query("update ai_jobs set claim_token=$2,attempts=attempts+1,lease_until=least($3::timestamptz,clock_timestamp()+interval '60 seconds') where id=$1",[expired.id,token,run.expires_at]);
+          await opts.sql.query("update ai_runs set claim_token=$2,data_token_hash=$3 where id=$1",[run.id,token,hashRunToken(dataToken)]);
+          await opts.sql.query("update agent_checkpoints set claim_token=$2 where run_id=$1",[run.id,token]);
+          return { status:200,body:{job_id:expired.id,run_id:run.id,claim_token:token,data_access_token:dataToken,mode:run.mode,
+            question:run.request_json.question,input:{question:run.request_json.question,sources:runtimeSources(run.request_json.sources??[]),range:run.request_json.range??null},
+            policy:run.request_json.policy,resume:true,sequence:cp.sequence,
+            ...(run.request_json.governed ? { governed: true, producer_model_calls: run.request_json.role_limits?.producer,
+              producer_deadline_at: run.request_json.producer_deadline_at, skill_snapshot_digest: run.request_json.skill_snapshot_digest, phase: "producer" } : {}) } };
+        }
       }
       // No safe checkpoint or an external call may have happened since it. Never re-execute it.
-      if (run?.status === 'running') await completeRun(opts.sql, {runId:run.id,jobId:expired.id,claimToken:run.claim_token,status:'outcome_unknown',errorCode:'recovery_unsafe',expiredLease:true});
+      if (run?.status === 'running') await completeRun(opts.sql, {runId:run.id,jobId:expired.id,claimToken:run.claim_token,status:'outcome_unknown',errorCode:recoveryError,expiredLease:true});
       else {
         await opts.sql.query("update ai_jobs set status='outcome_unknown',error_code='recovery_unsafe',claim_token='',lease_until=null where id=$1",[expired.id]);
         await settleJobBudget(opts.sql, expired.id, run?.id);
@@ -283,6 +289,8 @@ async function handleAgentJobsInner(opts: {
       runtimeVersion: String(opts.params.runtime_version ?? ""),
     });
     if (!loaded.ok) return { status: 409, body: { error: loaded.error, found: false } };
+    // Material validation can wait on item/source locks; ownership must still hold afterward.
+    if (!await ownsRun(opts.sql, locked, validated.data.claim_token)) return { status: 409, body: { error: "stale" } };
     return { status: 200, body: { found: true, payload: loaded.payload.toString("base64") } };
   }
   if (opts.action === "renew") {

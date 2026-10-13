@@ -191,7 +191,8 @@ export async function mergeExistingItem(sql: Queryable, itemId: string, item: {
           from jsonb_array_elements_text(items.matched_keywords || $13::jsonb)) merged)
     where id=$1`, [itemId, item.title, item.body, item.author, item.url, item.media_type,
     JSON.stringify(item.media_urls), item.thumbnail_url, item.views, item.likes, item.published_at,
-    JSON.stringify(item.extra), JSON.stringify(matchedKeywords), incomingComplete]);
+    JSON.stringify(Object.fromEntries(Object.entries(item.extra).filter(([key]) => !key.startsWith("article_")))),
+    JSON.stringify(matchedKeywords), incomingComplete]);
 }
 
 /**

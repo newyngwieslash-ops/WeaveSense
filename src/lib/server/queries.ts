@@ -77,8 +77,15 @@ export function mapKeyword(row: Record<string, unknown>): KeywordRow {
   };
 }
 
-export function mapItem(row: Record<string, unknown>): ItemRow {
+export function mapItem(row: Record<string, unknown>, options: { articleDetail?: boolean }): ItemRow;
+export function mapItem(row: Record<string, unknown>): ItemRow;
+export function mapItem(row: Record<string, unknown>, options: { articleDetail?: boolean } = {}): ItemRow {
+  const value = row.material_version;
+  const version = typeof value === "number" || typeof value === "bigint" || (typeof value === "string" && value.trim()) ? Number(value) : NaN;
+  const extra = toScalarRecord(asJson<Record<string, unknown>>(row.extra, {}));
+  for (const key of ["article_previous_body", "article_claim_token", "article_claimed_at", ...(!options.articleDetail ? ["article_candidate"] : [])]) delete extra[key];
   return {
+    ...(Number.isSafeInteger(version) && version >= 0 ? { material_version: version } : {}),
     id: String(row.id),
     source_id: String(row.source_id),
     platform: platformOf(row.platform),
@@ -95,7 +102,7 @@ export function mapItem(row: Record<string, unknown>): ItemRow {
     published_at: iso(row.published_at),
     collected_at: iso(row.collected_at) ?? new Date().toISOString(),
     pipeline_status: (row.pipeline_status as ItemRow["pipeline_status"]) ?? "ingested",
-    extra: toScalarRecord(asJson<Record<string, unknown>>(row.extra, {})),
+    extra,
     matched_keywords: asJson<string[]>(row.matched_keywords, []),
     source_name: row.source_name ? String(row.source_name) : undefined,
   };

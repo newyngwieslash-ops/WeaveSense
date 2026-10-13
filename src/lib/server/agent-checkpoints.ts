@@ -1,4 +1,6 @@
 import { agentTransaction, lockRun, ownsRun, type AgentSql as Queryable } from "./agent-transaction.ts";
+import { evidenceMap, type EvidenceSource } from "./agent-context.ts";
+import { receiptsForRun, validateEvidenceSnapshot } from "./agent-runs.ts";
 
 const MAX_BYTES = 256 * 1024;
 
@@ -55,17 +57,34 @@ export async function saveCheckpoint(sql: Queryable, input: {
   });
 }
 
+/** Call after job/run locks; only trusted persisted receipts can bind opaque worker state to library revisions. */
+export async function checkpointInputError(sql: Queryable, run: Record<string, unknown>): Promise<string | null> {
+  const request = run.request_json as { sources?: unknown } | null;
+  const sources = request?.sources ?? [];
+  if (!Array.isArray(sources) || sources.some(source => !source || typeof source !== "object" || Array.isArray(source))) return "checkpoint_input_changed";
+  const receipts = await receiptsForRun(sql, String(run.id));
+  const evidence = [...new Map([...evidenceMap(sources as EvidenceSource[]), ...receipts]).values()].filter(row => row.origin === "internal");
+  const checked = await validateEvidenceSnapshot(sql, evidence);
+  return checked.ok ? null : "checkpoint_input_changed";
+}
+
 export async function loadCheckpoint(sql: Queryable, input: {
   checkPointId: string;
   runId: string;
   runtimeVersion: string;
 }): Promise<{ ok: true; payload: Buffer } | { ok: false; error: string }> {
-  const [row] = await sql.query<Record<string, unknown>>(
-    "select * from agent_checkpoints where check_point_id = $1",
-    [input.checkPointId],
-  );
-  if (!row) return { ok: false, error: "not_found" };
-  if (String(row.run_id) !== input.runId) return { ok: false, error: "run_mismatch" };
-  if (String(row.runtime_version) !== input.runtimeVersion) return { ok: false, error: "version_mismatch" };
-  return { ok: true, payload: asBuffer(row.payload) };
+  return agentTransaction<{ ok: true; payload: Buffer } | { ok: false; error: string }>(sql, async tx => {
+    const locked = await lockRun(tx, input.runId);
+    const [row] = await tx.query<Record<string, unknown>>(
+      "select * from agent_checkpoints where check_point_id = $1",
+      [input.checkPointId],
+    );
+    if (!row) return { ok: false, error: "not_found" };
+    if (String(row.run_id) !== input.runId) return { ok: false, error: "run_mismatch" };
+    if (String(row.runtime_version) !== input.runtimeVersion) return { ok: false, error: "version_mismatch" };
+    if (!locked.run) return { ok: false, error: "run_mismatch" };
+    const invalid = await checkpointInputError(tx, locked.run);
+    if (invalid) return { ok: false, error: invalid };
+    return { ok: true, payload: asBuffer(row.payload) };
+  });
 }
