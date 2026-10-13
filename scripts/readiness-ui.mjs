@@ -30,7 +30,8 @@ import { chromium } from "playwright";
 const origin = process.argv[2];
 const tag = process.argv[3] ?? "dev";
 const expectFixtures = process.argv.includes("--expect");
-const articleOnly = process.argv.includes("--article-only") || process.argv.includes("--article");
+const articleLayoutOnly = process.argv.includes("--article-layout-only");
+const articleOnly = process.argv.includes("--article-only") || process.argv.includes("--article") || articleLayoutOnly;
 const controlDir = process.argv[process.argv.indexOf("--control-dir") + 1];
 if (articleOnly) assert.ok(process.argv.includes("--control-dir") && controlDir, "article QA requires scratch SQL control directory");
 assert.ok(origin, "usage: readiness-ui.mjs <origin> <tag> [--expect]");
@@ -87,7 +88,7 @@ async function withPage(width, fn) {
 const measure = () => ({
   viewportWidth: window.innerWidth,
   scrollWidth: document.documentElement.scrollWidth,
-  overflowing: [...document.querySelectorAll("article, aside, main, dd, pre")]
+  overflowing: [...document.querySelectorAll("article, aside, main, dd, pre, [data-testid=article-candidate], [data-testid=article-candidate-text]")]
     .filter((n) => n.scrollWidth > n.clientWidth + 1).map((n) => n.tagName),
 });
 
@@ -95,7 +96,7 @@ async function checkArticles() {
   // Scratch fixtures/control own isolated data and network; no app test endpoint.
   const scratch = "../.superpowers/sdd/2026-10-13-collection-capability-roadmap/scratch/";
   const { control } = await import(new URL(scratch + "b03-control.mjs", import.meta.url));
-  const { ORIGINAL_BODY, CANDIDATE_BODY, CONCURRENT_BODY, SCRIPT_TEXT } = await import(new URL(scratch + "b03-fixtures.mjs", import.meta.url));
+  const { ORIGINAL_BODY, CANDIDATE_BODY, CONCURRENT_BODY, SCRIPT_TEXT, LONG_TOKEN } = await import(new URL(scratch + "b03-fixtures.mjs", import.meta.url));
   const state = () => control(controlDir, { op: "state" });
   const row = (snapshot, id) => snapshot.rows.find(item => item.id === id);
   for (const width of [1280, 390]) {
@@ -150,6 +151,7 @@ async function checkArticles() {
       await page.getByTestId("article-candidate-text").waitFor();
       await idle();
       assert.equal(await page.getByTestId("article-candidate-text").innerText(), CANDIDATE_BODY);
+      assert.ok(LONG_TOKEN?.length >= 2048 && CANDIDATE_BODY.includes(LONG_TOKEN), "candidate fixture must cover long unbroken text");
       assert.equal(await page.getByTestId("item-body").innerText(), ORIGINAL_BODY);
       assert.ok((await page.getByTestId("article-candidate").innerText()).includes("读取时间："));
       assert.ok((await page.getByTestId("article-candidate").innerText()).includes(SCRIPT_TEXT));
@@ -157,6 +159,17 @@ async function checkArticles() {
       assert.equal(await page.evaluate(() => globalThis.__B03_SCRIPT_EXECUTED__), undefined);
       assert.equal(await page.getByRole("link", { name: "候选来源：", exact: false }).getAttribute("href"), `https://article.qa.example/success/${width}`);
       await screenshot("candidate");
+      if (articleLayoutOnly) {
+        const region = await page.getByTestId("article-candidate-text").evaluate(node => ({
+          overflowWrap: getComputedStyle(node).overflowWrap, clientWidth: node.clientWidth, scrollWidth: node.scrollWidth,
+          explicitWrap: node.classList.contains("[overflow-wrap:anywhere]"),
+        }));
+        assert.equal(region.overflowWrap, "anywhere");
+        assert.ok(region.scrollWidth <= region.clientWidth + 1);
+        assert.deepEqual((await state()).counts, before.counts);
+        results.push({ check: "B03 long candidate region", width, region });
+        return;
+      }
       const previewed = await state();
       await page.reload();
       await page.getByTestId("article-candidate-text").waitFor();
@@ -235,7 +248,7 @@ async function checkArticles() {
       assert.deepEqual(final.metrics.unexpected, []);
       assert.deepEqual(final.counts, before.counts, "article actions must not launch analysis/extraction");
     });
-    results.push({ check: "B03 actual article read/cache/adopt/restore/conflict/refusal", width, errors });
+    results.push({ check: articleLayoutOnly ? "B03 long token layout" : "B03 actual article read/cache/adopt/restore/conflict/refusal", width, errors });
   }
 }
 
