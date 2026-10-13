@@ -38,7 +38,7 @@ function validateSamples(document) {
 function rowFor(sample, status = sharedStatus) {
   return { id: sample.id, url: sample.url, title: sample.title,
     original_feed_status: "unknown", original_feed_body: null,
-    original_host_dns: "not_probed_for_this_sample",
+    original_host_dns: status === sharedStatus ? "not_probed_for_this_sample" : "unknown",
     request_status: status, candidate_usable: "unknown", verified_complete: "unknown",
     manual_reference_required: true, adopted: false };
 }
@@ -85,8 +85,9 @@ async function readSamples(document, reader, now = Date.now) {
   let barrier = null;
   for (const sample of samples) {
     if (barrier || now() >= deadline) {
-      rows.push({ ...rowFor(sample, barrier ? sharedStatus : "not_attempted_due_to_batch_deadline"),
-        exception: barrier ?? "batch_deadline" });
+      rows.push({ ...rowFor(sample, barrier ? "not_attempted_due_to_ambiguous_reader_barrier" : "not_attempted_due_to_batch_deadline"),
+        ...(barrier ? { stopped_after_error: barrier, stopped_after_error_stage: "unknown_original_or_provider" }
+          : { exception: "batch_deadline" }) });
       continue;
     }
     try {
@@ -97,8 +98,9 @@ async function readSamples(document, reader, now = Date.now) {
       // Receipt/length/paraphrase matching is never proof of usable or complete body.
     } catch (error) {
       const code = safeError(error);
-      rows.push({ ...rowFor(sample, "reader_failed"), exception: code });
-      if (["blocked_address", "HTTP 401", "HTTP 403"].includes(code)) barrier = code;
+      rows.push({ ...rowFor(sample, "reader_failed"), exception: code, failure_stage: "unknown_original_or_provider" });
+      // Conservative batch stop: the code does not identify original-host versus provider validation.
+      if (["blocked_address", "blocked_host", "dns_no_answer", "HTTP 401", "HTTP 403"].includes(code)) barrier = code;
     }
   }
   return report(document, rows, true);
@@ -123,12 +125,22 @@ async function selfCheck() {
   const paraphraseAsLiteral = structuredClone(manifest);
   paraphraseAsLiteral.samples[0].reference.literalOpening = paraphraseAsLiteral.samples[0].reference.openingParaphrase;
   assert.throws(() => validateSamples(paraphraseAsLiteral));
-  let calls = 0;
-  const denied = await readSamples(manifest, async () => { calls++; throw new Error("HTTP 401"); });
-  assert.equal(calls, 1);
-  assert.equal(denied.samples[0].request_status, "reader_failed");
-  assert.ok(denied.samples.slice(1).every(row => row.request_status === sharedStatus));
-  assert.equal(denied.metrics.verified_complete_rate, null);
+  for (const failure of ["dns_no_answer", "blocked_address", "blocked_host", "HTTP 401", "HTTP 403"]) {
+    let calls = 0;
+    const denied = await readSamples(manifest, async () => { calls++; throw new Error(failure); });
+    assert.equal(calls, 1, `${failure} must stop after the first reader failure`);
+    assert.equal(denied.metrics.attempted, 1);
+    assert.equal(denied.samples[0].request_status, "reader_failed");
+    assert.equal(denied.samples[0].exception, failure);
+    assert.equal(denied.samples[0].failure_stage, "unknown_original_or_provider");
+    assert.equal(denied.samples[0].original_host_dns, "unknown");
+    assert.ok(denied.samples.slice(1).every(row =>
+      row.request_status === "not_attempted_due_to_ambiguous_reader_barrier" &&
+      row.stopped_after_error === failure && row.stopped_after_error_stage === "unknown_original_or_provider" &&
+      row.exception === undefined &&
+      row.original_host_dns === "unknown"));
+    assert.equal(denied.metrics.verified_complete_rate, null);
+  }
   const candidate = await readSamples(manifest, async url => ({ body: "fixture only", digest: "fixture",
     sourceUrl: url, title: "fixture only" }));
   assert.equal(candidate.metrics.reader_returned, 20);
