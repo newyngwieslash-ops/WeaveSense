@@ -13,7 +13,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { test } from "node:test";
-import { createPinnedLookup, pinnedTransport } from "./outbound-policy.ts";
+import { createPinnedLookup, pinnedTransport, publicFetch } from "./outbound-policy.ts";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 /** Start an HTTP server on an ephemeral loopback port. */
@@ -84,6 +84,29 @@ test("a timeout destroys the request instead of hanging", async () => {
   } finally {
     await close();
   }
+});
+
+test("publicFetch total deadline closes a real socket even while bytes keep arriving", async () => {
+  let closed = false;
+  const { port, close } = await loopbackServer((_req, res) => {
+    res.writeHead(200);
+    const drip = setInterval(() => res.write("x"), 10);
+    res.on("close", () => { closed = true; clearInterval(drip); });
+  });
+  const started = Date.now();
+  try {
+    await assert.rejects(() => publicFetch("http://example.com/feed", {
+      timeoutMs: 150,
+      resolver: { async lookup() { return [{ address: "93.184.216.34", family: 4 }]; } },
+      // Test-only socket routing after the real public URL/DNS checks.
+      transport: (url, options) => pinnedTransport()(new URL(`http://${url.hostname}:${port}/feed`), {
+        ...options, lookup: createPinnedLookup(["127.0.0.1"]),
+      }),
+    }), /timeout|aborted/i);
+    assert.ok(Date.now() - started < 1000);
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(closed, true, "deadline must destroy the server-side socket");
+  } finally { await close(); }
 });
 
 test("a redirect response surfaces its Location for the caller to re-validate", async () => {

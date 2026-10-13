@@ -27,6 +27,18 @@
 import { isIP } from "node:net";
 import dns from "node:dns/promises";
 
+/** Bound an async step; its owner must also cancel any underlying IO on abort. */
+function withSignal<T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return operation;
+  if (signal.aborted) void operation.catch(() => {});
+  signal.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    operation.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
+}
+
 /** First-release caps, as code constants (documented, not auto-expanding). */
 export const TEXT_MAX_BYTES = 4 * 1024 * 1024;
 export const MEDIA_MAX_BYTES = 25 * 1024 * 1024;
@@ -51,13 +63,20 @@ export function addressBlocked(address: string): boolean {
   }
   if (version === 6) {
     const lower = address.toLowerCase();
-    if (lower === "::" || lower === "::1") return true; // unspecified + loopback
-    if (lower.startsWith("fe80")) return true; // link-local
-    if (lower.startsWith("fc") || lower.startsWith("fd")) return true; // unique-local
-    if (lower.startsWith("ff")) return true; // multicast
     // IPv4-mapped (::ffff:a.b.c.d): judge the embedded v4 address.
     const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(lower);
     if (mapped) return addressBlocked(mapped[1]);
+    const parsed = addressToBigInt(lower);
+    if (!parsed) return true;
+    const value = parsed.value;
+    if (value <= 1n) return true; // unspecified + loopback, including expanded forms
+    if (value >> 118n === 0x3fan) return true; // fe80::/10 link-local
+    if (value >> 121n === 0x7en) return true; // fc00::/7 unique-local
+    if (value >> 120n === 0xffn) return true; // multicast
+    if (value >> 32n === 0xffffn) { // hex IPv4-mapped addresses (URL normalizes to these)
+      const v4 = Number(value & 0xffffffffn);
+      return addressBlocked([v4 >>> 24, (v4 >>> 16) & 255, (v4 >>> 8) & 255, v4 & 255].join("."));
+    }
     return false;
   }
   return true; // not an IP at all — refuse rather than guess
@@ -105,7 +124,9 @@ export async function resolvePublicAddresses(
   resolver: DnsResolver = dns,
   /** Test seam; production uses the environment-declared ranges. */
   egressOverride?: readonly { address: string; prefix: number }[],
+  signal?: AbortSignal,
 ): Promise<string[]> {
+  signal?.throwIfAborted();
   if (hostBlocked(hostname)) throw new Error("blocked_host");
   const bare = hostname.replace(/^\[|\]$/g, "");
   if (isIP(bare)) {
@@ -115,7 +136,9 @@ export async function resolvePublicAddresses(
     }
     return [bare];
   }
-  const answers = await resolver.lookup(hostname, { all: true, verbatim: true });
+  // node:dns.lookup has no cancellation API. Bound its wait; after abort no
+  // connection can start, even if the OS lookup eventually completes.
+  const answers = await withSignal(resolver.lookup(hostname, { all: true, verbatim: true }), signal);
   if (!Array.isArray(answers) || !answers.length) throw new Error("dns_no_answer");
   // A declared egress range is the operator's own proxy, so addresses inside it
   // are allowed *for this host*; everything else keeps the strict check.
@@ -136,7 +159,7 @@ export async function resolvePublicAddresses(
  * make `publicFetch` crash on its real transport. `destroy`/`cancel` both map to
  * "drop the connection now".
  */
-export async function readCapped(body: BodyLike, maxBytes: number): Promise<Uint8Array> {
+export async function readCapped(body: BodyLike, maxBytes: number, signal?: AbortSignal): Promise<Uint8Array> {
   const chunks: Uint8Array[] = [];
   let total = 0;
 
@@ -155,9 +178,12 @@ export async function readCapped(body: BodyLike, maxBytes: number): Promise<Uint
 
   if (typeof (body as { getReader?: unknown }).getReader === "function") {
     const reader = (body as ReadableStreamLike).getReader();
+    const cancel = () => { void reader.cancel().catch(() => {}); };
+    signal?.addEventListener("abort", cancel, { once: true });
     try {
+      signal?.throwIfAborted();
       for (;;) {
-        const { done, value } = await reader.read();
+        const { done, value } = await withSignal(reader.read(), signal);
         if (done) break;
         if (!value) continue;
         push(value);
@@ -170,6 +196,7 @@ export async function readCapped(body: BodyLike, maxBytes: number): Promise<Uint
       }
       throw error;
     } finally {
+      signal?.removeEventListener("abort", cancel);
       try {
         reader.releaseLock();
       } catch {
@@ -177,8 +204,22 @@ export async function readCapped(body: BodyLike, maxBytes: number): Promise<Uint
       }
     }
   } else {
-    for await (const chunk of body as AsyncIterable<Uint8Array>) {
-      push(chunk);
+    const stream = body as AsyncIterable<Uint8Array> & { destroy?: () => void };
+    const cancel = () => stream.destroy?.();
+    signal?.addEventListener("abort", cancel, { once: true });
+    try {
+      signal?.throwIfAborted();
+      for await (const chunk of stream) {
+        signal?.throwIfAborted();
+        push(chunk);
+      }
+      signal?.throwIfAborted();
+    } catch (error) {
+      cancel();
+      if (signal?.aborted) throw signal.reason;
+      throw error;
+    } finally {
+      signal?.removeEventListener("abort", cancel);
     }
   }
 
@@ -251,6 +292,15 @@ function isNeverEgress(address: string): boolean {
     if (lower.startsWith("fe80") || lower.startsWith("ff")) return true; // link-local, multicast
     const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(lower);
     if (mapped) return isNeverEgress(mapped[1]);
+    // Additional equivalent spellings; preserve every existing egress guard.
+    const parsed = addressToBigInt(lower);
+    if (!parsed) return true;
+    const value = parsed.value;
+    if (value <= 1n || value >> 118n === 0x3fan || value >> 120n === 0xffn) return true;
+    if (value >> 32n === 0xffffn) {
+      const v4 = Number(value & 0xffffffffn);
+      return isNeverEgress([v4 >>> 24, (v4 >>> 16) & 255, (v4 >>> 8) & 255, v4 & 255].join("."));
+    }
     return false;
   }
   return true; // not an address at all
@@ -376,6 +426,7 @@ export type OutboundTransport = (
     method?: string;
     headers?: Record<string, string>;
     timeoutMs?: number;
+    signal?: AbortSignal;
     /** Set by `publicFetch` to pin the socket to a validated address. */
     lookup?: LookupHook;
   },
@@ -411,7 +462,8 @@ export type LookupHook = (
  * with `pinnedTransport({ lookup })` as a constructor-level fallback.
  */
 export function pinnedTransport({ lookup: defaultLookup, signals }: PinnedTransportOptions = {}): OutboundTransport {
-  return async function request(url, { method = "GET", headers = {}, timeoutMs = 10000, lookup = defaultLookup } = {}) {
+  return async function request(url, { method = "GET", headers = {}, timeoutMs = 10000, lookup = defaultLookup, signal } = {}) {
+    signal?.throwIfAborted();
     const { request: httpRequest } = url.protocol === "https:"
       ? await import("node:https")
       : await import("node:http");
@@ -425,13 +477,9 @@ export function pinnedTransport({ lookup: defaultLookup, signals }: PinnedTransp
           method,
           headers,
           lookup: lookup as import("node:net").LookupFunction | undefined,
-          signal: signals?.abortSignal,
+          signal: signal && signals?.abortSignal ? AbortSignal.any([signal, signals.abortSignal]) : signal ?? signals?.abortSignal,
         },
         (res) => {
-          const location = res.headers.location;
-          if (REDIRECT_CODES.has(res.statusCode ?? 0) && location) {
-            res.resume(); // drain the redirect body; the connection is reused
-          }
           resolve({
             status: res.statusCode ?? 0,
             headers: res.headers as OutboundResponse["headers"],
@@ -468,6 +516,7 @@ export async function publicFetch(
     resolver = dns,
     transport = pinnedTransport(),
     as = "text",
+    signal: callerSignal,
   }: {
     headers?: Record<string, string>;
     timeoutMs?: number;
@@ -477,20 +526,26 @@ export async function publicFetch(
     resolver?: DnsResolver;
     transport?: OutboundTransport;
     as?: "text" | "bytes";
+    signal?: AbortSignal;
   } = {},
 ): Promise<{ text?: string; bytes?: Uint8Array; url: string; contentType: string }> {
+  const deadline = AbortSignal.timeout(timeoutMs);
+  const signal = callerSignal ? AbortSignal.any([callerSignal, deadline]) : deadline;
+  signal.throwIfAborted();
   let url = assertPublicUrl(rawUrl);
   let redirects = 0;
 
   for (;;) {
-    const addresses = await resolvePublicAddresses(url.hostname, resolver);
+    const addresses = await resolvePublicAddresses(url.hostname, resolver, undefined, signal);
     const approved = [...addresses];
     const lookup = createPinnedLookup(approved);
 
-    const response = await transport(url, { method: "GET", headers, timeoutMs, lookup });
+    const response = await transport(url, { method: "GET", headers, timeoutMs, lookup, signal });
+    signal.throwIfAborted();
     const status = response.status ?? 0;
 
     if (REDIRECT_CODES.has(status)) {
+      await withSignal(cancelBody(response.body), signal);
       const rawLocation = response.headers?.location;
       const location = Array.isArray(rawLocation) ? rawLocation[0] : rawLocation;
       if (!location) throw new Error("redirect_without_location");
@@ -499,13 +554,27 @@ export async function publicFetch(
       url = assertPublicUrl(new URL(location, url).href);
       continue;
     }
-    if (status < 200 || status >= 300) throw new Error(`HTTP ${status}`);
+    if (status < 200 || status >= 300) {
+      await withSignal(cancelBody(response.body), signal);
+      throw new Error(`HTTP ${status}`);
+    }
 
     const rawContentType = response.headers?.["content-type"];
     const contentType = Array.isArray(rawContentType) ? rawContentType[0] ?? "" : String(rawContentType ?? "");
     const limit = maxBytes ?? capFor(contentType, kind);
-    const bytes = await readCapped(response.body, limit);
+    const bytes = await readCapped(response.body, limit, signal);
+    signal.throwIfAborted();
     if (as === "bytes") return { bytes, url: url.href, contentType };
     return { text: new TextDecoder().decode(bytes), url: url.href, contentType };
+  }
+}
+
+/** Rejected responses must not drain an unbounded body in the background. */
+async function cancelBody(body: BodyLike): Promise<void> {
+  if ("getReader" in body) {
+    const reader = body.getReader();
+    try { await reader.cancel(); } finally { reader.releaseLock(); }
+  } else {
+    (body as { destroy?: () => void }).destroy?.();
   }
 }

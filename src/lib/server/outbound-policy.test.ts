@@ -350,6 +350,49 @@ test("the configured cap is enforced through publicFetch", async () => {
 
 import { parseEgressCidrs, addressAllowedByEgress, declaredEgress } from "./outbound-policy.ts";
 
+test("total deadline bounds DNS before any transport can start", async () => {
+  const keepAlive = setTimeout(() => {}, 1000);
+  let transported = false;
+  try {
+    await assert.rejects(() => publicFetch("https://example.com/", {
+      timeoutMs: 40,
+      resolver: { lookup: () => new Promise(() => {}) },
+      transport: async () => { transported = true; throw new Error("must not dial"); },
+    }), /timeout|aborted/i);
+    assert.equal(transported, false);
+  } finally { clearTimeout(keepAlive); }
+});
+
+test("IPv6 compressed/expanded and hex-mapped private addresses stay blocked", () => {
+  for (const address of ["0:0:0:0:0:0:0:1", "::ffff:7f00:1", "::ffff:a00:1", "fe90::1", "febf::1", "fd12::1"]) {
+    assert.equal(addressBlocked(address), true, address);
+  }
+  assert.equal(addressBlocked("::ffff:808:808"), false);
+  assert.equal(addressBlocked("2606:4700::1111"), false);
+  for (const address of ["0:0:0:0:0:0:0:1", "::ffff:7f00:1", "fe90::1"]) {
+    assert.deepEqual(parseEgressCidrs(`${address}/128`), [], "private variants cannot masquerade as declared egress");
+  }
+});
+
+test("caller cancellation cancels a pending stream read and releases its lock", async () => {
+  const controller = new AbortController();
+  let cancelled = false, released = false;
+  const body: BodyLike = { getReader: () => ({
+    read: () => new Promise(() => {}),
+    cancel: async () => { cancelled = true; },
+    releaseLock: () => { released = true; },
+  }) };
+  const timer = setTimeout(() => controller.abort(new Error("caller cancelled")), 40);
+  try {
+    await assert.rejects(() => publicFetch("https://example.com/", {
+      signal: controller.signal, resolver: resolverFor({ "example.com": ["93.184.216.34"] }),
+      transport: async () => ({ status: 200, headers: {}, body }),
+    }), /caller cancelled/);
+    assert.equal(cancelled, true);
+    assert.equal(released, true);
+  } finally { clearTimeout(timer); }
+});
+
 test("the environment declaration is honoured, and read per call", () => {
   const saved = process.env.LOOM_EGRESS_CIDRS;
   try {
