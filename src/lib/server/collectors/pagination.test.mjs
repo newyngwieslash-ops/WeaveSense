@@ -230,17 +230,17 @@ const offlineEnv = {
 };
 Object.assign(process.env, offlineEnv);
 
-/** @param {string[]} ids */
-function feedOf(ids) {
+/** @param {string[]} ids @param {boolean} [ascending] */
+function feedOf(ids, ascending = false) {
   return `<feed xmlns="http://www.w3.org/2005/Atom"><title>Offline feed</title>${ids.map((id, i) =>
-    `<entry><id>${id}</id><title>Item ${id}</title><link href="https://example.org/${id}"/><updated>2026-10-13T00:00:${String(59-i).padStart(2,"0")}Z</updated><content>body</content></entry>`).join("")}</feed>`;
+    `<entry><id>${id}</id><title>Item ${id}</title><link href="https://example.org/${id}"/><updated>2026-10-13T00:00:${String(ascending ? i : 59-i).padStart(2,"0")}Z</updated><content>body</content></entry>`).join("")}</feed>`;
 }
-/** @param {string[]} ids @param {boolean} [fallback] */
-function feedIo(ids, fallback = false) {
+/** @param {string[]} ids @param {boolean} [fallback] @param {boolean} [ascending] */
+function feedIo(ids, fallback = false, ascending = false) {
   let calls = 0;
   return { resolver, transport: async () => {
     calls += 1;
-    return { status: fallback && calls === 1 ? 503 : 200, headers: { "content-type": "application/atom+xml" }, body: bodyOf(feedOf(ids)) };
+    return { status: fallback && calls === 1 ? 503 : 200, headers: { "content-type": "application/atom+xml" }, body: bodyOf(feedOf(ids, ascending)) };
   } };
 }
 /** @param {string} adapter @param {string} [previous] @param {string} [platform] */
@@ -315,6 +315,32 @@ test("runSourceJob preserves capped history cursors and records window discovery
       await sql.query("update sources set last_external_id='20' where id='window-rss'");
       assert.equal((await runSourceJob("window-rss", "manual", feedIo(["10"]))).error, "");
       assert.equal((await sql.query("select last_external_id from sources where id='window-rss'"))[0].last_external_id, "20", "numeric windows retain monotonic cursor guard");
+      const undatedIo = {
+        resolver, transport: async () => ({ status: 200, headers: { "content-type": "application/atom+xml" },
+          body: bodyOf('<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>unknown</id><updated>invalid</updated></entry><entry><id>anchor</id></entry></feed>') }),
+      };
+      await sql.query("update sources set last_external_id='anchor' where id='window-rss'");
+      assert.equal((await runSourceJob("window-rss", "manual", undatedIo)).error, "");
+      assert.equal((await sql.query("select last_external_id from sources where id='window-rss'"))[0].last_external_id, "anchor", "undated opaque windows retain a present anchor");
+      for (const mode of ["rss", "telegram-dated", "telegram-undated", "telegram-equal"]) {
+        const telegram = mode.startsWith("telegram");
+        const source = { ...feedSource(telegram ? "telegram_web" : "rss", "", telegram ? "telegram" : "rss"), id: mode,
+          feed_url: telegram ? "" : "https://example.org/feed" };
+        await sql.query(`insert into sources (id,platform,name,handle,url,feed_url,adapter)
+          values ($1,$2,$3,$4,$5,$6,$7)`, [source.id, source.platform, source.name, source.handle, source.url, source.feed_url, source.adapter]);
+        for (const round of [0, 1]) {
+          const ids = telegram ? [`offline/${9007199254740993n + BigInt(round)}`, `offline/${9007199254740994n + BigInt(round)}`]
+            : round ? ["new", "newer"] : ["old", "new"];
+          const io = telegram ? { resolver, transport: async () => ({ status: 200, headers: { "content-type": "text/html" },
+            body: bodyOf(ids.map((id, i) => `<div class="tgme_widget_message " data-post="${id}"><div class="tgme_widget_message_text">Hello</div>${mode === "telegram-undated" ? "" : `<time datetime="2026-10-13T00:00:0${mode === "telegram-equal" ? 0 : i}Z"></time>`}</div>`).join("")) }) }
+            : feedIo(ids, false, true);
+          assert.equal((await runSourceJob(source.id, "manual", io)).error, "");
+          assert.equal((await sql.query("select last_external_id from sources where id=$1", [source.id]))[0].last_external_id,
+            ids[1], `${mode} ascending window anchor`);
+          const [job] = await sql.query("select coverage from jobs where source_id=$1 order by started_at desc limit 1", [source.id]);
+          assert.equal(job.coverage.note, round ? "window_overlap" : "initial_window", mode);
+        }
+      }
     } finally {
       await (await getPglite()).close();
       for (const key of ["__pgliteInstance__", "__pgliteMigrateChain__", "__pgBootstrapPromise__"]) Reflect.deleteProperty(globalThis, key);
