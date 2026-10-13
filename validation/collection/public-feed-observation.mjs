@@ -6,6 +6,8 @@ import { createHash } from "node:crypto";
 import { appendFileSync, mkdirSync, mkdtempSync, renameSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { PassThrough } from "node:stream";
+import { createInterface } from "node:readline";
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 import { offlineEnv } from "../../scripts/readiness-offline.mjs";
 
@@ -54,7 +56,37 @@ async function* capturedBody(body, limit, capture) {
   capture.complete = true;
 }
 
+function listenForStop(input, stop) {
+  const onInput = (line) => { if (line.trim() === "stop") stop("stdin_stop"); };
+  const lines = createInterface({ input, crlfDelay: Infinity });
+  lines.on("line", onInput);
+  return () => { lines.off("line", onInput); lines.close(); input.pause(); };
+}
+
 async function selfCheck() {
+  const inputCases = [
+    { chunks: ["st", "op\n"], stopped: true },
+    { chunks: ["ignore\nstop\n"], stopped: true },
+    { chunks: ["st", "op\r", "\n"], stopped: true },
+    { chunks: ["  stop  \n"], stopped: true },
+    { chunks: ["STOP\n", "stopping\n"], stopped: false },
+    { chunks: ["ignore\n"], stopped: false },
+  ];
+  for (const { chunks, stopped } of inputCases) {
+    const input = new PassThrough();
+    const abort = new AbortController();
+    const cleanup = listenForStop(input, (reason) => abort.abort(reason));
+    try {
+      for (const chunk of chunks) { input.write(chunk); await sleep(0); }
+      assert.equal(abort.signal.aborted, stopped, `stop handler for ${JSON.stringify(chunks)}`);
+      if (stopped) assert.equal(abort.signal.reason, "stdin_stop");
+    } finally { cleanup(); }
+    assert.equal(input.listenerCount("data"), 0, "stop reader releases its input listener");
+    assert.equal(input.readableFlowing, false, "stop reader leaves input paused");
+    input.write("stop\n");
+    assert.equal(abort.signal.aborted, stopped, "cleanup prevents further stop handling");
+    input.destroy();
+  }
   const xml = `<rss><channel>${Array.from({ length: 60 }, (_, i) => `<item><guid>id-${i}</guid></item>`).join("")}</channel></rss>`;
   assert.equal(referenceIds(xml).ids.length, 60);
   const long = "x".repeat(320);
@@ -79,7 +111,7 @@ async function selfCheck() {
   for await (const _chunk of capturedBody((async function* () { yield Buffer.from("xml"); })(), 4, success)) { /* consume */ }
   assert.equal(success.complete, true);
   assert.equal(Buffer.concat(success.chunks).toString(), "xml");
-  console.log("public-feed-observation reference/capture self-check passed");
+  console.log("public-feed-observation reference/capture + 6 stop-input cases self-check passed");
 }
 
 async function observe() {
@@ -99,9 +131,7 @@ async function observe() {
   const onTerminate = () => stop("SIGTERM");
   process.on("SIGINT", onInterrupt);
   process.on("SIGTERM", onTerminate);
-  const onInput = (input) => { if (String(input).trim() === "stop") stop("stdin_stop"); };
-  process.stdin.on("data", onInput);
-  process.stdin.resume();
+  const cleanupInput = listenForStop(process.stdin, stop);
   console.log(JSON.stringify({ event: "observation_started", observer_pid: process.pid, wrapper_pid: process.ppid, mode: snapshot ? "snapshot" : "observe-24h", evidence_dir: out }));
   const rows = [];
   let vite;
@@ -210,7 +240,7 @@ async function observe() {
     console.log(JSON.stringify(summary, null, 2));
     if (vite) await vite.close();
     if (db) { try { await (await db.getPglite()).close(); } catch { /* initialization failure is recorded above */ } }
-    process.stdin.off("data", onInput); process.stdin.pause();
+    cleanupInput();
     process.off("SIGINT", onInterrupt); process.off("SIGTERM", onTerminate);
     if (fatal || !allRounds || !clean || !comparable) process.exitCode = 1;
   }
