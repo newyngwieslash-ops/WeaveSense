@@ -8,6 +8,10 @@
 
 **Tech Stack:** 现有 TypeScript、Node.js、TanStack Start、PostgreSQL/PGLite、fast-xml-parser、node:test、Playwright；正文试点使用 Jina Reader HTTP 接口；字幕试点使用独立 Python 环境中的 yt-dlp。
 
+## 执行状态（2026-10-13）
+
+用户后续授权本轮实施 A01—A05、隔离验证与独立本地提交；下方规划轮“本轮不实施”描述是历史约束。A01—A04 已实现并审查通过，A05 代码与离线验收通过。五个真实 Feed 的单次快照均被既有 publicFetch 拒绝（DNS 返回 198.18.0.0/15 非公网基准测试网段），未取得响应；24 小时观察仍待验收，未启动、未声称 live_passed。无生产发布；B/C/R01 发布任务尚未实施。详见 `docs/operations/collection-capability-acceptance.md`。
+
 ## Global Constraints
 
 - 本轮交付是方案与任务清单，不安装工具、不执行应用改造、不调用真实付费服务、不发布。
@@ -105,7 +109,7 @@
 
 **Interfaces:** 输入是当前 checkout；输出是基线 SHA、已存在改动清单、可运行检查命令。不能把旧状态文档当作当前在线事实。
 
-- [ ] 记录实际基线；命令如下，不读取任何秘密文件：
+- [x] 记录实际基线；命令如下，不读取任何秘密文件：
 
 ```powershell
 git rev-parse HEAD
@@ -115,14 +119,14 @@ Get-ChildItem migrations -Name
 Get-ChildItem -Name package-lock.json,pnpm-lock.yaml,yarn.lock -ErrorAction SilentlyContinue
 ```
 
-- [ ] 核对本计划列出的源码符号仍存在；已有实现直接跑对应检查，不能重复写一套。需要 worktree 时在执行阶段按 using-git-worktrees 技能创建；不复制用户未提交文件。
-- [ ] 将验收报告写成以下结构，当前未运行项保留 `not_run`，后续逐项替换：
+- [x] 核对本计划列出的源码符号仍存在；已有实现直接跑对应检查，不能重复写一套。需要 worktree 时在执行阶段按 using-git-worktrees 技能创建；不复制用户未提交文件。
+- [x] 将验收报告写成以下结构，当前未运行项保留 `not_run`，后续逐项替换：
 
 ```json
 {"scope":"collection-capability","baseline":"bec6212a","checks":[],"live_status":"not_run","release_status":"not_deployed"}
 ```
 
-- [ ] 在隔离环境跑现有定向检查：
+- [x] 在隔离环境跑现有定向检查：
 
 ```text
 node --experimental-strip-types --test src/lib/server/rss.test.ts src/lib/server/cursor.test.ts src/lib/server/scheduler-atomic.test.ts
@@ -130,7 +134,7 @@ node --test src/lib/server/collectors/keyword-contract.test.mjs src/lib/server/c
 node --test workers/wechat-gateway/gateway.test.mjs
 ```
 
-- [ ] 记录真实退出码；缺依赖按锁文件安装到执行工作区，不全局升级工具。独立提交：`docs: record collection capability baseline`。
+- [x] 记录真实退出码；缺依赖按锁文件安装到执行工作区，不全局升级工具。独立提交：`docs: record collection capability baseline`。
 
 ### A02：修复两个 Feed 入口的截断与错误根节点
 
@@ -138,7 +142,7 @@ node --test workers/wechat-gateway/gateway.test.mjs
 
 **Interfaces:** 保留 `parseFeedXml(xml, sourceId, platform): NormalizedItem[]` 和 `fetchPrimary(source, now, allowedFeedHosts)`。返回当前响应中所有合法条目；超过 1000 条显式失败，不静默裁剪。网络已有字节上限仍生效。
 
-- [ ] 在 `rss.test.ts` 加入以下失败检查：
+- [x] 在 `rss.test.ts` 加入以下失败检查：
 
 ```ts
 it('keeps every entry in a bounded feed', () => {
@@ -153,8 +157,8 @@ it('keeps every entry in a bounded feed', () => {
 });
 ```
 
-- [ ] 执行 `node --experimental-strip-types --test src/lib/server/rss.test.ts`，确认现有实现失败在 24/60 或伪 Feed 断言，而不是模块加载。
-- [ ] 使用已安装的 `fast-xml-parser` 完成验证。将 import 改为 `{ XMLParser, XMLValidator }`；在 parse 前验证 XML，在选择根节点时拒绝未知根；将最终 `items.slice(0, 24).map` 改成 `items.map`。条目集合形成后加上界：
+- [x] 执行 `node --experimental-strip-types --test src/lib/server/rss.test.ts`，确认现有实现失败在 24/60 或伪 Feed 断言，而不是模块加载。
+- [x] 使用已安装的 `fast-xml-parser` 完成验证。将 import 改为 `{ XMLParser, XMLValidator }`；在 parse 前验证 XML，在选择根节点时拒绝未知根；将最终 `items.slice(0, 24).map` 改成 `items.map`。条目集合形成后加上界：
 
 ```ts
 if (XMLValidator.validate(xml) !== true) throw new Error('invalid_feed_xml');
@@ -165,7 +169,7 @@ if (!['rss', 'feed', 'rdf:RDF'].some(root => Object.hasOwn(doc, root))) {
 if (items.length > 1000) throw new Error('feed_entry_limit');
 ```
 
-- [ ] 微信入口已有 XMLValidator，保留它；将截断循环替换为：
+- [x] 微信入口已有 XMLValidator，保留它；将截断循环替换为：
 
 ```js
 if (entries.length > 1000) throw new Error('primary_feed_entry_limit');
@@ -179,7 +183,7 @@ for (const [index, entry] of entries.entries()) {
 
 现有单条无效日志与“全部条目无效则失败”规则保留。在现有 gateway 测试的本地 HTTP server 中生成 60 个唯一公众号文章 URL，调用实际 `fetchPrimary`，断言数量及第 60 条 ID；1001 条必须失败。测试不走真实主源或付费兜底。
 
-- [ ] 重跑上述两个测试文件，再跑 `content-integrity.test.ts`；60 条完整、1001 条明确拒绝、长正文尾标仍在。提交：`fix: preserve all entries in bounded feeds`。
+- [x] 重跑上述两个测试文件，再跑 `content-integrity.test.ts`；60 条完整、1001 条明确拒绝、长正文尾标仍在。提交：`fix: preserve all entries in bounded feeds`。
 
 **边界：** 这只消除本系统的额外截断，不恢复上游根本没返回的历史条目；由 A04 如实标注。
 
@@ -189,7 +193,7 @@ for (const [index, entry] of entries.entries()) {
 
 **Interfaces:** 保持 `collectKeyword(phrase, platforms, io): Promise<KeywordBatch>`；添加同文件导出 `mergeKeywordResults(groups: NormalizedItem[][], limit = 40): NormalizedItem[]`。attempt.count 保留“来源返回数”，不是截取后数量。
 
-- [ ] 利用该测试文件已有 Vite SSR 加载方式同时获取新导出；构造五组各 24 条唯一 URL，断言总量 40、每组 8 条。另构造重复 URL，断言去重后继续补足配额。具体断言：
+- [x] 利用该测试文件已有 Vite SSR 加载方式同时获取新导出；构造五组各 24 条唯一 URL，断言总量 40、每组 8 条。另构造重复 URL，断言去重后继续补足配额。具体断言：
 
 ```js
 const groups = Array.from({length: 5}, (_, g) => Array.from({length: 24}, (_, i) => ({
@@ -205,7 +209,7 @@ assert.equal(mergeKeywordResults([[groups[0][0]], [groups[0][0]]]).length, 1);
 assert.equal(mergeKeywordResults(groups, 0).length, 0);
 ```
 
-- [ ] 运行 `node --test src/lib/server/collectors/keyword-contract.test.mjs`，确认失败后实现：
+- [x] 运行 `node --test src/lib/server/collectors/keyword-contract.test.mjs`，确认失败后实现：
 
 ```ts
 export function mergeKeywordResults(groups: NormalizedItem[][], limit = 40): NormalizedItem[] {
@@ -232,7 +236,7 @@ export function mergeKeywordResults(groups: NormalizedItem[][], limit = 40): Nor
 }
 ```
 
-- [ ] 将 `collectKeyword` 的 settled 后合并整体替换成：
+- [x] 将 `collectKeyword` 的 settled 后合并整体替换成：
 
 ```ts
 return {
@@ -241,7 +245,7 @@ return {
 };
 ```
 
-- [ ] 通过真实 `collectKeyword` + 现有 routedTransport 补一个整链检查：新闻返回大量结果仍保留 B 站结果；所有失败/局部失败/本地范围不出网测试继续通过。提交：`fix: fairly merge keyword search sources`。
+- [x] 通过真实 `collectKeyword` + 现有 routedTransport 补一个整链检查：新闻返回大量结果仍保留 B 站结果；所有失败/局部失败/本地范围不出网测试继续通过。提交：`fix: fairly merge keyword search sources`。
 
 **不扩大范围：** 本项不增加搜索 API、不修改关键词平台含义，不实现跨轮搜索分页或跨文章模糊去重。
 
@@ -251,8 +255,8 @@ return {
 
 **Interfaces:** 沿用 `CollectorCoverage`。窗口源始终 `complete:false, window_only:true`；note 固定为 `initial_window|window_overlap|window_gap|empty_window`。B 站分页现有 `complete` 语义不变。
 
-- [ ] 在 collector 现有 SSR 测试加四组：无旧 cursor、有重叠、无重叠、空 Feed。返回 items 正常，coverage 必须明确。使用 RSS、YouTube、Telegram Feed override、rsshub、微信网关和最终 RSS fallback 各验证一次，避免只修主路径。
-- [ ] 增加同文件函数，所有“有限 Feed/网页窗口”出口统一调用；不要给完整 Telethon 分页结果套上窗口标签：
+- [x] 在 collector 现有 SSR 测试加四组：无旧 cursor、有重叠、无重叠、空 Feed。返回 items 正常，coverage 必须明确。使用 RSS、YouTube、Telegram Feed override、rsshub、微信网关和最终 RSS fallback 各验证一次，避免只修主路径。
+- [x] 增加同文件函数，所有“有限 Feed/网页窗口”出口统一调用；不要给完整 Telethon 分页结果套上窗口标签：
 
 ```ts
 function windowCoverage(items: NormalizedItem[], previous = '') {
@@ -262,7 +266,7 @@ function windowCoverage(items: NormalizedItem[], previous = '') {
 }
 ```
 
-- [ ] 分开“发现水位”和“完整历史边界”：在现有 scheduler 中，窗口允许更新发现水位用于下次 overlap 检查，但不能声称全量；可分页采集器仍只有 complete 才推进。替换 `cursorSafe`：
+- [x] 分开“发现水位”和“完整历史边界”：在现有 scheduler 中，窗口允许更新发现水位用于下次 overlap 检查，但不能声称全量；可分页采集器仍只有 complete 才推进。替换 `cursorSafe`：
 
 ```ts
 const cursorSafe = coverage === undefined || coverage.window_only === true || coverage.complete;
@@ -270,7 +274,7 @@ const cursorSafe = coverage === undefined || coverage.window_only === true || co
 
 `coverage` 保持可选：本任务给所有 Feed/网页窗口补上显式信息；Telethon 当前返回 items 数组、不返回覆盖证明，保留其已有推进逻辑，jobs 存 `{}`、显示“覆盖未知”。`undefined` 分支仅用于兼容原有增量行为，不解释为“历史完整”。新适配器必须显式给出 coverage。不要为了状态显示扩大本任务到 Telethon 协议重构，也不能把有上限的历史请求直接声明为全量。
 
-- [ ] 追加向后兼容列，并扩展 `finishSourceJob` 最后一个参数 `coverage?: CollectorCoverage`；SQL 写入参数化 JSON：
+- [x] 追加向后兼容列，并扩展 `finishSourceJob` 最后一个参数 `coverage?: CollectorCoverage`；SQL 写入参数化 JSON：
 
 ```sql
 alter table jobs add column if not exists coverage jsonb not null default '{}'::jsonb;
@@ -278,7 +282,7 @@ alter table jobs add column if not exists coverage jsonb not null default '{}'::
 
 所有成功调用传 collected.coverage，失败调用默认 `{}`。在 JobRow 增加 `coverage: {complete?:boolean;window_only?:boolean;note?:string}`，`mapJob` 显式检查字段类型；历史 `{}` 显示“覆盖未知”。UI 文案固定为“有限窗口”“窗口未衔接”“已到达上次边界”，不把 window_gap 直接声称为已证实漏文。
 
-- [ ] PGLite 中应用该迁移，调用真实 `finishSourceJob` 后读取 JSON；断言旧行兼容。测试 B 站 page_cap 时 cursor 不推进、RSS overlap 正常推进发现水位、window_gap 的 warning 落账。提交：`feat: record collection window coverage`。
+- [x] PGLite 中应用该迁移，调用真实 `finishSourceJob` 后读取 JSON；断言旧行兼容。测试 B 站 page_cap 时 cursor 不推进、RSS overlap 正常推进发现水位、window_gap 的 warning 落账。提交：`feat: record collection window coverage`。
 
 **回补边界：** 上游没有历史接口时只记录无法回补；不不断重试同一页。B 站跨轮续页属于旧稳定性计划的独立任务，不在此次窗口状态改造中暗中实现。
 
@@ -288,7 +292,7 @@ alter table jobs add column if not exists coverage jsonb not null default '{}'::
 
 **Interfaces:** 报告输入是明确可访问的参考 ID 集；输出包含 `returned_by_upstream/persisted/missing/duplicates/window_status`。
 
-- [ ] 在既有 scheduler 测试环境提供 60 条 Feed，调用实际采集/入库路径两次；按 external_id 对照，不能仅手动 insert 后声称采集通过：
+- [x] 在既有 scheduler 测试环境提供 60 条 Feed，调用实际采集/入库路径两次；按 external_id 对照，不能仅手动 insert 后声称采集通过：
 
 ```ts
 assert.equal(first.items_new, 60);
@@ -299,9 +303,9 @@ assert.deepEqual(expectedIds.filter(id => !storedIds.includes(id)), []);
 
 这些变量分别来自 `runSourceJob()` 两次返回、SQL 查询及 fixture 的预期 ID。测试中通过现有 Vite/隔离数据库入口获取 scheduler，不另写业务副本。
 
-- [ ] 运行 A01 定向检查、网关完整测试、typecheck，再运行现有 collection-load-check，确认放宽条数未造成失控请求或内存增长。
-- [ ] 选 5 个无需登录的既有源，低频观察 24 小时：保存每轮实际响应的 ID 清单与入库 ID；统计相对于上游响应的漏项，另列上游窗口外不可观测范围。
-- [ ] A 版通过条件：确定性样本遗漏/重复为 0；各来源公平合并通过；无新未捕获错误；真实未完成观察保持“待验收”。提交：`test: verify bounded feed ingestion end to end`。
+- [x] 运行 A01 定向检查、网关完整测试、typecheck，再运行现有 collection-load-check，确认放宽条数未造成失控请求或内存增长。
+- [ ] 真实观察待验收（单次五源快照均因非公网 DNS 地址被拒绝；24 小时观察未启动）：选 5 个无需登录的既有源，低频观察 24 小时：保存每轮实际响应的 ID 清单与入库 ID；统计相对于上游响应的漏项，另列上游窗口外不可观测范围。
+- [ ] A 版实时验收待完成（代码/确定性样本/公平合并/离线回归已通过；真实 24 小时观察仍待验收）：A 版通过条件：确定性样本遗漏/重复为 0；各来源公平合并通过；无新未捕获错误；真实未完成观察保持“待验收”。提交：`test: verify bounded feed ingestion end to end`。
 
 ## 5. B：按需正文补全详细任务
 

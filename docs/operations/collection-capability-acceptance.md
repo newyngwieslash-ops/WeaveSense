@@ -1,77 +1,95 @@
 # Collection capability acceptance
 
-Recorded 2026-10-13 in the isolated `codex/collection-capability` worktree.
+Recorded 2026-10-13 in isolated `codex/collection-capability`. A01–A04 are implemented and reviewed. A05 implementation and deterministic offline checks passed; **24-hour live acceptance remains pending** because the five public feeds resolve to addresses refused by the existing outbound policy. No production deployment occurred.
 
 ```json
 {
-  "scope": "collection-capability",
+  "scope": "A01-A05 collection-capability",
   "baseline": "bec6212ac0cdc67272e488073e35d97087e7447a",
-  "checkout": "fb9b96273bb568f3d951f4a20142c36a677ae52f",
-  "checks": [
-    {"id":"A01-rss-cursor-scheduler","status":"passed","exit_code":0,"tests":18},
-    {"id":"A01-keyword-pagination","status":"passed","exit_code":0,"tests":20},
-    {"id":"A01-wechat-gateway","status":"passed","exit_code":0,"tests":59},
-    {"id":"A02-rss-normalization","status":"not_run"},
-    {"id":"A03-primary-normalization","status":"not_run"},
-    {"id":"A04-keyword-identity","status":"not_run"},
-    {"id":"A05-coverage-persistence","status":"not_run"}
-  ],
-  "live_status": "not_run",
-  "release_status": "not_deployed"
+  "A05_base": "82b4a1032b165d1363c7b422cd99bc069d6bd4be",
+  "implemented": ["A01", "A02", "A03", "A04", "A05"],
+  "offline_passed": true,
+  "live_passed": false,
+  "live_status": "pending_network_environment",
+  "release_status": "not_deployed",
+  "full_suite_status": "blocked_by_existing_deployment_assertions"
 }
 ```
 
-## Baseline and environment
+## Baseline and changes
 
-- Baseline application SHA: `bec6212ac0cdc67272e488073e35d97087e7447a`. Checkout SHA: `fb9b96273bb568f3d951f4a20142c36a677ae52f`; the difference is the approved roadmap document only.
-- Initial isolated worktree `git status --short`: empty. Existing original-workspace changes reported by the task constraints: modified `src/routeTree.gen.ts`; untracked `docker-compose.dev-hybrid.yml` and `docker-compose.override.yml`. They were not copied or changed.
-- Node: `v24.16.0`. Lockfiles: `package-lock.json` only. Highest migration: `0029_assistant_progress.sql`; `0030_collection_coverage.sql` was absent at baseline.
-- Locked dependency installation: `npm ci --ignore-scripts --no-audit --no-fund`, exit 0; 428 packages installed locally. No dependency declaration or lockfile changed, no junction needed. Both original and worktree lock SHA256: `ADDDD028C346B3B43AAFB3A0DE809F0A917FEE05D58BE3563EFACAF2E95A756B`.
+- Node `v24.16.0`, Docker engine `28.0.1`; locked dependencies installed without package or lockfile changes. Original workspace changes were preserved. The generated route file and QA artifacts are excluded from the A05 commit.
+- A01 recorded the baseline and existing checks (`b3996d63`). A02 removed both 24-entry truncations; shared RSS and WeChat primary reject more than 1000 raw entries, and malformed/unsupported shared RSS input fails (`3c5f2e4c`). Long-body and gateway protections remain covered.
+- A03 fairly merges the five keyword response groups within 40 items; five saturated groups receive eight slots each and retain original attempt counts (`789c768e`). This does not assert exhaustive platform search.
+- A04 persists finite-window coverage in `jobs.coverage` through migration `0030_collection_coverage.sql`, renders the corresponding jobs badges, keeps capped Bilibili cursors unchanged, and prevents gateway failure bypass. Review fix chooses newest dated opaque window anchors independently of upstream ordering (`82b4a103`). Undated opaque RSS ordering remains explicitly limited.
+- A05 adds a real 60-entry `runSourceJob` ingestion/replay test, expands the existing PostgreSQL burst runner, and provides an optional finite five-feed observer. No dependencies or general collection framework were added.
 
-## Runnable A01 checks
+## Deterministic verification
 
-Execute each command through the existing `offlineEnv` helper, as shown below. `DATABASE_URL` is removed; all automatic analysis and workers are explicitly disabled, and `LOOM_MODEL_CONFIG` is a nonexistent absolute path. No live database, model configuration, provider credentials, or production service is used. Test-local HTTP fixtures and ephemeral PGlite/SQLite databases are allowed.
+All A05 test children use `scripts/readiness-offline.mjs`'s runtime allowlist with explicit automatic analysis/extraction/agent flags disabled, no inherited database URL, blank XAI key, nonexistent absolute model-config path, and test runtime. Feed/provider inputs are transport fixtures. Load runs use fresh disposable loopback Docker PostgreSQL databases and real migrations. Observer runs use fresh in-memory PGlite. No production DB, model, article fetch, media worker, or paid call is used by these A05 checks.
 
-```js
-import { spawnSync } from "node:child_process";
-import { offlineEnv } from "./scripts/readiness-offline.mjs";
-const env = offlineEnv(process.env, {
-  AUTO_ANALYZE: "false", EXTRACT_AUTO: "false",
-  AGENT_WORKER_ENABLED: "false", AGENT_ASYNC_RESEARCH_ENABLED: "false",
-  AGENT_OPENCODE_WORKER_ENABLED: "false", AGENT_ASSISTANT_ENABLED: "false",
-  AGENT_ASSISTANT_ACTIONS_ENABLED: "false", DATABASE_URL: undefined,
-  XAI_API_KEY: "", LOOM_MODEL_CONFIG: "C:/collection-offline-no-model-config.json",
-});
-const groups = [
-  ["--experimental-strip-types", "--test", "src/lib/server/rss.test.ts", "src/lib/server/cursor.test.ts", "src/lib/server/scheduler-atomic.test.ts"],
-  ["--test", "src/lib/server/collectors/keyword-contract.test.mjs", "src/lib/server/collectors/pagination.test.mjs"],
-  ["--test", "workers/wechat-gateway/gateway.test.mjs"],
-];
-for (const args of groups) {
-  const result = spawnSync(process.execPath, args, { env, stdio: "inherit", windowsHide: true });
-  if (result.status !== 0) process.exit(result.status ?? 1);
-}
-```
-
-| Exact child command | Exit | Result |
+| Child command | Exit | Actual result |
 | --- | --- | --- |
-| `node --experimental-strip-types --test src/lib/server/rss.test.ts src/lib/server/cursor.test.ts src/lib/server/scheduler-atomic.test.ts` | 0 | 18 passed, 0 failed/skipped; 12.99 s |
-| `node --test src/lib/server/collectors/keyword-contract.test.mjs src/lib/server/collectors/pagination.test.mjs` | 0 | 20 passed, 0 failed/skipped; 49.03 s |
-| `node --test workers/wechat-gateway/gateway.test.mjs` | 0 | 59 passed, 0 failed/skipped; 1.58 s |
+| `node --experimental-strip-types --test src/lib/server/rss.test.ts src/lib/server/cursor.test.ts src/lib/server/scheduler-atomic.test.ts src/lib/server/scheduler.test.ts` | 0 | 28 passed; final run 18.32 s |
+| `node --test src/lib/server/collectors/keyword-contract.test.mjs src/lib/server/collectors/pagination.test.mjs` | 0 | 26 passed; 72.69 s |
+| `node --test workers/wechat-gateway/*.test.mjs` (explicit file list on Windows) | 0 | 117 passed; 2.45 s |
+| `node node_modules/typescript/bin/tsc --noEmit` | 0 | No diagnostics |
+| Scoped ESLint on A05 test/load/observer files | 0 | No errors or warnings |
+| `node validation/collection/public-feed-observation.mjs --self-check` | 0 | Independent 60-ID oracle, Atom identity/link mapping, missing identities, normalization collisions, bounded capture and upstream cancellation |
 
-## Existing implementations and boundaries
+The 60-entry test loads the production scheduler and `getSql()` through existing Vite SSR/PGlite migration entry points. Expected IDs come directly from the fixture. Two actual jobs return `items_new=60` then `0`; SQL contains exactly 60 distinct external IDs, no missing ID, and initial-window then overlap coverage. It never manually inserts fixture items.
 
-All named implementation symbols are present; reuse them for A02-A05.
+Raw command logs: `.superpowers/sdd/2026-10-13-collection-capability-roadmap/scratch/a05-{a01,keyword,gateway,typecheck,lint,reference}.log`. The full implementation report and isolation wrapper are retained beside them.
 
-- `parseFeedXml` in `src/lib/server/rss-parser.ts`: existing RSS/Atom parser, body-size and metadata checks.
-- `fetchPrimary` in `workers/wechat-gateway/primary.mjs`: Atom/RSS/RDF reader with entry validation; examines `entries.slice(0, 24)`, skips invalid siblings, and returns an item array.
-- `collectKeyword` in `src/lib/server/collectors/keyword.ts`: scoped provider attempts, URL/external-id de-duplication, and a merged result cap of 40. YouTube currently uses Google News `site:youtube.com` search; it is not proof of exhaustive YouTube search.
-- `CollectorCoverage` in `src/lib/server/collectors/types.ts`: `complete`, optional `window_only`, optional `note`.
-- `runSourceJob` / local `cursorSafe` in `src/lib/server/scheduler.ts`: missing coverage currently counts as safe; explicit incomplete coverage blocks cursor advancement but the successful job still finishes with status `ok`.
-- `finishSourceJob` / `mergeExistingItem` in `src/lib/server/scheduler-atomic.ts`: existing atomic persistence helpers. Source job finalization currently stores counts and provider metadata, without coverage fields.
-- `JobRow` / `mapJob` in `src/lib/types.ts` / `src/lib/server/queries.ts` and `/jobs` in `src/routes/jobs.tsx`: existing reporting path; baseline job type and mapper contain no coverage fields.
-- `scripts/collection-load-check.mjs`: existing deterministic real-scheduler/PostgreSQL load harness, with isolated Docker PostgreSQL and synthetic outbound responses; accepts 1-5000 sources. It was inspected only and was not run in A01. Its existence does not establish live provider reliability.
+## Comparable burst measurements
 
-## Remaining acceptance boundary
+Each run has 100 sources, two distinct upstream rounds and an identical second-round replay. `--entries` defaults to 60 and is bounded at 1–1000; ID serials use the entry count so large fixtures cannot overlap rounds. Reference IDs are independently generated, and `source-ids.json` lists every reference/stored ID and omission per source.
 
-A01 establishes an offline baseline only. A02-A05 checks must be updated to actual results after implementation; sustained uptime, live success rates, account/subtitle/licence/paid-quota samples, load runs, browser QA, and release checks remain unverified. No production deployment was performed. Dependency installation emitted existing deprecated-package warnings for recharts and eslint; no upgrade was made.
+| Measurement | `--entries 10` baseline | `--entries 60` |
+| --- | ---: | ---: |
+| Entries returned across three feed rounds | 3000 | 18000 |
+| Distinct reference IDs / persisted IDs | 2000 / 2000 | 12000 / 12000 |
+| New rows: round 1 / round 2 / replay | 1000 / 1000 / 0 | 6000 / 6000 / 0 |
+| Missing IDs / duplicate pairs | 0 / 0 | 0 / 0 |
+| RSS requests / all fixture requests | 300 / 330 | 300 / 330 |
+| Errors / deferred per pass | 0 / 0 | 0 / 0 |
+| Round 1 / round 2 / replay wall ms | 1198 / 1134 / 1287 | 5200 / 4966 / 6068 |
+| Due-to-start P95 ms, same order | 1085 / 1037 / 1180 | 4814 / 4390 / 5705 |
+| Node sampled peak RSS bytes | 203640832 | 221794304 |
+| Node sampled peak heap-used bytes | 75086776 | 82300120 |
+| PostgreSQL database bytes | 10902551 | 16014359 |
+
+Requests stay fixed as entry count increases. Sampled Node RSS is about 194.2 MiB versus 211.5 MiB; this bounded sample shows no request amplification or runaway allocation. **100 ms `process.memoryUsage()` samples cover only this Node process**, omit allocations between samples, and do not measure PostgreSQL or whole-machine peak. Larger stored datasets naturally occupy more DB space. These are burst measurements, not long-term memory or endurance evidence. Every source job records `window_only`; no historical coverage is inferred.
+
+Evidence directories, each with `result.json`, `source-ids.json`, `memory-samples.json`:
+
+- `artifacts/production-readiness/load/run-100-umYQMY` — 10-entry baseline.
+- `artifacts/production-readiness/load/run-100-Xw7NiL` — 60-entry run.
+
+Both commands exited 0; both owned containers were removed. Their full logs are `scratch/a05-load-10.log` and `scratch/a05-load-60.log` under the roadmap execution directory.
+
+## Public snapshot and pending live observation
+
+`node validation/collection/public-feed-observation.mjs --snapshot` was executed once with sandbox escalation on 2026-10-13. Exactly five existing public RSS seed sources were attempted: qbitai, ifanr, sspai, solidot, BBC technology. All five jobs failed with **`blocked_address`** before an HTTP response. A separate escalated DNS-only check confirmed all five hostnames resolved within **198.18.0.0/15**, the non-public benchmarking range. The unchanged policy correctly refused them. No retries, egress override, proxy/secret configuration access, or weakened guard was used.
+
+Snapshot exit: 1. Jobs: 5 attempted / 0 successful. Returned upstream IDs and relative omissions are **unknown (`null`)**, comparison is **incomparable**; empty arrays in older aggregate evidence do not establish zero omissions. Five per-source JSONL records and summary are retained at `artifacts/collection-capability/public-observation/snapshot-bKCaf0`. Command and DNS evidence: `scratch/a05-public-snapshot.log`, `scratch/a05-public-dns.log`. No upstream XML exists because no response was received. The 24-hour observer was not started in this blocked environment.
+
+The standalone observer requires explicit `--snapshot` or `--observe-24h`. The latter schedules 13 rounds at 2-hour offsets 0–24, sequentially, maximum 65 source jobs plus policy-validated redirects. Each actual response is captured bounded while the same bytes flow through production `publicFetch` and `runSourceJob`; no second reference request is made. Independent XML identity enumeration checks guid/id/link only; missing identities and 320-character normalization collisions are explicitly incomparable. JSONL is saved after every job, XML and SHA256 after every consumed response, and the final summary is atomically replaced. The report always marks response-window-external history unobservable. Interruptions, more than five-minute schedule lateness, incomplete time, failures or incomparable identities cannot pass 24-hour acceptance.
+
+Once this network environment permits policy-valid public resolution, the controller can run:
+
+```powershell
+node validation/collection/public-feed-observation.mjs --observe-24h
+```
+
+Output goes to a new `artifacts/collection-capability/public-observation/24h-*` directory; no production registration or broad cron worker is needed. No `live_passed` status is granted by preparing this command.
+
+## Controller build, broader gates and UI evidence
+
+After the A04 final cursor fix, the controller's full build passed using a temporary `W:` alias to the same source: an existing TanStack code-generation escaping issue fails under the original apostrophe-containing Windows path. Typecheck passed. Full lint: 0 errors, 38 existing warnings.
+
+Dev and current built output passed desktop/mobile QA: five coverage states × two modes × two viewports = 20 article checks; console/page errors 0, horizontal overflow 0, baseline divergence false. Desktop/mobile screenshots were visually inspected. Evidence: `screenshots/collection-jobs-2026-10-13T05-52-05-430Z/result.json` and paired screenshots; method/timing detail in `scratch/ui-final-report.md`. The generic one-second smoke timer needed a bounded fixture-readiness wait in a scratch adapter; original smoke checks and error collection were preserved. This uses isolated fixtures and establishes UI rendering, not upstream or production reliability.
+
+**Full `npm test` is not reported green.** The controller hit two existing deployment assertions: MINIO_ENDPOINT environment inventory and opencode `pids_limit` expected 64 / actual 512. The relevant scripts/Compose are unchanged against `bec6212a`. The existing service-env test reads `F:/loom-backups/env/*.env` internally and prints key names, so the entire controller suite is not described as secret-file-free. Remaining stages ran separately; keyword/pagination and research stages passed. Three legacy-model checks initially conflicted with the deliberately nonexistent model-config override; direct-Node focused reruns with that variable blank passed without the autodiscovery wrapper. These baseline gate limitations remain explicit.
+
+Scope ends at A05 code and offline verification. Live 24-hour acceptance, deployed uptime and release remain pending; B/C work was not implemented.

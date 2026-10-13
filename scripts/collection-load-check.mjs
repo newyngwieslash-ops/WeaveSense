@@ -19,7 +19,7 @@
  * evidence.
  *
  * Usage:
- *   node --experimental-strip-types scripts/collection-load-check.mjs --sources 100
+ *   node --experimental-strip-types scripts/collection-load-check.mjs --sources 100 --entries 60
  *   node --experimental-strip-types scripts/collection-load-check.mjs --sources 1000
  *   ... --keep        # keep the container for inspection
  */
@@ -39,9 +39,11 @@ function arg(name, fallback = null) {
 }
 
 const SOURCE_COUNT = Number(arg("--sources", "100"));
+const ENTRY_COUNT = Number(arg("--entries", "60"));
 const SEED = Number(arg("--seed", "20260916"));
 const KEEP = process.argv.includes("--keep");
 assert.ok(Number.isSafeInteger(SOURCE_COUNT) && SOURCE_COUNT > 0 && SOURCE_COUNT <= 5000, "invalid --sources");
+assert.ok(Number.isSafeInteger(ENTRY_COUNT) && ENTRY_COUNT > 0 && ENTRY_COUNT <= 1000, "invalid --entries");
 assert.ok(Number.isSafeInteger(SEED), "invalid --seed");
 
 /** Deterministic PRNG so a run is reproducible from its seed. */
@@ -75,8 +77,8 @@ const percentile = (values, p) => {
 /** One feed body per source; `round` selects which items that round carries. */
 function feedFor(index, round) {
   const items = [];
-  for (let i = 0; i < 10; i += 1) {
-    const serial = round * 100 + i;
+  for (let i = 0; i < ENTRY_COUNT; i += 1) {
+    const serial = round * ENTRY_COUNT + i;
     items.push(
       `<item><title>源${index} 第${round}轮 条目${i}</title>` +
       `<link>https://example.invalid/s${index}/i${serial}</link>` +
@@ -99,6 +101,7 @@ function feedFor(index, round) {
  */
 function stubTransport(currentRound) {
   let calls = 0;
+  let feedCalls = 0;
   const slowCalls = [];
   const transport = async (url) => {
     calls += 1;
@@ -118,6 +121,7 @@ function stubTransport(currentRound) {
           : '<?xml version="1.0"?><rss version="2.0"><channel><title>empty</title></channel></rss>').body,
       };
     }
+    feedCalls += 1;
     const index = Number(/\/s(\d+)\//.exec(url.href)?.[1] ?? 0);
     // Slow sources: a deterministic minority answers slowly, so a fast source
     // must not be starved by a slow one (the plan's explicit requirement).
@@ -132,7 +136,7 @@ function stubTransport(currentRound) {
       body: new Response(feedFor(index, round)).body,
     };
   };
-  return { transport, calls: () => calls, slowCalls: () => slowCalls };
+  return { transport, calls: () => calls, feedCalls: () => feedCalls, slowCalls: () => slowCalls };
 }
 
 const resolver = { async lookup() { return [{ address: "93.184.216.34", family: 4 }]; } };
@@ -161,6 +165,12 @@ async function main() {
   const port = freePort();
   let client;
   let started = false;
+  let vite;
+  const memorySamples = [];
+  const memory = () => { const sample = { elapsed_ms: Math.round(performance.now() - memoryStart), ...process.memoryUsage() }; memorySamples.push(sample); return sample; };
+  const memoryStart = performance.now();
+  const memoryTimer = setInterval(memory, 100);
+  memory();
   try {
     docker(["run", "--detach", "--name", name, "--label", "loom.readiness.t17=isolated",
       "-e", `POSTGRES_PASSWORD=${PASSWORD}`, "-e", `POSTGRES_DB=${DB}`,
@@ -175,7 +185,6 @@ async function main() {
     }
     assert.ok(client, "isolated PG did not come up");
     const migrations = await migrate(client);
-    const sql = { async query(text, params = []) { return (await client.query(text, params)).rows; } };
 
     // The scheduler resolves its database through `getSql()`, which reads
     // `DATABASE_URL`. Without this the app would silently use its in-process
@@ -186,7 +195,7 @@ async function main() {
     // The real scheduler and the real upsert path, loaded through Vite so the
     // `@/` aliases resolve (bare Node would fail on resolution, not on logic).
     const { createServer } = await import("vite");
-    const vite = await createServer({
+    vite = await createServer({
       configFile: false, logLevel: "silent",
       resolve: { alias: { "@": resolve("src") } },
       server: { middlewareMode: true },
@@ -224,13 +233,13 @@ async function main() {
     };
 
     const round = { value: 1 };
-    const { transport, calls } = stubTransport(round);
+    const { transport, calls, feedCalls, slowCalls } = stubTransport(round);
 
     /** Run one pass of ticks until the due set drains, recording due-to-start. */
     async function pass(label, nextRound) {
       // Advancing the round is what makes the second pass carry NEW items
-      // (serial = round*100 + i), so "each source ends with 20" is a real check
-      // of incremental collection rather than a re-read of the same feed.
+      // (serial = round*ENTRY_COUNT + i), so two complete ID sets prove
+      // incremental collection across distinct upstream responses.
       if (nextRound !== undefined) round.value = nextRound;
       // A burst cannot wait out each source's 10-minute interval, so due-ness is
       // simulated by ageing `last_scanned_at`. This is a harness action, and it is
@@ -242,6 +251,7 @@ async function main() {
       await client.query(
         `update keywords set last_scanned_at = now() - interval '1 hour'`);
       const startedAt = Date.now();
+      const memoryBefore = memory();
       const stats = { ticks: 0, ran: 0, items_new: 0, errors: 0, deferred: 0 };
       // Each tick handles TICK_LIMIT sources; loop until a tick reports no work.
       for (let guard = 0; guard < 5000; guard += 1) {
@@ -259,12 +269,17 @@ async function main() {
         void before;
         if (result.ran === 0) break;
       }
-      return { label, ms: Date.now() - startedAt, ...stats };
+      const timingRows = (await client.query(`select extract(epoch from (started_at - $1::timestamptz))*1000 as wait_ms from jobs where source_id like 'src-%' and started_at >= $1::timestamptz`, [new Date(startedAt).toISOString()])).rows;
+      const waits = timingRows.map((row) => Number(row.wait_ms));
+      return { label, ms: Date.now() - startedAt, ...stats, source_jobs: waits.length,
+        due_to_start_p50_ms: percentile(waits, 0.5), due_to_start_p95_ms: percentile(waits, 0.95), oldest_wait_ms: Math.max(0, ...waits),
+        node_memory_before: memoryBefore, node_memory_after: memory() };
     }
 
     const before1 = await counts();
     const pass1 = await pass("round 1", 1);
     const after1 = await counts();
+    assert.equal(Number((await client.query("select count(*)::int as n from items where source_id like 'src-%'")).rows[0].n), SOURCE_COUNT * ENTRY_COUNT);
 
     const round2 = await pass("round 2", 2);
     const after2 = await counts();
@@ -279,13 +294,43 @@ async function main() {
       `select count(*)::int as n from (
          select source_id, external_id from items group by source_id, external_id having count(*) > 1
        ) d`)).rows[0].n);
-    void duplicates;
     assert.equal(duplicates, 0, "no duplicate (source, external_id) may exist");
+
+    const persistedRows = (await client.query("select source_id,external_id from items where source_id like 'src-%' order by source_id,external_id")).rows;
+    const storedBySource = new Map();
+    for (const row of persistedRows) {
+      if (!storedBySource.has(row.source_id)) storedBySource.set(row.source_id, []);
+      storedBySource.get(row.source_id).push(row.external_id);
+    }
+    const sourceChecks = Array.from({ length: SOURCE_COUNT }, (_, index) => {
+      const expectedIds = [1, 2].flatMap((round) => Array.from({ length: ENTRY_COUNT }, (_, i) => `s${index}-i${round * ENTRY_COUNT + i}`));
+      const storedIds = storedBySource.get(`src-${index}`) ?? [];
+      const missing = expectedIds.filter((id) => !storedIds.includes(id));
+      assert.equal(storedIds.length, ENTRY_COUNT * 2, `source ${index} persisted entry count`);
+      assert.deepEqual(missing, [], `source ${index} missing upstream fixture IDs`);
+      return { source_id: `src-${index}`, upstream_ids: expectedIds, persisted_ids: storedIds, returned_by_upstream: expectedIds.length,
+        persisted: storedIds.length, missing_ids: missing, missing: missing.length };
+    });
+    assert.equal(pass1.items_new, SOURCE_COUNT * ENTRY_COUNT);
+    assert.equal(round2.items_new, SOURCE_COUNT * ENTRY_COUNT);
+    assert.equal(replay.items_new, 0, "replaying round two must add zero");
+    assert.equal(after3.items, after2.items);
+    assert.ok(calls() <= SOURCE_COUNT * 3 + 100, "keyword fixtures must keep total requests bounded");
+    assert.equal(feedCalls(), SOURCE_COUNT * 3, "exactly one feed request per source per pass");
+    for (const pass of [pass1, round2, replay]) {
+      assert.equal(pass.errors, 0);
+      assert.equal(pass.source_jobs, SOURCE_COUNT);
+    }
+    const coverageRows = (await client.query("select source_id,coverage,status from jobs where source_id like 'src-%' order by source_id,started_at")).rows;
+    assert.ok(coverageRows.every((job) => job.coverage?.window_only === true), "RSS jobs keep their finite-window coverage");
+    writeFileSync(join(out, "source-ids.json"), JSON.stringify(sourceChecks, null, 2));
+    memory();
+    writeFileSync(join(out, "memory-samples.json"), JSON.stringify(memorySamples, null, 2));
 
     const perSource = Number((await client.query(
       `select coalesce(round(avg(n), 2), 0)::float as avg_n from (
          select source_id, count(*) as n from items group by source_id) t`)).rows[0].avg_n);
-    // The plan's two-round expectation: 20 items per SOURCE (the radar source
+    // Two full fixture rounds per source (the radar source
     // holds keyword hits, so it is excluded from the per-source figure).
     const perRealSource = Number((await client.query(
       `select coalesce(round(avg(n), 2), 0)::float as avg_n from (
@@ -298,6 +343,16 @@ async function main() {
     const result = {
       ok: true,
       sources: SOURCE_COUNT,
+      entries_per_response: ENTRY_COUNT,
+      returned_by_upstream: SOURCE_COUNT * ENTRY_COUNT * 3,
+      distinct_upstream_ids: SOURCE_COUNT * ENTRY_COUNT * 2,
+      persisted: persistedRows.length, missing: 0,
+      window_status: "window_only", source_job_statuses: [...new Set(coverageRows.map((job) => job.status))],
+      feed_transport_calls: feedCalls(), slow_source_calls: slowCalls(),
+      sample_feed_bytes: Buffer.byteLength(feedFor(0, 1)),
+      node_memory_sample_peak: Object.fromEntries(["rss", "heapUsed", "external", "arrayBuffers"].map((key) => [key, Math.max(...memorySamples.map((sample) => sample[key]))])),
+      node_memory_scope: "100ms samples of this Node process only; not PostgreSQL or whole-machine peak",
+      evidence_dir: out,
       seed: SEED,
       migrations,
       transport_calls: calls(),
@@ -317,12 +372,13 @@ async function main() {
     };
     writeFileSync(join(out, "result.json"), JSON.stringify(result, null, 2));
     console.log(JSON.stringify(result, null, 2));
-    await vite.close();
   } catch (error) {
     writeFileSync(join(out, "result.json"), JSON.stringify({ ok: false, error: String(error?.message || error) }, null, 2));
     console.error(JSON.stringify({ ok: false, error: String(error?.message || error), out }, null, 2));
     process.exitCode = 1;
   } finally {
+    clearInterval(memoryTimer);
+    if (vite) await vite.close();
     if (client) { try { await client.end(); } catch { /* already closed */ } }
     if (started) {
       if (process.exitCode !== 1 && !KEEP) docker(["rm", "--force", "--volumes", name]);
@@ -332,4 +388,15 @@ async function main() {
   }
 }
 
-main();
+// Fresh runtime allowlist excludes ambient DB/model/provider configuration.
+if (!process.argv.includes("--isolated-child")) {
+  const { offlineEnv } = await import("./readiness-offline.mjs");
+  const child = spawnSync(process.execPath, [process.argv[1], ...process.argv.slice(2), "--isolated-child"], {
+    stdio: "inherit", windowsHide: true,
+    env: offlineEnv(process.env, { LOOM_RUNTIME_MODE: "test", AI_ENGINE: "legacy", DATABASE_URL: undefined,
+      LOOM_MODEL_CONFIG: resolve("artifacts/collection-capability/no-model-config.json"),
+      AUTO_ANALYZE: "false", EXTRACT_AUTO: "false", AGENT_WORKER_ENABLED: "false", AGENT_ASYNC_RESEARCH_ENABLED: "false",
+      AGENT_OPENCODE_WORKER_ENABLED: "false", AGENT_ASSISTANT_ENABLED: "false", AGENT_ASSISTANT_ACTIONS_ENABLED: "false", XAI_API_KEY: "" }),
+  });
+  process.exit(child.status ?? 1);
+} else main();
