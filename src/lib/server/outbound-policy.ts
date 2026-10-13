@@ -69,6 +69,7 @@ export function addressBlocked(address: string): boolean {
     const parsed = addressToBigInt(lower);
     if (!parsed) return true;
     const value = parsed.value;
+    if (value >> 80n === 0x200100020000n) return true; // 2001:2::/48 benchmarking
     if (value <= 1n) return true; // unspecified + loopback, including expanded forms
     if (value >> 118n === 0x3fan) return true; // fe80::/10 link-local
     if (value >> 121n === 0x7en) return true; // fc00::/7 unique-local

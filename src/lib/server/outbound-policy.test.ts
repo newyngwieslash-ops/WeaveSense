@@ -374,6 +374,46 @@ test("IPv6 compressed/expanded and hex-mapped private addresses stay blocked", (
   }
 });
 
+test("IPv6 benchmarking DNS is refused before transport unless explicitly declared as egress", async () => {
+  const saved = process.env.LOOM_EGRESS_CIDRS;
+  process.env.LOOM_EGRESS_CIDRS = "";
+  const spellings = ["2001:2::71", "2001:0002:0000:0000:0000:0000:0000:0071"];
+  let transportCalls = 0;
+  try {
+    for (const address of spellings) {
+      await assert.rejects(() => publicFetch("https://example.com/", {
+        resolver: resolverFor({ "example.com": [address] }),
+        transport: async () => { transportCalls += 1; throw new Error("transport_should_not_dial"); },
+      }), /blocked_address/);
+      assert.equal(transportCalls, 0, "an IPv6-only benchmark answer must not reach transport");
+    }
+    for (const address of [...spellings, "2001:2::", "2001:2:0:ffff:ffff:ffff:ffff:ffff"]) {
+      assert.equal(addressBlocked(address), true, address);
+    }
+    assert.equal(addressBlocked("2001:2:1::71"), false, "the guard covers exactly /48");
+    assert.equal(addressBlocked("2606:4700::1111"), false);
+
+    const egress = parseEgressCidrs("2001:2::/48");
+    assert.equal(egress.length, 1, "operator benchmarking proxy opt-in matches IPv4 policy");
+    for (const address of spellings) {
+      assert.equal(addressAllowedByEgress(address, egress), true);
+      const resolver = resolverFor({ "example.com": [address] });
+      assert.deepEqual(await resolvePublicAddresses("example.com", resolver, egress), [address]);
+      await assert.rejects(() => resolvePublicAddresses("example.com", resolver, []), /blocked_address/);
+    }
+    assert.equal(addressAllowedByEgress("2001:2:1::71", egress), false);
+    process.env.LOOM_EGRESS_CIDRS = "2001:2::/48";
+    const result = await publicFetch("https://example.com/", {
+      resolver: resolverFor({ "example.com": [spellings[0]] }),
+      transport: async () => textResponse("declared operator proxy"),
+    });
+    assert.equal(result.text, "declared operator proxy");
+  } finally {
+    if (saved === undefined) delete process.env.LOOM_EGRESS_CIDRS;
+    else process.env.LOOM_EGRESS_CIDRS = saved;
+  }
+});
+
 test("caller cancellation cancels a pending stream read and releases its lock", async () => {
   const controller = new AbortController();
   let cancelled = false, released = false;
